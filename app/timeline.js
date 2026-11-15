@@ -456,7 +456,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     lensNum.disabled = lensOff;
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
-    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Click the shot\'s block → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
+    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Click the shot\'s name in the stack → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
     draw();
     audioTrack.refresh();
     curve.refresh();
