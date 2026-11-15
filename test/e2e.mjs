@@ -441,22 +441,26 @@ try {
   cli('timeline', '--duration', '1', '--fps', '12');
   ok(/added shot close/.test(cli('shot-add', '--name', 'close')), 'shot-add makes a second shot and switches to it');
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
-  ok(await page.locator('.st-lane').count() === 2 && /close/.test(await page.locator('.st-label.is-active').textContent()), 'the shot stack shows a lane per shot, the new one active');
+  const tr = await page.locator('.tl-track').boundingBox();
+  ok(tr.height > 80, `with two shots the key track stacks them (${Math.round(tr.height)} px tall)`);
+  // rows: ruler 16 px, then shot-1 (20 px), then the active close (40 px)
+  await page.mouse.click(tr.x + tr.width * 0.3, tr.y + 26);
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  ok(true, 'clicking another shot\'s row switches to it');
+  // now close is the inactive second row (top 16 + 40 + 2): drag it sideways so it picks up the action later
+  const ry = tr.y + 16 + 40 + 2 + 10;
+  await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
+  await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();
+  await page.waitForFunction(() => (window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start || 0) > 0.1);
+  ok(true, `dragging a shot's row sets where it picks up the action`);
+  await page.waitForTimeout(200);
+  cli('shot', 'close');
+  cli('shot-set', 'close', '--start', '0');
   cli('key-set', '0', '--pos', '2,1.5,3', '--target', '0,1,0');
   cli('timeline', '--shot', 'shot-1', '--duration', '0.5');
   await page.keyboard.press('BracketLeft');
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(JSON.parse(cli('doc')).timeline.duration === 0.5, '[ switches to the previous shot and --shot edited it in place');
-  await page.locator('.st-label', { hasText: 'close' }).click();
-  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
-  ok(true, 'clicking a shot in the stack switches to it');
-  // drag a shot's bar sideways: it picks up the action later
-  const bar = await page.locator('.st-bar.is-active').boundingBox();
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2); await page.mouse.down();
-  await page.mouse.move(bar.x + bar.width / 2 + bar.width / 2, bar.y + bar.height / 2, { steps: 6 }); await page.mouse.up();
-  await page.waitForFunction(() => (window.canvas.store.doc.timeline.start || 0) > 0.2);
-  ok(true, `dragging a shot's bar sets where it picks up the action (${JSON.parse(cli('doc')).timeline.start}s)`);
-  cli('shot-set', 'close', '--start', '0');
   // Play all runs on through the cut into the next shot
   await page.evaluate(() => window.canvas.store.set({ playAll: true, loop: false }));
   cli('shot', '1');

@@ -100,18 +100,18 @@ With a key selected: its ease, lens (mm), "set to current view" and delete. The 
 the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
-**Shots:** one set can have several cameras. The shot stack above the key track has one lane per
-shot on the shared action-time axis (the object moves show as dots on its ruler): each shot is a bar
-from where it picks up the action, as long as the shot. Click a lane to edit that shot at that moment,
-drag a bar sideways to change where it picks up the action, double-click a name to rename it, and **+**
-adds a shot that starts as a copy of this camera. Lanes run top to bottom in sequence order; click the
-active shot's name to reorder or delete it or **Export all**, and the layers button (**Play all**) plays on
+**Shots:** one set can have several cameras. **+ Shot** in the timeline bar (or Shift+N) adds a shot
+that starts as a copy of this camera. With two or more, the key track stacks them: one row per shot on
+the shared action-time axis, each shot a bar from where it picks up the action. The active shot's row is
+the full key editor; click another row to edit that shot at that moment, drag a row sideways to change
+where it picks up the action, and click the active shot's name for its settings (rename, order, delete,
+**Export all**). Rows run top to bottom in sequence order, and the layers button (**Play all**) plays on
 through the cuts. The set, the people and their moves are shared, so moving a prop updates every shot;
 each shot has its own keys, length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`,
 `canvas shot-add` and `--shot`.
 
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
-the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** (click the active shot's name in the stack, or
+the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** (click the active shot's name in the track, or
 `canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
 
 ## Saving and loading

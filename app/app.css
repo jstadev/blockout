@@ -169,35 +169,6 @@ body.has-audio .shots-pop { bottom: calc(150px + var(--stack-h, 0px)); }
 .shots-pop .cc-row > .cc-affix { flex: 1; justify-content: flex-end; }
 .shots-pop .cc-affix > .cc-field { flex: 1; min-width: 0; width: auto !important; text-align: right; }
 .shots-actions { gap: 2px; }
-/* the shot stack: one lane per shot on the shared action-time axis, above the key track */
-.st-stack { flex: none; display: grid; grid-template-columns: 150px 1fr; column-gap: 6px; row-gap: 2px; font-size: var(--cc-size-sm); }
-.st-head { display: contents; }
-.st-label { display: flex; align-items: center; gap: 6px; height: 18px; padding: 0 6px; border-radius: 4px; color: var(--cc-text-dim); cursor: pointer; user-select: none; min-width: 0; }
-.st-head .st-label { cursor: default; padding-right: 0; }
-.st-head .cc-btn { height: 18px; width: 20px; padding: 0; justify-content: center; }
-.st-head .cc-btn svg { width: 12px; height: 12px; }
-.st-title { font-size: var(--cc-size-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-faint); }
-.st-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.st-rows .st-label:hover { background: var(--cc-surface-sunk); color: var(--cc-text); }
-.st-label.is-active { color: var(--cc-text); background: var(--cc-surface-sunk); font-weight: 600; }
-.st-label.is-open { box-shadow: inset 0 0 0 1px var(--cc-line-strong); }
-.st-n { width: 10px; color: var(--cc-text-faint); flex: none; font-weight: 400; }
-.st-label.is-active .st-n { color: var(--cc-accent); }
-.st-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-dur { flex: none; color: var(--cc-text-faint); font-weight: 400; }
-.st-input { flex: 1; min-width: 0; height: 16px; border: none; outline: none; background: transparent; color: var(--cc-text); font: inherit; padding: 0; }
-.st-ruler { position: relative; height: 18px; margin-right: 8px; }
-.st-tick { position: absolute; top: 2px; height: 9px; padding-left: 3px; border-left: 1px solid var(--cc-line); font-family: var(--cc-mono); color: var(--cc-text-faint); line-height: 9px; white-space: nowrap; }
-.st-okey { position: absolute; bottom: 1px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--cc-text-faint); }
-.st-okey.is-sel { background: var(--cc-accent); }
-.st-lanes { position: relative; display: flex; flex-direction: column; gap: 2px; margin-right: 8px; }
-.st-lane { position: relative; height: 18px; border-radius: 4px; background: var(--cc-surface-sunk); cursor: pointer; touch-action: none; }
-.st-bar { position: absolute; top: 2px; bottom: 2px; min-width: 4px; border: 1px solid var(--cc-line-strong); border-radius: 3px; background: var(--cc-surface-solid); cursor: grab; }
-.st-bar.is-active { border-color: var(--cc-accent); background: var(--cc-accent-soft); }
-.st-bar.is-dragging { cursor: grabbing; opacity: 0.85; }
-.st-key { position: absolute; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; transform: rotate(45deg); background: var(--cc-text-dim); border-radius: 1px; }
-.st-bar.is-active .st-key { background: var(--cc-text); }
-.st-playhead { position: absolute; top: -20px; bottom: 0; width: 1.5px; margin-left: -0.75px; background: var(--cc-accent); pointer-events: none; z-index: 1; }
 .tl-shot svg:last-child { width: 10px; height: 10px; color: var(--cc-text-dim); }
 .tl-shot.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar > .cc-btn--primary { margin-left: 2px; }
