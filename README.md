@@ -89,7 +89,8 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
-| `X` | cut at the playhead: the shot ends on this frame and a new one starts on the next, from the same framing (re-frame it, then `K`). Drag either half of a cut to move it. |
+| `X` | cut at the playhead: the camera holds on this frame and jumps on the next, from the same framing (re-frame it, then `K`). Drag either half of a cut to move it. |
+| `[` `]` · `Shift N` | previous / next shot · new shot (a copy of this camera on the same set) |
 | `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
 | `⌘Z` / `⇧⌘Z` | undo / redo (also undoes agent changes) |
 
@@ -99,8 +100,15 @@ With a key selected: its ease, lens (mm), "set to current view" and delete. The 
 the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
+**Shots:** one set can have several cameras. The Shots button in the timeline bar lists them in
+sequence order: click one to switch, **+** adds a shot that starts as a copy of this camera, and the
+active shot can be renamed, moved, deleted or set to pick up the action later (**Action from**). The
+set, the people and their moves are shared, so moving a prop updates every shot; each shot has its
+own keys, length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add` and `--shot`.
+
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
-the scene size and fps and encodes an H.264 MP4 in the browser. Files land in `scenes/exports/`.
+the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** in the Shots menu (or
+`canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
 
 ## Saving and loading
 

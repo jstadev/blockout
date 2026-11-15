@@ -52,6 +52,10 @@ export function createDoc() {
         { id: 'k2', t: 5, position: [-6, 2.5, 8], target: [0, 1, 0], fov: 40, roll: 0, ease: 'easeInOut' },
       ],
     },
+    // Shots share the set and its people; each has its own camera timeline (keys, length, fps, audio).
+    // The active shot's timeline is doc.timeline; the others keep theirs in their shots entry.
+    shots: [{ id: 'shot-1', name: 'Shot 1' }],
+    shot: 'shot-1',
     controls: {},
   };
 }
@@ -109,7 +113,7 @@ function normParams(type, params = {}, base) {
   return out;
 }
 
-const OBJECT_FIELDS = new Set(['op', 'type', 'name', 'id', 'newId', 'position', 'rotation', 'scale', 'move', 'color', 'note', 'size', 'params', 'anim']);
+const OBJECT_FIELDS = new Set(['op', 'type', 'name', 'id', 'newId', 'position', 'rotation', 'scale', 'move', 'color', 'note', 'size', 'params', 'anim', 'shot']);
 
 // Split loose fields ({w:2, r:1}) out of an op into params. Unknown fields are errors (catches typos).
 function pickParams(type, op) {
@@ -167,16 +171,20 @@ function syncAnim(o) {
   const f = o.anim[0];
   o.position = [...f.position]; o.rotation = [...f.rotation]; o.scale = [...f.scale];
 }
-// Add or replace a key at time t; missing fields come from where the object is at t.
+// Object keys are stored in action time, shared by every shot; a shot shows the action from its
+// timeline.start (default 0). Ops take shot time, like the playhead.
+const actionStart = (doc) => doc.timeline.start || 0;
+// Add or replace a key at shot time t; missing fields come from where the object is at t.
 function putAnimKey(doc, o, k) {
   const at = sampleObject(o, { ...doc.timeline, speed: 'linear' }, k.t);
-  const key = normAnimKey(k, at);
+  const key = normAnimKey({ ...k, t: k.t + actionStart(doc) }, at);
   o.anim ||= [];
   const i = o.anim.findIndex((x) => Math.abs(x.t - key.t) < 1e-3);
   if (i >= 0) { if (k.ease == null) key.ease = o.anim[i].ease; o.anim[i] = key; } else o.anim.push(key);
   syncAnim(o);
-  if (key.t > doc.timeline.duration) doc.timeline.duration = key.t;
-  return key;
+  const shotT = round(key.t - actionStart(doc));
+  if (shotT > doc.timeline.duration) doc.timeline.duration = shotT;
+  return { ...key, t: shotT };
 }
 
 /** Operation handlers. Each mutates doc in place and returns a result. */
@@ -373,8 +381,9 @@ export const OPS = {
   'anim.remove'(doc, op) {
     const o = findObject(doc, op.id);
     const before = o.anim?.length || 0;
-    o.anim = (o.anim || []).filter((k) => !(op.t != null ? Math.abs(k.t - op.t) < 1e-3 : true));
-    if (op.t != null && o.anim.length === before) throw new Error(`${o.id} has no key at ${op.t}s (keys at: ${(o.anim || []).map((k) => k.t).join(', ') || 'none'})`);
+    const t0 = actionStart(doc);
+    o.anim = (o.anim || []).filter((k) => !(op.t != null ? Math.abs(k.t - t0 - op.t) < 1e-3 : true));
+    if (op.t != null && o.anim.length === before) throw new Error(`${o.id} has no key at ${op.t}s (keys at: ${(o.anim || []).map((k) => round(k.t - t0)).join(', ') || 'none'})`);
     if (o.anim.length) syncAnim(o); else delete o.anim;
     return { id: o.id, keys: o.anim?.length || 0 };
   },
@@ -386,7 +395,8 @@ export const OPS = {
       if (op.retime) { // scale key times to the new duration
         const f = op.duration / tl.duration;
         tl.keys.forEach((k) => { k.t = round(k.t * f); });
-        doc.objects.forEach((o) => o.anim?.forEach((k) => { k.t = round(k.t * f); }));
+        // the action is shared, so with several shots only this shot's camera is stretched
+        if (doc.shots.length < 2) doc.objects.forEach((o) => o.anim?.forEach((k) => { k.t = round(k.t * f); }));
       }
       tl.duration = round(op.duration);
     }
@@ -404,7 +414,11 @@ export const OPS = {
       tl.speed = op.speed;
     }
     if (op.ease != null) { resolveEase(op.ease); tl.keys.forEach((k) => { k.ease = op.ease; }); }
-    return { timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, keys: tl.keys.length } };
+    if (op.start != null) {
+      if (!(op.start >= 0 && op.start <= 3600)) throw new Error('start (where this shot picks up the action) must be 0–3600 s');
+      if (op.start) tl.start = round(op.start); else delete tl.start;
+    }
+    return { timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, start: tl.start || 0, keys: tl.keys.length } };
   },
 
   /**
@@ -441,6 +455,63 @@ export const OPS = {
     return { audio: a, duration: tl.duration };
   },
 
+  // ----- shots: one set, several cameras -----
+  /**
+   * Add a shot after the current one and switch to it. It starts as a copy of the current shot's camera
+   * and settings (from: another shot to copy instead; blank: true for the default two-key move).
+   * switch: false keeps the current shot active.
+   */
+  'shot.add'(doc, op) {
+    const src = op.blank ? createDoc().timeline : shotTimeline(doc, op.from ?? doc.shot);
+    const tl = clone(src);
+    if (op.blank) { tl.fps = doc.timeline.fps; }
+    const n = doc.shots.length + 1;
+    const taken = new Set(doc.shots.map((s) => s.id));
+    let id = op.id || op.name ? slug(op.id || op.name) : `shot-${n}`;
+    if (taken.has(id)) { let i = 2; while (taken.has(`${id}-${i}`)) i++; id = `${id}-${i}`; }
+    const name = op.name != null ? String(op.name) : op.id ? String(op.id) : `Shot ${n}`;
+    const at = doc.shots.findIndex((s) => s.id === doc.shot);
+    doc.shots.splice(at + 1, 0, { id, name, timeline: tl });
+    if (op.switch !== false) activate(doc, id);
+    return { id, name, shots: doc.shots.length, active: doc.shot };
+  },
+
+  /** Make a shot the active one: the timeline, camera and exports follow it. */
+  'shot.use'(doc, op) {
+    const s = findShot(doc, op.id ?? op.index);
+    activate(doc, s.id);
+    return { id: s.id, name: s.name };
+  },
+
+  'shot.update'(doc, op) {
+    const s = findShot(doc, op.id ?? op.index ?? doc.shot);
+    if (op.name != null) {
+      const name = String(op.name).trim();
+      if (!name) throw new Error('a shot needs a name');
+      s.name = name;
+    }
+    return { id: s.id, name: s.name };
+  },
+
+  'shot.remove'(doc, op) {
+    const s = findShot(doc, op.id ?? op.index ?? doc.shot);
+    if (doc.shots.length < 2) throw new Error('a scene needs at least one shot');
+    const i = doc.shots.indexOf(s);
+    if (s.id === doc.shot) activate(doc, doc.shots[i + 1 < doc.shots.length ? i + 1 : i - 1].id);
+    doc.shots.splice(doc.shots.indexOf(s), 1);
+    return { removed: s.id, active: doc.shot };
+  },
+
+  /** Reorder: put a shot at position `to` (1 = first) in the sequence. */
+  'shot.move'(doc, op) {
+    const s = findShot(doc, op.id ?? op.index ?? doc.shot);
+    const to = Math.round(op.to);
+    if (!(to >= 1 && to <= doc.shots.length)) throw new Error(`to must be a position 1–${doc.shots.length}`);
+    doc.shots.splice(doc.shots.indexOf(s), 1);
+    doc.shots.splice(to - 1, 0, s);
+    return { id: s.id, order: doc.shots.map((x) => x.id) };
+  },
+
   'controls.set'(doc, op) {
     if (!op.key) throw new Error('controls.set needs a key');
     if (op.value === undefined) delete doc.controls[op.key];
@@ -464,7 +535,46 @@ function applyOneInPlace(doc, op) {
   if (!op || typeof op.op !== 'string') throw new Error(`each op needs an "op" field, got ${JSON.stringify(op)}`);
   const fn = OPS[op.op];
   if (!fn) throw new Error(`unknown op "${op.op}" (ops: ${Object.keys(OPS).join(', ')})`);
+  // shot: apply a camera/timeline op to another shot without switching to it
+  if (op.shot != null && !op.op.startsWith('shot.') && op.op !== 'load' && op.op !== 'batch') {
+    const target = findShot(doc, op.shot).id, was = doc.shot;
+    if (target === was) return fn(doc, op);
+    activate(doc, target);
+    try { return fn(doc, op); } finally { activate(doc, was); }
+  }
   return fn(doc, op);
+}
+
+// ----- shots -----
+/** A shot by id, name or 1-based position ("2"). */
+export function findShot(doc, ref) {
+  const list = doc.shots || [];
+  let s = list.find((x) => x.id === ref || x.name === ref);
+  if (!s && /^\d+$/.test(String(ref ?? ''))) s = list[Number(ref) - 1];
+  if (!s) throw new Error(`no shot ${JSON.stringify(ref)} (shots: ${list.map((x, i) => `${i + 1} ${x.id}`).join(', ') || 'none'})`);
+  return s;
+}
+
+/** The timeline of a shot (the live doc.timeline for the active one). */
+export function shotTimeline(doc, ref) {
+  const s = findShot(doc, ref ?? doc.shot);
+  return s.id === doc.shot ? doc.timeline : s.timeline;
+}
+
+/** Every shot in sequence order with its timeline: [{ id, name, active, timeline }]. */
+export function shotList(doc) {
+  return (doc.shots || []).map((s) => ({ id: s.id, name: s.name, active: s.id === doc.shot, timeline: s.id === doc.shot ? doc.timeline : s.timeline }));
+}
+
+// Swap the active shot: park doc.timeline in the current shot's entry and bring the other one in.
+function activate(doc, id) {
+  if (id === doc.shot) return;
+  const cur = doc.shots.find((s) => s.id === doc.shot);
+  const next = doc.shots.find((s) => s.id === id);
+  if (cur) cur.timeline = doc.timeline;
+  doc.timeline = next.timeline;
+  delete next.timeline;
+  doc.shot = id;
 }
 
 /**
@@ -499,9 +609,22 @@ export function migrate(input) {
     controls: { ...(d.controls || {}) },
     objects: [],
   };
-  if (!d.timeline?.keys) doc.timeline.keys = base.timeline.keys;
-  doc.timeline.keys = doc.timeline.keys.map((k, i) => ({ id: k.id || `k${i + 1}`, ...normKey(k) }));
-  sortKeys(doc);
+  doc.timeline = normTimeline(d.timeline);
+  // Scenes from before shots had one timeline: that becomes the only shot.
+  const shots = [];
+  for (const [i, s] of (Array.isArray(d.shots) ? d.shots : []).entries()) {
+    let id = slug(s?.id || s?.name || `shot-${i + 1}`);
+    while (shots.some((x) => x.id === id)) id += '-2';
+    shots.push({ id, name: String(s?.name || id), ...(s?.timeline ? { timeline: normTimeline(s.timeline) } : {}) });
+  }
+  if (!shots.length) shots.push({ id: 'shot-1', name: 'Shot 1' });
+  const active = shots.find((s) => s.id === d.shot) || shots[0];
+  for (const s of shots) {
+    if (s === active) delete s.timeline; // the active shot's timeline is doc.timeline
+    else s.timeline ||= normTimeline();
+  }
+  doc.shots = shots;
+  doc.shot = active.id;
   for (const o of d.objects || []) {
     let params = o.params;
     // People made before bodies existed were all stored at h 1.8; let them use their body's usual height.
@@ -511,6 +634,15 @@ export function migrate(input) {
   }
   doc.version = 1;
   return doc;
+}
+
+function normTimeline(input) {
+  const base = createDoc().timeline;
+  const tl = { ...base, ...(input || {}) };
+  if (!input?.keys) tl.keys = base.keys;
+  tl.keys = tl.keys.map((k, i) => ({ id: k.id || `k${i + 1}`, ...normKey(k) })).sort((a, b) => a.t - b.t);
+  if (!(tl.start > 0)) delete tl.start;
+  return tl;
 }
 
 /** One-line description of an object, for agents. */

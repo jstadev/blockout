@@ -4,6 +4,7 @@ import { h, button, segmented, number, select, icon, toast, affix, panel, toggle
 import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToLens, lensToFov, isCut } from '/core/curves.js';
 import { store } from './store.js';
 import { mountAudioTrack } from './audiotrack.js';
+import { mountShots } from './shots.js';
 
 const PAD = 14;
 const SIZES = [[1280, 720], [1920, 1080], [3840, 2160], [1080, 1920], [1080, 1080], [1440, 1080]];
@@ -37,7 +38,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
-  const cutBtn = button({ icon: 'cut', label: 'Cut', title: 'Cut at the playhead: this shot ends here and a new one starts on the next frame (X)', onClick: () => cutHere() });
+  const cutBtn = button({ icon: 'cut', label: 'Cut', title: 'Cut at the playhead: the camera holds here and jumps to the next key on the next frame (X)', onClick: () => cutHere() });
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -72,9 +73,10 @@ export function mountTimeline(root, { viewport, exporter }) {
     cutXs: () => cutsOf(liveKeys()).map((c) => c.x), keyXs: () => [...keyXs(liveKeys()).values()],
   });
 
+  const shots = mountShots({ exporter });
   const bar = h('div.tl-bar',
     {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, cutBtn, lensField, keyGroup, objKeyBtn,
-    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
+    h('span.cc-spacer'), shots.btn, audioTrack.btn, shotBtn, exportBtn);
 
   // ---------- track ----------
   const track = h('canvas.tl-track');
@@ -130,7 +132,8 @@ export function mountTimeline(root, { viewport, exporter }) {
   };
 
   const selObj = () => (store.state.selection && store.object(store.state.selection)) || null;
-  const okeys = () => selObj()?.anim || [];
+  // object keys are stored in action time; this shot shows the action from its timeline.start
+  const okeys = () => { const t0 = store.doc.timeline.start || 0; return (selObj()?.anim || []).map((k) => ({ ...k, t: +(k.t - t0).toFixed(3) })); };
   const laneY = () => track.clientHeight - 8; // object keys sit in a lane under the camera keys
   const okeyAt = (x, y) => (y > laneY() - 8 ? okeys().find((k) => Math.abs(xOf(drag?.kind === 'okey' && drag.t0 === k.t ? drag.t : k.t) - x) < 7) : null);
 
@@ -194,7 +197,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       store.op(ops, n > 1 ? `move ${n} keys` : ops.length > 1 ? 'move cut' : 'retime key').catch(() => {});
     } else if (d.kind === 'key' && d.collapse) { selKeys = new Set([d.id]); }
     if (d.kind === 'okey' && d.moved && Math.abs(d.t - d.t0) > 1e-4) {
-      const k = store.object(d.id)?.anim?.find((x) => Math.abs(x.t - d.t0) < 1e-3);
+      const k = okeys().find((x) => Math.abs(x.t - d.t0) < 1e-3);
       if (k) store.op([{ op: 'anim.remove', id: d.id, t: d.t0 }, { op: 'anim.key', id: d.id, t: +d.t.toFixed(3), position: k.position, rotation: k.rotation, scale: k.scale, ease: k.ease }], `retime ${d.id} key`).catch(() => {});
     }
     if (d.kind === 'scrub' && !d.moved && !keyAt(e.offsetX)) { selKeys.clear(); store.set({ key: null }); }
@@ -453,10 +456,12 @@ export function mountTimeline(root, { viewport, exporter }) {
     lensNum.disabled = lensOff;
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
+    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Shots → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
     draw();
     audioTrack.refresh();
     curve.refresh();
     shot.refresh();
+    shots.refresh();
   }
 
   // ---------- curve editor + shot settings ----------
@@ -467,7 +472,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   store.on('doc', refresh);
   store.on('state', refresh);
   new ResizeObserver(draw).observe(track);
-  return { refresh, keyFromView, cutHere, seek, deleteKey, draw, loadAudio: audioTrack.loadFile };
+  return { refresh, keyFromView, cutHere, seek, deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
 }
 
 /** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */

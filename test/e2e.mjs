@@ -437,6 +437,28 @@ try {
   await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
   ok(JSON.stringify(kt()) === JSON.stringify([0, 2]), 'Backspace deletes every selected key');
 
+  // shots: a second camera on the same set, switched from the bar, exported one by one and as a sequence
+  cli('timeline', '--duration', '1', '--fps', '12');
+  ok(/added shot close/.test(cli('shot-add', '--name', 'close')), 'shot-add makes a second shot and switches to it');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
+  ok(/2\/2 close/.test(await page.locator('.tl-shots').textContent()), 'the bar names the active shot');
+  cli('key-set', '0', '--pos', '2,1.5,3', '--target', '0,1,0');
+  cli('timeline', '--shot', 'shot-1', '--duration', '0.5');
+  await page.keyboard.press('BracketLeft');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  ok(JSON.parse(cli('doc')).timeline.duration === 0.5, '[ switches to the previous shot and --shot edited it in place');
+  await page.locator('.tl-shots').click();
+  await page.locator('.shots-item', { hasText: 'close' }).click();
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
+  ok(true, 'clicking a shot in the list switches to it');
+  await page.keyboard.press('Escape');
+  const sq = cli('export', '--sequence', '--width', '160', '--height', '90');
+  ok(/2 shots \(shot-1 6f, close 12f\), 18 frames/.test(sq), `export --sequence cuts every shot together (${sq.split('\n')[1]})`);
+  const one = cli('export', '--shot', 'shot-1', '--width', '160', '--height', '90');
+  ok(/-shot-1-.*\.mp4/.test(one.split('\n')[0]) && /6 frames/.test(one), 'export --shot renders just that shot');
+  cli('shot-rm', 'close');
+  ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
+
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();

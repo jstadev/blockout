@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDoc, applyOps, migrate, PRIMITIVES } from '../core/doc.js';
+import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
 import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut } from '../core/curves.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -278,4 +278,64 @@ test('key.easeAll gives every segment one ease, keeps cuts, and can copy a key',
   assert.deepEqual(ids().map((k) => k.ease), [[0.2, 0, 0.3, 1], 'hold', [0.2, 0, 0.3, 1], 'linear']);
   ({ doc } = applyOps(doc, { op: 'key.easeAll', ease: 'easeIn', cuts: true }));
   assert.deepEqual(ids().slice(0, 3).map((k) => k.ease), ['easeIn', 'easeIn', 'easeIn']);
+});
+
+test('shots: one set, several camera timelines; add copies, use swaps, ops can aim at a shot', () => {
+  let { doc, results } = applyOps(createDoc(), [{ op: 'add', type: 'box', name: 'house' }, { op: 'shot.add', name: 'Close up' }]);
+  assert.equal(results[1].id, 'close-up');
+  assert.equal(doc.shot, 'close-up');
+  assert.deepEqual(doc.shots.map((s) => s.id), ['shot-1', 'close-up']);
+  assert.ok(!doc.shots[1].timeline && doc.shots[0].timeline, 'the active shot keeps its timeline in doc.timeline');
+  ({ doc } = applyOps(doc, [{ op: 'key.clear' }, { op: 'key.add', t: 0, position: [1, 1, 1], target: [0, 1, 0] }, { op: 'timeline', duration: 2 }]));
+  assert.equal(shotTimeline(doc, 'shot-1').keys.length, 2, 'the copy is independent');
+  ({ doc } = applyOps(doc, { op: 'shot.use', id: '1' }));
+  assert.equal(doc.timeline.duration, 5);
+  assert.equal(shotTimeline(doc, 'close-up').duration, 2);
+  // aim an op at another shot without switching
+  ({ doc } = applyOps(doc, { op: 'timeline', fps: 30, shot: 'close-up' }));
+  assert.equal(doc.shot, 'shot-1');
+  assert.equal(doc.timeline.fps, 24);
+  assert.equal(shotTimeline(doc, 'close-up').fps, 30);
+  assert.equal(doc.objects.length, 1, 'objects are shared');
+  // blank, stay, rename, reorder, remove
+  ({ doc } = applyOps(doc, [{ op: 'shot.add', name: 'Reverse', blank: true, switch: false }, { op: 'shot.update', id: 'reverse', name: 'Reverse angle' }]));
+  assert.equal(doc.shot, 'shot-1');
+  assert.deepEqual(shotList(doc).map((s) => s.name), ['Shot 1', 'Reverse angle', 'Close up']);
+  ({ doc } = applyOps(doc, { op: 'shot.move', id: 'reverse', to: 3 }));
+  assert.deepEqual(doc.shots.map((s) => s.id), ['shot-1', 'close-up', 'reverse']);
+  ({ doc } = applyOps(doc, { op: 'shot.remove', id: 'shot-1' }));
+  assert.equal(doc.shot, 'close-up');
+  assert.equal(doc.timeline.duration, 2);
+  ({ doc } = applyOps(doc, { op: 'shot.remove', id: 'reverse' }));
+  assert.throws(() => applyOps(doc, { op: 'shot.remove' }), /at least one shot/);
+  assert.throws(() => applyOps(doc, { op: 'shot.use', id: 'nope' }), /no shot "nope"/);
+});
+
+test('shots: old single-timeline scenes migrate to one shot and shots round-trip', () => {
+  const old = createDoc(); delete old.shots; delete old.shot; old.timeline.duration = 7;
+  const m = migrate(old);
+  assert.deepEqual(m.shots, [{ id: 'shot-1', name: 'Shot 1' }]);
+  assert.equal(m.shot, 'shot-1');
+  assert.equal(m.timeline.duration, 7);
+  const { doc } = applyOps(m, [{ op: 'shot.add', name: 'B' }, { op: 'timeline', duration: 3 }, { op: 'shot.use', id: 'shot-1' }]);
+  const back = migrate(JSON.parse(JSON.stringify(doc)));
+  assert.deepEqual(back, doc);
+  assert.equal(shotTimeline(back, 'b').duration, 3);
+});
+
+test('shots: timeline.start picks up the shared action later; object key ops use shot time', () => {
+  let { doc } = applyOps(createDoc(), [{ op: 'add', type: 'box', name: 'car' }, { op: 'anim.move', id: 'car', to: [10, 0, 0], at: 0, over: 4, ease: 'linear' }]);
+  ({ doc } = applyOps(doc, [{ op: 'shot.add', name: 'later' }, { op: 'timeline', start: 2 }]));
+  const car = doc.objects[0];
+  assert.equal(sampleObject(car, doc.timeline, 0).position[0], 5, 'shot time 0 is action time 2');
+  assert.equal(sampleObject(car, shotTimeline(doc, 'shot-1'), 0).position[0], 0);
+  ({ doc } = applyOps(doc, { op: 'anim.key', id: 'car', t: 1, position: [6, 1, 0] }));
+  assert.ok(doc.objects[0].anim.some((k) => k.t === 3 && k.position[1] === 1), 'stored at action time 3');
+  ({ doc } = applyOps(doc, { op: 'anim.remove', id: 'car', t: 1 }));
+  assert.equal(doc.objects[0].anim.length, 2);
+  // stretching one shot leaves the shared action alone when there are several shots
+  ({ doc } = applyOps(doc, { op: 'timeline', duration: 10, retime: true }));
+  assert.deepEqual(doc.objects[0].anim.map((k) => k.t), [0, 4]);
+  ({ doc } = applyOps(doc, { op: 'timeline', start: 0 }));
+  assert.equal(doc.timeline.start, undefined);
 });

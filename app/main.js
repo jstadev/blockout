@@ -46,7 +46,8 @@ function refreshSel() {
 const SHORTCUTS = [
   ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['W E R', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
   ['Shift D', 'duplicate'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
-  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['X', 'cut at the playhead (new shot on the next frame)'], ['C', 'Free ↔ Shot camera'],
+  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['X', 'cut at the playhead (the camera jumps on the next frame)'], ['C', 'Free ↔ Shot camera'],
+  ['[ ]', 'previous / next shot'], ['Shift N', 'new shot (a copy of this camera, same set)'],
   ['← →', 'step a frame (Shift: 1 s)'], ['Home', 'go to start'], ['/', 'prompt your agent'], ['⌘Z ⇧⌘Z', 'undo / redo'], ['⌘S', 'save / load scenes'],
 ];
 const helpPanel = panel({ title: 'Shortcuts', collapsible: false });
@@ -120,9 +121,11 @@ addEventListener('keydown', (e) => {
     delete: () => (store.state.selection ? removeSelected() : timeline.deleteKey()),
     arrowleft: () => step(e.shiftKey ? -1 : -1 / f), arrowright: () => step(e.shiftKey ? 1 : 1 / f),
     home: () => timeline.seek(0), end: () => timeline.seek(store.doc.timeline.duration),
+    '[': () => timeline.shots.next(-1), ']': () => timeline.shots.next(1),
     '/': () => prompt.focus(), '?': () => { helpPanel.hidden = !helpPanel.hidden; helpBtn.setActive(!helpPanel.hidden); },
   };
   if (e.shiftKey && k === 'd') { e.preventDefault(); return duplicate(); }
+  if (e.shiftKey && k === 'n') { e.preventDefault(); return timeline.shots.add(); }
   const fn = map[k];
   if (fn) { e.preventDefault(); fn(); }
 });
