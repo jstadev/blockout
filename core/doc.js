@@ -458,13 +458,18 @@ export const OPS = {
   // ----- shots: one set, several cameras -----
   /**
    * Add a shot after the current one and switch to it. It starts as a copy of the current shot's camera
-   * and settings (from: another shot to copy instead; blank: true for the default two-key move).
+   * and settings (from: another shot to copy instead; blank: true for the default two-key move), and picks
+   * up the action where the current shot ends (start: another action time, e.g. 0 for coverage).
    * switch: false keeps the current shot active.
    */
   'shot.add'(doc, op) {
     const src = op.blank ? createDoc().timeline : shotTimeline(doc, op.from ?? doc.shot);
     const tl = clone(src);
     if (op.blank) { tl.fps = doc.timeline.fps; }
+    // it picks up the action where the current shot ends (start: to choose another moment)
+    const st = op.start != null ? Number(op.start) : (doc.timeline.start || 0) + doc.timeline.duration;
+    if (!(st >= 0 && st <= 3600)) throw new Error('start must be 0–3600 s');
+    if (st) tl.start = round(st); else delete tl.start;
     const n = doc.shots.length + 1;
     const taken = new Set(doc.shots.map((s) => s.id));
     let id = op.id || op.name ? slug(op.id || op.name) : `shot-${n}`;

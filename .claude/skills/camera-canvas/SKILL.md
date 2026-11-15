@@ -178,9 +178,10 @@ canvas export --sequence                      # every shot in order, cut togethe
 
 - The user asks for "another angle", "a close-up of this", "cut to", "coverage": add a shot rather than
   a hold-cut, unless they want one continuous clip.
-- Object moves are in **action time**, shared by every shot. By default every shot shows the action from
-  0 (coverage: each angle plays the whole action). For a sequence that continues the action across cuts,
-  set each later shot's `--start` to where the previous one ends (shot 1 is 3 s long → shot 2 `--start 3`).
+- Object moves are in **action time**, shared by every shot. A new shot picks up the action where the
+  current one ends (shot 1 is 0–3 s → the new shot starts at 3 s), so a sequence continues across cuts.
+  For coverage of the same moment from another angle, use `shot-add --start 0` (or the start you want);
+  `shot-set <id> --start s` changes it later.
   `move`, `okey` and `okey-rm` take shot time (like the playhead); `ls` prints object keys in action time.
 - Stretching a shot with `timeline --duration --retime` only stretches that shot's camera keys when there
   are several shots (the shared action keeps its timing).

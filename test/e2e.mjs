@@ -448,6 +448,9 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking another shot\'s row switches to it');
   // now close is the inactive second row (top 16 + 40 + 2): drag it sideways so it picks up the action later
+  ok(JSON.parse(cli('doc')).shots.find((x) => x.id === 'close').timeline.start === 1, 'the new shot picks up the action where the first one ends');
+  cli('shot-set', 'close', '--start', '0');
+  await page.waitForFunction(() => !window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start);
   const ry = tr.y + 16 + 40 + 2 + 10;
   await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
   await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();

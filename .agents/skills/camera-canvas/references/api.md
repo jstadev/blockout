@@ -56,7 +56,7 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `key.clear` | | `{ removed }` |
 | `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
 | `audio` | `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (s on the timeline where the audio starts; negative skips into it), `volume` (0–4), `muted`, `length` (set by the tab), `fit` (duration = length + offset), `clear` | `{ audio, duration }` |
-| `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true). Inserted after the active shot | `{ id, name, shots, active }` |
+| `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends). Inserted after the active shot | `{ id, name, shots, active }` |
 | `shot.use` | `id` (id, name or 1-based position) — make it the active shot | `{ id, name }` |
 | `shot.update` | `id?` (default active), `name` | `{ id, name }` |
 | `shot.move` | `id?`, `to` (1-based position in the sequence) | `{ id, order }` |

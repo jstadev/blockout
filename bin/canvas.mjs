@@ -56,9 +56,11 @@ Shots (one set, several cameras: objects and their moves are shared, each shot h
 timeline, length, fps and audio; camera, timeline and render commands work on the active shot)
   canvas shots                              list the shots in sequence order (* = active)
   canvas shot <id|name|n>                   switch to a shot (the user's timeline follows)
-  canvas shot-add [--name n] [--from id] [--blank] [--stay]
+  canvas shot-add [--name n] [--from id] [--blank] [--stay] [--start s]
                                             new shot after the current one, copying its camera (or --from
-                                            another shot; --blank: a fresh two-key move), then switch to it
+                                            another shot; --blank: a fresh two-key move), then switch to it.
+                                            It picks up the action where the current shot ends (--start 0:
+                                            from the beginning, for coverage of the same moment)
   canvas shot-set [id] [--name n] [--to n] [--start s]   rename, move to position n in the sequence, or set
                                             where the shot picks up the action (s seconds into the object moves)
   canvas shot-rm <id>                       delete a shot (not the last one)
@@ -403,6 +405,7 @@ const commands = {
     if (flags.from != null) o.from = String(flags.from);
     if (flags.blank) o.blank = true;
     if (flags.stay) o.switch = false;
+    if (flags.start != null) o.start = num(flags.start);
     const r = (await op(o, 'new shot')).results[0];
     out(`added shot ${r.id} "${r.name}" (${r.shots} shots, active: ${r.active})`);
   },

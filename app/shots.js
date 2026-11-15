@@ -21,7 +21,7 @@ export function mountShots({ exporter, anchor }) {
   const add = async () => {
     store.set({ playing: false, key: null });
     const r = await op({ op: 'shot.add' }, 'new shot');
-    if (r) { store.set({ camDirty: false, time: 0 }); toast(`${r[0].name}: a copy of the last camera. Frame it and press K`); }
+    if (r) { store.set({ camDirty: false, time: 0 }); toast(`${r[0].name} picks up the action where the last shot ended, with a copy of its camera. Frame it and press K`); }
   };
 
   // ---------- bar buttons ----------

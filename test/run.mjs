@@ -325,7 +325,9 @@ test('shots: old single-timeline scenes migrate to one shot and shots round-trip
 
 test('shots: timeline.start picks up the shared action later; object key ops use shot time', () => {
   let { doc } = applyOps(createDoc(), [{ op: 'add', type: 'box', name: 'car' }, { op: 'anim.move', id: 'car', to: [10, 0, 0], at: 0, over: 4, ease: 'linear' }]);
-  ({ doc } = applyOps(doc, [{ op: 'shot.add', name: 'later' }, { op: 'timeline', start: 2 }]));
+  ({ doc } = applyOps(doc, { op: 'shot.add', name: 'next' }));
+  assert.equal(doc.timeline.start, 5, 'a new shot picks up the action where the current one ends');
+  ({ doc } = applyOps(doc, [{ op: 'shot.remove' }, { op: 'shot.add', name: 'later', start: 0 }, { op: 'timeline', start: 2 }]));
   const car = doc.objects[0];
   assert.equal(sampleObject(car, doc.timeline, 0).position[0], 5, 'shot time 0 is action time 2');
   assert.equal(sampleObject(car, shotTimeline(doc, 'shot-1'), 0).position[0], 0);
