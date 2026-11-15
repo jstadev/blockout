@@ -100,14 +100,16 @@ With a key selected: its ease, lens (mm), "set to current view" and delete. The 
 the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
-**Shots:** one set can have several cameras. The Shots button in the timeline bar lists them in
-sequence order: click one to switch, **+** adds a shot that starts as a copy of this camera, and the
-active shot can be renamed, moved, deleted or set to pick up the action later (**Action from**). The
+**Shots:** one set can have several cameras. The sequence strip above the key track shows them end to
+end, each as wide as it is long: click a block to edit that shot, drag to reorder, double-click to
+rename, **+** adds a shot that starts as a copy of this camera, and the layers button (**Play all**)
+plays on through the cuts. Click the active block to delete it, set where it picks up the action
+(**Action from**) or **Export all**. The
 set, the people and their moves are shared, so moving a prop updates every shot; each shot has its
 own keys, length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add` and `--shot`.
 
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
-the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** in the Shots menu (or
+the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** (click the active shot's block, or
 `canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
 
 ## Saving and loading

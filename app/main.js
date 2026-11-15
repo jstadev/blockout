@@ -209,7 +209,7 @@ refreshSel();
 
 // ---------- frame loop ----------
 // While the audio track plays, time comes from the audio clock so picture and sound stay locked.
-let last = performance.now(), lastT = null;
+let last = performance.now(), lastT = null, switching = false;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -217,9 +217,13 @@ function frame(now) {
     const D = store.doc.timeline.duration;
     if (lastT !== null && Math.abs(store.state.time - lastT) > 1e-6) audio.play(store.state.time); // seeked while playing
     let t = audio.now() ?? store.state.time + dt;
-    if (t >= D) { if (store.state.loop) { t %= D; audio.play(t); } else { t = D; store.set({ playing: false }); } }
-    store.set({ time: t, camDirty: false });
-    lastT = t;
+    if (t >= D && store.state.playAll && store.doc.shots.length > 1) {
+      // Play all: hold the last frame while the next shot comes in, then carry on from its start
+      t = D;
+      if (!switching) { switching = true; audio.stop(); timeline.shots.playOn().then((on) => { if (!on) store.set({ playing: false }); }).finally(() => { switching = false; }); }
+    } else if (t >= D) { if (store.state.loop) { t %= D; audio.play(t); } else { t = D; store.set({ playing: false }); } }
+    if (!switching) store.set({ time: t, camDirty: false });
+    lastT = store.state.time;
   } else lastT = null;
   viewport.tick();
   requestAnimationFrame(frame);

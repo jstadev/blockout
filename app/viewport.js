@@ -188,7 +188,9 @@ export class Viewport {
     if (store.state.view === 'shot' && store.doc) {
       const A = store.doc.meta.width / store.doc.meta.height;
       const right = store.state.chat ? SAFE.chat : SAFE.side;
-      const aw = W - SAFE.side - right, ah = H - SAFE.top - SAFE.bottom;
+      const tl = document.getElementById('timeline'); // the timeline grows with the audio lane
+      const bottom = tl ? Math.max(SAFE.bottom, innerHeight - tl.getBoundingClientRect().top + 12) : SAFE.bottom;
+      const aw = W - SAFE.side - right, ah = H - SAFE.top - bottom;
       if (aw / ah > A) { h = ah; w = ah * A; } else { w = aw; h = aw / A; }
       x = SAFE.side + (aw - w) / 2; y = SAFE.top + (ah - h) / 2;
     }

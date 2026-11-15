@@ -76,11 +76,11 @@ export function mountTimeline(root, { viewport, exporter }) {
   const shots = mountShots({ exporter });
   const bar = h('div.tl-bar',
     {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, cutBtn, lensField, keyGroup, objKeyBtn,
-    h('span.cc-spacer'), shots.btn, audioTrack.btn, shotBtn, exportBtn);
+    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
 
   // ---------- track ----------
   const track = h('canvas.tl-track');
-  root.append(bar, track, audioTrack.lane);
+  root.append(bar, shots.strip, track, audioTrack.lane);
   const ctx = track.getContext('2d');
   let drag = null; // { kind: 'key'|'okey'|'scrub', id, t, moved }; a key drag moves every selected key
   // Selected camera keys. store.state.key is the primary one (its ease, lens, time show in the bar);
@@ -456,7 +456,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     lensNum.disabled = lensOff;
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
-    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Shots → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
+    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Click the shot\'s block → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
     draw();
     audioTrack.refresh();
     curve.refresh();
