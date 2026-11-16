@@ -658,12 +658,14 @@ export function mountTimeline(root, { viewport, exporter }) {
 
 /** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */
 function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
-  const W = 260, H = 170, M = 18;
+  // canvas layout: the curve on top, a speed strip under it, sharing one time axis
+  const W = 276, H = 184, L = 18, R = W - 10, T = 10, CB = 124, ST = 136, SB = H - 6;
   const cv = h('canvas.curve-canvas', { width: W * 2, height: H * 2, style: { width: `${W}px`, height: `${H}px` } });
   const ctx = cv.getContext('2d');
   let mode = 'segment';
   const tabs = segmented({ options: [{ value: 'segment', label: 'Segment', title: 'Ease between two keys' }, { value: 'speed', label: 'Shot speed', title: 'Time remap across the whole shot' }], value: mode, onChange: (v) => { mode = v; onToggle?.(api.open, mode); refresh(); } });
   const title = h('span.cc-label.cc-mono');
+  const nameEl = h('span.curve-name');
   const presets = h('div.curve-presets');
   const help = h('div.curve-help.cc-label');
   const closeBtn = button({ icon: 'close', kind: 'ghost', title: 'Close', onClick: () => toggle(false) });
@@ -675,17 +677,35 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
       .then((res) => toast(`${easeName(tg.ease)} on ${res[0].updated} segments`)).catch(() => {});
   } });
   allBtn.classList.add('curve-all');
-  const pop = h('div.cc-panel.curve-pop', { hidden: true }, h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn), title, cv, presets, allBtn, help);
+  const pop = h('div.cc-panel.curve-pop', { hidden: true },
+    h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn),
+    h('div.cc-row.curve-head', {}, title, nameEl),
+    cv, presets, allBtn, help);
   root.append(pop);
 
-  let live = null;   // bezier being dragged
-  let dragging = -1; // handle index
+  let live = null;    // bezier being dragged
+  let dragging = -1;  // handle index being dragged
+  let hover = -1;     // handle index under the pointer
+  let preview = null; // preset name under the pointer, drawn as a ghost
+  let lo = 0, hi = 1; // visible progress range; grows past [0, 1] only when the curve does
   const api = { open: false, toggle, refresh };
 
-  const toX = (x) => M + x * (W - 2 * M);
-  const toY = (y) => H - M - ((y + 0.25) / 1.5) * (H - 2 * M); // y range [-0.25, 1.25]
-  const fromX = (px) => Math.min(1, Math.max(0, (px - M) / (W - 2 * M)));
-  const fromY = (py) => Math.min(1.6, Math.max(-0.6, ((H - M - py) / (H - 2 * M)) * 1.5 - 0.25));
+  const toX = (x) => L + x * (R - L);
+  const toY = (y) => CB - ((y - lo) / (hi - lo)) * (CB - T);
+  const fromX = (px) => Math.min(1, Math.max(0, (px - L) / (R - L)));
+  const fromY = (py) => Math.min(1.6, Math.max(-0.6, lo + ((CB - py) / (CB - T)) * (hi - lo)));
+
+  /** Fit the vertical range to the curve and its handles. While dragging it only grows, so the view never jumps under the pointer. */
+  function fit(b) {
+    let mn = 0, mx = 1;
+    if (b !== 'hold') {
+      mn = Math.min(mn, b[1], b[3]); mx = Math.max(mx, b[1], b[3]);
+      for (let i = 0; i <= 40; i++) { const y = bezier(b, i / 40); mn = Math.min(mn, y); mx = Math.max(mx, y); }
+    }
+    const pad = 0.07 * (mx - mn);
+    const nlo = mn - pad, nhi = mx + pad;
+    if (dragging >= 0) { lo = Math.min(lo, nlo); hi = Math.max(hi, nhi); } else { lo = nlo; hi = nhi; }
+  }
 
   function target() {
     const tl = store.doc.timeline;
@@ -705,83 +725,155 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     else { store.set({ key: tg.key.id }); updateKey({ ease }); }
   }
 
+  const curvePath = (b) => {
+    ctx.beginPath();
+    if (b === 'hold') { ctx.moveTo(toX(0), toY(0)); ctx.lineTo(toX(1), toY(0)); ctx.lineTo(toX(1), toY(1)); return; }
+    for (let i = 0; i <= 100; i++) { const u = i / 100; const y = bezier(b, u); i ? ctx.lineTo(toX(u), toY(y)) : ctx.moveTo(toX(u), toY(y)); }
+  };
+
   function draw() {
     const tg = target();
     ctx.setTransform(2, 0, 0, 2, 0, 0);
     ctx.clearRect(0, 0, W, H);
     const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-    const line = css('--cc-line'), text = css('--cc-text'), accent = css('--cc-accent'), faint = css('--cc-text-faint');
-    ctx.strokeStyle = line; ctx.lineWidth = 1;
-    ctx.strokeRect(toX(0), toY(1), toX(1) - toX(0), toY(0) - toY(1));
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath(); ctx.moveTo(toX(0), toY(0)); ctx.lineTo(toX(1), toY(1)); ctx.stroke();
-    ctx.setLineDash([]);
-    if (!tg) { ctx.fillStyle = faint; ctx.font = '11px sans-serif'; ctx.fillText('Add a second key to ease between them', 30, H / 2); return; }
-    const b = live || resolveEase(tg.ease);
+    const line = css('--cc-line'), strong = css('--cc-line-strong'), text = css('--cc-text'), accent = css('--cc-accent'), faint = css('--cc-text-faint');
+    const surface = css('--cc-surface-solid');
+    const font = (px) => `${px}px ${css('--cc-font') || 'sans-serif'}`;
+    const b = tg ? (live || resolveEase(tg.ease)) : 'hold';
+    fit(tg ? b : 'linear');
 
-    // speed (velocity) plot, filled
-    if (b !== 'hold') {
-      let maxS = 1;
-      for (let i = 0; i <= 60; i++) maxS = Math.max(maxS, bezierSpeed(b, i / 60));
-      ctx.fillStyle = accent; ctx.globalAlpha = 0.1; ctx.beginPath(); ctx.moveTo(toX(0), toY(-0.25));
-      for (let i = 0; i <= 60; i++) { const u = i / 60; ctx.lineTo(toX(u), toY(-0.25) - (bezierSpeed(b, u) / maxS) * (toY(-0.25) - toY(0.6))); }
-      ctx.lineTo(toX(1), toY(-0.25)); ctx.fill(); ctx.globalAlpha = 1;
-      ctx.fillStyle = faint; ctx.font = '9px sans-serif'; ctx.fillText('speed', toX(0) + 3, toY(-0.25) - 3);
+    // grid: quarter-time verticals through curve and strip, the 0 and 1 progress lines
+    ctx.strokeStyle = line; ctx.lineWidth = 1;
+    for (const x of [0.25, 0.5, 0.75]) { ctx.beginPath(); ctx.moveTo(toX(x) + 0.5, T); ctx.lineTo(toX(x) + 0.5, SB); ctx.stroke(); }
+    ctx.strokeStyle = strong;
+    for (const y of [0, 1]) { ctx.beginPath(); ctx.moveTo(L, Math.round(toY(y)) + 0.5); ctx.lineTo(R, Math.round(toY(y)) + 0.5); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(L, SB + 0.5); ctx.lineTo(R, SB + 0.5); ctx.stroke();
+    // axis hints
+    ctx.fillStyle = faint; ctx.font = font(9);
+    ctx.save(); ctx.translate(L - 6, (toY(0) + toY(1)) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('progress →', 0, 0); ctx.restore();
+    if (!tg) { ctx.fillStyle = faint; ctx.font = font(11); ctx.textAlign = 'center'; ctx.fillText('Add a second key to ease between them', W / 2, (T + CB) / 2); ctx.textAlign = 'left'; return; }
+
+    // linear reference, then the hovered preset as a ghost
+    ctx.strokeStyle = line; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(toX(0), toY(0)); ctx.lineTo(toX(1), toY(1)); ctx.stroke();
+    if (preview && !live && easeName(tg.ease) !== preview) {
+      ctx.strokeStyle = accent; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5; curvePath(resolveEase(preview)); ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
     }
+    ctx.setLineDash([]);
+
     // curve
-    ctx.strokeStyle = text; ctx.lineWidth = 2; ctx.beginPath();
-    for (let i = 0; i <= 100; i++) { const u = i / 100; const y = bezier(b, u); i ? ctx.lineTo(toX(u), toY(y)) : ctx.moveTo(toX(u), toY(y)); }
-    ctx.stroke(); ctx.lineWidth = 1;
-    if (b === 'hold') return;
-    // handles
-    const hs = [[b[0], b[1], 0, 0], [b[2], b[3], 1, 1]];
-    for (const [x, y, ax, ay] of hs) {
-      ctx.strokeStyle = accent; ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(x), toY(y)); ctx.stroke();
-      ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(toX(x), toY(y), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = text; ctx.lineWidth = 2; ctx.lineJoin = 'round'; curvePath(b); ctx.stroke(); ctx.lineWidth = 1;
+    ctx.fillStyle = text;
+    for (const [x, y] of [[0, 0], [1, 1]]) { ctx.beginPath(); ctx.arc(toX(x), toY(y), 2.5, 0, Math.PI * 2); ctx.fill(); }
+
+    // speed strip: how fast the camera moves along its path, 1× = linear
+    ctx.fillStyle = faint; ctx.font = font(9); ctx.textAlign = 'right'; ctx.fillText('time →', R, ST + 8); ctx.textAlign = 'left';
+    if (b === 'hold') { ctx.fillText('speed · holds, then cuts', L + 3, ST + 8); }
+    else {
+      const N = 80, sp = [];
+      let mx = 0, mn = 0;
+      for (let i = 0; i <= N; i++) { const s = bezierSpeed(b, i / N); sp.push(s); mx = Math.max(mx, s); mn = Math.min(mn, s); }
+      const top = Math.max(2, mx), sy = (s) => SB - ((s - mn) / (top - mn)) * (SB - ST - 10);
+      ctx.beginPath(); ctx.moveTo(toX(0), sy(0));
+      sp.forEach((s, i) => ctx.lineTo(toX(i / N), sy(s)));
+      ctx.lineTo(toX(1), sy(0)); ctx.closePath();
+      ctx.fillStyle = accent; ctx.globalAlpha = 0.14; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath(); sp.forEach((s, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, toX(i / N), sy(s)));
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.25; ctx.stroke(); ctx.lineWidth = 1;
+      ctx.strokeStyle = line; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(L, sy(1)); ctx.lineTo(R, sy(1)); ctx.stroke(); ctx.setLineDash([]);
+      if (mn < 0) { ctx.strokeStyle = strong; ctx.beginPath(); ctx.moveTo(L, sy(0) + 0.5); ctx.lineTo(R, sy(0) + 0.5); ctx.stroke(); }
+      ctx.fillStyle = faint; ctx.fillText(`speed · peak ${mx.toFixed(1)}×${mn < -0.01 ? ' · backs up' : ''}`, L + 3, ST + 8);
     }
+    if (b === 'hold') return;
+
+    // handles: arm from its end point, hollow when idle, filled when hovered or dragged
+    [[b[0], b[1], 0, 0], [b[2], b[3], 1, 1]].forEach(([x, y, ax, ay], i) => {
+      const on = i === hover || i === dragging;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.25;
+      ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(x), toY(y)); ctx.stroke();
+      ctx.beginPath(); ctx.arc(toX(x), toY(y), on ? 6 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = on ? accent : surface; ctx.fill(); ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+    });
   }
 
   const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  cv.addEventListener('pointerdown', (e) => {
-    const tg = target(); if (!tg) return;
-    const b = resolveEase(tg.ease); if (b === 'hold') return;
+  const nearest = (e) => {
+    const tg = target(); if (!tg) return -1;
+    const b = resolveEase(tg.ease); if (b === 'hold') return -1;
     const [x, y] = pos(e);
     const d0 = Math.hypot(toX(b[0]) - x, toY(b[1]) - y), d1 = Math.hypot(toX(b[2]) - x, toY(b[3]) - y);
-    dragging = d0 < d1 ? 0 : 1;
-    if (Math.min(d0, d1) > 24) { dragging = -1; return; }
-    live = [...b];
+    return Math.min(d0, d1) > 16 ? -1 : d0 < d1 ? 0 : 1;
+  };
+  cv.addEventListener('pointerdown', (e) => {
+    const i = nearest(e); if (i < 0) return;
+    dragging = i; live = [...resolveEase(target().ease)];
     cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = 'grabbing';
+    draw();
   });
   cv.addEventListener('pointermove', (e) => {
-    if (dragging < 0) return;
+    if (dragging < 0) {
+      const i = nearest(e);
+      if (i !== hover) { hover = i; cv.style.cursor = i < 0 ? '' : 'grab'; draw(); }
+      return;
+    }
     const [x, y] = pos(e);
     live[dragging * 2] = +fromX(x).toFixed(3);
     live[dragging * 2 + 1] = +fromY(y).toFixed(3);
+    showName();
     draw();
   });
-  cv.addEventListener('pointerup', () => {
+  cv.addEventListener('pointerleave', () => { if (dragging < 0 && hover >= 0) { hover = -1; draw(); } });
+  cv.addEventListener('pointerup', (e) => {
     if (dragging < 0) return;
     dragging = -1;
     const b = live; live = null;
+    showName();
+    hover = nearest(e); cv.style.cursor = hover < 0 ? '' : 'grab';
     const name = easeName(b);
     commit(name !== 'custom' ? name : b);
   });
+
+  const showName = () => {
+    const tg = target();
+    const current = tg ? easeName(tg.ease) : '';
+    // while dragging: the bezier numbers; hovering a preset: its name; otherwise the current ease
+    nameEl.classList.toggle('cc-mono', !!live);
+    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : preview && preview !== current ? preview : current;
+    nameEl.classList.toggle('is-preview', !live && !!preview && preview !== current);
+  };
 
   function refresh() {
     if (!api.open || !store.doc) return;
     const tg = target();
     title.textContent = tg ? tg.label : '';
     const current = tg ? easeName(tg.ease) : '';
-    changed(presets, [mode, current], () => presets.replaceChildren(...Object.keys(EASES).filter((k) => !(mode === 'speed' && k === 'hold')).map((k) =>
-      button({ label: k, kind: 'ghost', active: k === current, onClick: () => commit(k) }))));
+    // a grid of curve thumbnails; the last cell holds a custom curve when there is one
+    const names = Object.keys(EASES).filter((k) => !(mode === 'speed' && k === 'hold'));
+    // rebuilding removes the hovered button without a pointerleave, so drop its preview
+    changed(presets, [mode, current, current === 'custom' ? tg.ease : null], () => (preview = null, presets.replaceChildren(
+      ...names.map((k) => h('button.cc-btn.cc-btn--ghost.curve-preset', {
+        type: 'button', title: k, 'aria-label': k, html: easeSvg(k, 18),
+        class: k === current ? 'is-active' : null,
+        onClick: () => commit(k),
+        onPointerenter: () => { preview = k; showName(); draw(); },
+        onPointerleave: () => { if (preview === k) { preview = null; showName(); draw(); } },
+      })),
+      h('button.cc-btn.cc-btn--ghost.curve-preset', {
+        type: 'button', title: current === 'custom' ? 'custom (drag the handles)' : 'Drag the handles for a custom curve',
+        'aria-label': 'custom', disabled: current !== 'custom',
+        class: current === 'custom' ? 'is-active' : 'is-empty',
+        html: current === 'custom' ? easeSvg(tg.ease, 18) : '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><path d="M2 13C7 13 9 3 14 3"/></svg>',
+      }))));
+    showName();
     // only worth offering when another segment would change
     const ks = keys(), cur = tg?.ease;
     const others = tg?.kind === 'segment' ? ks.slice(0, -1).filter((k) => k !== tg.key && !isCut(k)) : [];
     allBtn.hidden = !others.length || isCut(tg.key);
     allBtn.disabled = others.every((k) => JSON.stringify(k.ease) === JSON.stringify(cur));
     help.textContent = mode === 'speed'
-      ? 'Remaps time across the whole shot: ease-in starts slow and ends fast. Applied on top of each segment ease.'
-      : 'How the camera travels between the two keys. The shaded area is its speed. Drag the orange handles.';
+      ? 'Remaps time across the whole shot, on top of each segment ease.'
+      : 'Drag the orange handles. The strip shows how fast the camera moves.';
     draw();
   }
 
@@ -789,6 +881,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     if (on === undefined) on = !(api.open && (!m || m === mode));
     if (m) { mode = m; tabs.value = m; }
     api.open = on; pop.hidden = !on; onToggle?.(on, mode);
+    if (!on) preview = null;
     if (on && anchor) {
       const a = mode === 'speed' ? null : anchor();
       const r = a && a.offsetParent ? a.getBoundingClientRect() : null;
