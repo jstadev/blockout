@@ -5,12 +5,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { buildGeometry } from './geometry.js';
-import { isCut, sampleCamera, sampleObject } from '/core/curves.js';
+import { isCut, sampleCamera, sampleObject, fovToLens, lensToFov } from '/core/curves.js';
 import { store } from './store.js';
 
 const DEG = Math.PI / 180;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const ACCENT = new THREE.Color('#ff5a1f');
+const LENS = { min: 8, max: 300 }; // mm, the same range as the timeline's lens field
 const SAFE = { top: 52, bottom: 124, side: 16, chat: 364 }; // keep the shot frame clear of the floating UI
 
 export class Viewport {
@@ -37,6 +38,7 @@ export class Viewport {
     this._buildGizmo();
     this._buildShotHelpers();
     this._bindPicking();
+    this._bindLensWheel();
 
     this.layout();
     addEventListener('resize', () => this.layout());
@@ -176,6 +178,39 @@ export class Viewport {
     // On macOS Ctrl-click also fires a context menu: suppress it over the canvas.
     this.canvas.addEventListener('contextmenu', (e) => { if (e.ctrlKey) e.preventDefault(); });
     this.canvas.addEventListener('dblclick', () => { if (store.state.selection) this.frame(store.state.selection); });
+  }
+
+  // Ctrl/Cmd + scroll (and trackpad pinch, which browsers send as ctrl + wheel) changes the focal length
+  // instead of dollying. It edits what the timeline's lens field edits: in free view the work camera's
+  // lens, plus the selected key's (one undo step per gesture); in shot view it hand-frames the shot
+  // camera like orbit and scroll do there, so press K to key it.
+  _bindLensWheel() {
+    let commit = null;
+    this.canvas.addEventListener('wheel', (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // keep OrbitControls from also zooming
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      // ~8% per mouse-wheel notch; pinch sends many small deltas, so it scales smoothly
+      const step = Math.max(-0.08, Math.min(0.08, dy * 0.01));
+      const cam = this.activeCam;
+      const mm = Math.max(LENS.min, Math.min(LENS.max, fovToLens(cam.fov) * Math.exp(-step)));
+      const fov = +lensToFov(mm).toFixed(3);
+      if (Math.abs(fov - cam.fov) < 1e-3) return;
+      if (store.state.view === 'shot') {
+        if (store.state.playing) store.set({ playing: false });
+        cam.fov = fov; cam.updateProjectionMatrix();
+        store.set({ camDirty: true });
+      } else {
+        this.setFreeFov(fov);
+        const id = store.state.key;
+        if (id) {
+          clearTimeout(commit);
+          commit = setTimeout(() => store.op({ op: 'key.update', id, fov: +this.freeCam.fov.toFixed(3) }, 'edit key').catch(() => {}), 250);
+        }
+      }
+      store.emit('state', { lens: true }); // refresh the lens field
+    }, { capture: true, passive: false });
   }
 
   get activeCam() { return store.state.view === 'shot' ? this.shotCam : this.freeCam; }

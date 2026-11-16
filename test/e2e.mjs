@@ -233,6 +233,31 @@ try {
   const keyFov = JSON.parse(cli('doc')).timeline.keys[0].fov;
   ok(Math.abs((await page.evaluate(() => window.canvas.viewport.freeCam.fov)) - keyFov) < 0.01, 'selecting a key puts the free view on its lens');
 
+  // Ctrl/Cmd + scroll changes the lens instead of dollying: free view + selected key, then shot view
+  const mid = await page.evaluate(() => { const r = window.canvas.viewport.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await page.mouse.move(mid.x, mid.y);
+  const posBefore = await page.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
+  const fovBefore = await page.evaluate(() => window.canvas.viewport.freeCam.fov);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(500);
+  const fovZoom = await page.evaluate(() => window.canvas.viewport.freeCam.fov);
+  const posZoom = await page.evaluate(() => window.canvas.viewport.freeCam.position.toArray());
+  ok(fovZoom < fovBefore - 0.5 && posZoom.every((v, i) => Math.abs(v - posBefore[i]) < 1e-6), `ctrl+scroll up narrows the free view lens without dollying (${fovBefore.toFixed(1)}° -> ${fovZoom.toFixed(1)}°)`);
+  ok(Math.abs(JSON.parse(cli('doc')).timeline.keys[0].fov - fovZoom) < 0.01, 'ctrl+scroll in free view also sets the selected key lens');
+  cli('seek', '0'); cli('view', 'shot');
+  await page.waitForTimeout(200);
+  const shotFov0 = await page.evaluate(() => window.canvas.viewport.shotCam.fov);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, 100);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  const st = await page.evaluate(() => ({ f: window.canvas.viewport.shotCam.fov, dirty: window.canvas.store.state.camDirty }));
+  ok(st.f > shotFov0 + 0.5 && st.dirty, 'ctrl+scroll in shot view widens the shot camera and marks it to key');
+  cli('seek', '0'); cli('view', 'free');
+  await page.waitForTimeout(200);
+
   // orchestration helpers: scoped batches, per-area listing, snapshots from the agent's own camera
   const fsx = await import('node:fs');
   const scoped = path.join(dir, 'scoped.json');
