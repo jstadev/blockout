@@ -15,7 +15,9 @@ export function mountPrompt(root, { viewport, corner }) {
   const selEl = h('span.cc-mono.chat-sel');
   const newBtn = button({ icon: 'compose', kind: 'ghost', title: 'New chat: clear this conversation', onClick: () => newChat() });
   newBtn.classList.add('chat-new');
-  const head = h('div.chat-head', {}, dot, statusText, h('span.cc-spacer'), selEl, newBtn);
+  const pastBtn = button({ icon: 'history', kind: 'ghost', title: 'Past chats', onClick: () => (view === 'current' ? showList() : showCurrent()) });
+  pastBtn.classList.add('chat-past-btn');
+  const head = h('div.chat-head', {}, dot, statusText, h('span.cc-spacer'), selEl, pastBtn, newBtn);
 
   // ---------- thread ----------
   const thread = h('div.chat-thread', { role: 'log', 'aria-live': 'polite' });
@@ -92,7 +94,10 @@ export function mountPrompt(root, { viewport, corner }) {
   const tray = h('div.chat-tray', { hidden: true });
   const composer = h('div.chat-composer', {}, h('div.chat-input-row', {}, h('div.chat-input-col', {}, tray, input), attachBtn, send), fileInput);
 
-  const panel = h('section.cc-panel.chat', { 'aria-label': 'Chat with your agent' }, head, thread, composer);
+  // Past chats: "New chat" archives the conversation on the server; this view lists them and reads one back.
+  const past = h('div.chat-past', { hidden: true });
+
+  const panel = h('section.cc-panel.chat', { 'aria-label': 'Chat with your agent' }, head, thread, past, composer);
   root.append(panel);
 
   // one sidebar toggle in the top-right menu: outline when closed, filled when open.
@@ -196,6 +201,7 @@ export function mountPrompt(root, { viewport, corner }) {
     if (attachments.some((a) => a.pending)) return;
     const imgs = readyImages();
     if (!text && !imgs.length) return;
+    if (view !== 'current') showCurrent();
     const sent = attachments;
     input.value = ''; attachments = []; renderTray();
     const res = await store.post('/api/prompt', { text, images: imgs.map((a) => a.file), context: context() });
@@ -239,6 +245,25 @@ export function mountPrompt(root, { viewport, corner }) {
     return h('span.chat-meta.is-stale', {}, 'no reply yet');
   }
 
+  // One of your messages: its images, its text and (in the open chat) its status.
+  function fillPrompt(el, p, st = null) {
+    el.title = [p.at ? time(p.at) : '', ctxLine(p.context)].filter(Boolean).join(' · ');
+    const imgs = (p.images || []).map((im) => h('a.chat-img', { href: im.url, target: '_blank', rel: 'noopener', title: 'Open image' }, h('img', { src: im.url, alt: '', loading: 'lazy' })));
+    el.replaceChildren(
+      ...(imgs.length ? [h('div.chat-imgs', {}, ...imgs)] : []),
+      ...(p.text ? [h('div.chat-bubble', {}, p.text)] : []),
+      ...(st ? [h('div.chat-foot', {}, st)] : []));
+    return el;
+  }
+  function agentEl(m) {
+    const cls = ['chat-msg', 'chat-msg--agent'];
+    if (m.kind === 'error') cls.push('is-error');
+    if (m.kind === 'working') cls.push('is-working');
+    return h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` }, h('div.chat-text', {}, m.text));
+  }
+  // Prompts and replies in the order they happened.
+  const merge = (ps = [], ms = []) => [...ps.map((p) => ({ at: p.at, p })), ...ms.map((m) => ({ at: m.at, m }))].sort((a, b) => a.at - b.at);
+
   function renderPrompt(p) {
     let el = items.get(p.id);
     const stick = nearEnd();
@@ -248,13 +273,7 @@ export function mountPrompt(root, { viewport, corner }) {
       thread.append(el);
     }
     el.dataset.status = p.status;
-    const st = statusEl(p);
-    el.title = [p.at ? time(p.at) : '', ctxLine(p.context)].filter(Boolean).join(' · ');
-    const imgs = (p.images || []).map((im) => h('a.chat-img', { href: im.url, target: '_blank', rel: 'noopener', title: 'Open image' }, h('img', { src: im.url, alt: '', loading: 'lazy' })));
-    el.replaceChildren(
-      ...(imgs.length ? [h('div.chat-imgs', {}, ...imgs)] : []),
-      ...(p.text ? [h('div.chat-bubble', {}, p.text)] : []),
-      ...(st ? [h('div.chat-foot', {}, st)] : []));
+    fillPrompt(el, p, statusEl(p));
     empty.remove();
     if (stick) scrollToEnd();
   }
@@ -274,11 +293,7 @@ export function mountPrompt(root, { viewport, corner }) {
 
   function renderMessage(m, live = true) {
     const stick = nearEnd();
-    const cls = ['chat-msg', 'chat-msg--agent'];
-    if (m.kind === 'error') cls.push('is-error');
-    if (m.kind === 'working') cls.push('is-working');
-    thread.append(h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` },
-      h('div.chat-text', {}, m.text)));
+    thread.append(agentEl(m));
     empty.remove();
     if (!open && live) {
       unread = true; refreshBadge();
@@ -292,14 +307,59 @@ export function mountPrompt(root, { viewport, corner }) {
   store.on('history', ({ prompts: ps = [], messages: ms = [] }) => {
     thread.replaceChildren(); items.clear(); prompts.clear();
     for (const p of ps) prompts.set(p.id, p);
-    const all = [...ps.map((p) => ({ at: p.at, p })), ...ms.map((m) => ({ at: m.at, m }))].sort((a, b) => a.at - b.at).slice(-60);
+    const all = merge(ps, ms).slice(-200);
     if (!all.length) thread.append(empty);
     for (const x of all) x.p ? renderPrompt(x.p) : renderMessage(x.m, false);
     unread = false; refreshBadge();
     scrollToEnd();
   });
 
+  // ---------- past chats ----------
+  let view = 'current'; // current | list | chat
+  function setView(v) {
+    view = v;
+    thread.hidden = v !== 'current';
+    past.hidden = v === 'current';
+    pastBtn.classList.toggle('is-active', v !== 'current');
+    pastBtn.title = v === 'current' ? 'Past chats' : 'Back to the current chat';
+  }
+  function showCurrent() { setView('current'); scrollToEnd(); }
+  const when = (at) => {
+    const d = new Date(at), today = new Date();
+    if (d.toDateString() === today.toDateString()) return `Today ${time(at)}`;
+    const opts = d.getFullYear() === today.getFullYear() ? { month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short', day: 'numeric' };
+    return `${d.toLocaleDateString([], opts)}, ${time(at)}`;
+  };
+  const pastBar = (title, onBack, backLabel) => h('div.chat-past-bar', {},
+    h('button.cc-btn.cc-btn--ghost.chat-past-back', { type: 'button', onClick: onBack }, icon('chevronLeft'), backLabel),
+    h('span.chat-past-title', { title }, title));
+  async function showList() {
+    setView('list');
+    past.replaceChildren(pastBar('Past chats', showCurrent, 'Current chat'), h('div.chat-past-note', {}, h('span.cc-spin')));
+    let chats = [];
+    try { chats = (await (await fetch('/api/chats')).json()).chats || []; } catch (e) { console.warn('past chats failed', e); }
+    if (view !== 'list') return;
+    past.replaceChildren(pastBar('Past chats', showCurrent, 'Current chat'), chats.length
+      ? h('div.chat-past-list', { role: 'list' }, ...chats.map((c) => h('button.chat-past-item', { type: 'button', role: 'listitem', onClick: () => showChat(c.id) },
+        h('span.chat-past-item-title', {}, c.title),
+        h('span.chat-past-item-meta', {}, `${when(c.endedAt)} · ${c.count} message${c.count === 1 ? '' : 's'}`))))
+      : h('div.chat-past-note', {}, 'No past chats yet. When you start a new chat, this one is kept here.'));
+  }
+  async function showChat(id) {
+    setView('chat');
+    let chat;
+    try { chat = (await (await fetch(`/api/chats/get?id=${encodeURIComponent(id)}`)).json()).chat; } catch (e) { console.warn('past chat failed', e); }
+    if (view !== 'chat') return;
+    if (!chat) { past.replaceChildren(pastBar('Past chats', showList, 'All chats'), h('div.chat-past-note', {}, 'This chat could not be loaded.')); return; }
+    const log = h('div.chat-past-log', { role: 'log' },
+      h('div.chat-past-date', {}, when(chat.startedAt)),
+      ...merge(chat.prompts, chat.messages).map((x) => x.p ? fillPrompt(h('div.chat-msg.chat-msg--user'), x.p) : agentEl(x.m)));
+    past.replaceChildren(pastBar(chat.title, showList, 'All chats'), log);
+    past.scrollTop = 0;
+  }
+
   async function newChat() {
+    showCurrent();
     try {
       const r = await fetch('/api/chat/new', { method: 'POST' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -233,7 +233,8 @@ only delivered to an agent that is waiting. Calling `wait` also marks any prompt
 as done and turns listen mode on. "this", "it" or "here" in a prompt refer to the `selected:` object and
 the `playhead:` time printed with it. When the user attaches images (references, sketches,
 screenshots), the prompt has an `images attached:` line with their file paths: open each one with
-your Read tool before acting on the prompt.
+your Read tool before acting on the prompt. When the user points back to an earlier conversation
+("like last time"), `canvas chats` lists past chats and `canvas chats <id>` prints one.
 
 How to listen depends on the agent:
 - **Claude Code**: run `canvas listen on`. The Stop hook (from the plugin, or `.claude/settings.json` in a

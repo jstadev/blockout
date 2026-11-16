@@ -237,6 +237,46 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   }
   function appendLog(entry) { fs.appendFileSync(logPath, JSON.stringify(entry) + '\n'); }
 
+  // ---------- chat history ----------
+  // "New chat" archives the finished conversation (your prompts and the agent's replies) to
+  // .canvas/chats/<id>.json, so past chats can be read again in the chat panel or with `canvas chats`.
+  const chatsDir = path.join(workDir, 'chats');
+  const CURRENT = 100; // messages of each kind the open chat shows
+  const chatTitle = (ps, ms) => {
+    const first = ps.find((p) => p.text?.trim()) || ms.find((m) => m.text?.trim());
+    const t = (first?.text || (ps.length ? 'Images' : 'Chat')).trim().replace(/\s+/g, ' ');
+    return t.length > 80 ? `${t.slice(0, 79)}…` : t;
+  };
+  function archiveChat(ps, ms, id = String(Date.now())) {
+    if (!ps.length && !ms.length) return null;
+    const ats = [...ps, ...ms].map((x) => x.at).filter(Number.isFinite);
+    const chat = { id, title: chatTitle(ps, ms), startedAt: Math.min(...ats, Date.now()), endedAt: Math.max(...ats, 0) || Date.now(), prompts: ps, messages: ms };
+    fs.mkdirSync(chatsDir, { recursive: true });
+    fs.writeFileSync(path.join(chatsDir, `${id}.json`), JSON.stringify(chat) + '\n');
+    return chat;
+  }
+  // Earlier versions kept only the agent's side of an old chat, as .canvas/log-<time>.jsonl: move those in.
+  try {
+    for (const f of fs.readdirSync(workDir)) {
+      const m = /^log-(\d+)\.jsonl$/.exec(f);
+      if (!m) continue;
+      archiveChat([], readTail(path.join(workDir, f), Infinity), m[1]);
+      fs.unlinkSync(path.join(workDir, f));
+    }
+  } catch {}
+  const readChat = (id) => {
+    if (!/^[\w-]+$/.test(String(id || ''))) return null;
+    try { return JSON.parse(fs.readFileSync(path.join(chatsDir, `${id}.json`), 'utf8')); } catch { return null; }
+  };
+  function listChats() {
+    let files = [];
+    try { files = fs.readdirSync(chatsDir).filter((f) => f.endsWith('.json')); } catch {}
+    return files.map((f) => readChat(f.slice(0, -5))).filter(Boolean)
+      .map(({ id, title, startedAt, endedAt, prompts: ps = [], messages: ms = [] }) => ({ id, title, startedAt, endedAt, count: ps.length + ms.length }))
+      .sort((a, b) => b.endedAt - a.endedAt);
+  }
+  const currentChat = () => ({ prompts: prompts.slice(-CURRENT), messages: readTail(logPath, CURRENT) });
+
   // ---------- http ----------
   const readBody = (req, limit = 512 * 1024 * 1024) => new Promise((resolve, reject) => {
     const chunks = []; let n = 0;
@@ -345,7 +385,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       clients.set(id, { res, connectedAt: Date.now(), lastSeen: Date.now(), visible: true });
       send(res, 'doc', { doc, rev, source: 'connect' });
       send(res, 'status', statusPayload());
-      send(res, 'history', { prompts: prompts.slice(-30), messages: readTail(logPath, 30) });
+      send(res, 'history', currentChat());
       req.on('close', () => clients.delete(id));
     },
     'POST /api/presence': async (req, res) => {
@@ -460,11 +500,20 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
 
     // New chat: archive the conversation and start an empty thread. Prompts still queued or being worked on stay.
     'POST /api/chat/new': async (req, res) => {
-      try { if (fs.existsSync(logPath) && fs.statSync(logPath).size) fs.renameSync(logPath, path.join(workDir, `log-${Date.now()}.jsonl`)); } catch {}
-      prompts = prompts.filter((p) => p.status === 'pending' || p.status === 'taken');
+      const active = (p) => p.status === 'pending' || p.status === 'taken';
+      const chat = archiveChat(prompts.filter((p) => !active(p)), readTail(logPath, Infinity));
+      try { fs.rmSync(logPath, { force: true }); } catch {}
+      prompts = prompts.filter(active);
       savePrompts();
-      broadcast('history', { prompts: prompts.slice(-30), messages: [] });
-      json(res, 200, { ok: true, kept: prompts.length });
+      broadcast('history', currentChat());
+      json(res, 200, { ok: true, kept: prompts.length, archived: chat?.id || null });
+    },
+    // Past chats, newest first, and one past chat in full.
+    'GET /api/chats': (req, res) => json(res, 200, { ok: true, chats: listChats() }),
+    'GET /api/chats/get': (req, res, url) => {
+      const chat = readChat(url.searchParams.get('id'));
+      if (!chat) return json(res, 404, { ok: false, error: `no chat ${url.searchParams.get('id')} (see canvas chats)` });
+      json(res, 200, { ok: true, chat });
     },
     // ----- messages: agent -> canvas -----
     'POST /api/say': async (req, res) => {

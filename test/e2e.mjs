@@ -327,6 +327,19 @@ try {
   await page.waitForFunction(() => !document.querySelector('.chat-msg') && document.querySelector('.chat-empty'));
   ok(true, 'new chat empties the thread and shows the intro');
 
+  // the archived chat is in past chats and reads back
+  await page.click('.chat-past-btn');
+  await page.waitForSelector('.chat-past-item');
+  ok(/make the tower twice as tall/.test(await page.textContent('.chat-past-item')), 'past chats list the archived chat by its first prompt');
+  await page.click('.chat-past-item');
+  await page.waitForSelector('.chat-past-log .chat-msg--agent');
+  ok(await page.$$eval('.chat-past-log .chat-msg--user', (els) => els.length) >= 3, 'a past chat shows your messages and the replies');
+  ok(/twice as tall/.test(cli('chats')), 'canvas chats lists it for the agent');
+  await page.click('.chat-past-back');
+  await page.waitForSelector('.chat-past-list');
+  await page.click('.chat-past-btn');
+  ok(await page.isVisible('.chat-empty') && !(await page.isVisible('.chat-past')), 'the history button goes back to the current chat');
+
   // chat toggle + shot settings
   const chatOpen = await page.isVisible('.chat');
   await page.click('.chat-toggle');

@@ -280,6 +280,45 @@ test('key.easeAll gives every segment one ease, keeps cuts, and can copy a key',
   assert.deepEqual(ids().slice(0, 3).map((k) => k.ease), ['easeIn', 'easeIn', 'easeIn']);
 });
 
+test('new chat archives the conversation; past chats list and read back', async () => {
+  const os = await import('node:os');
+  const { spawn } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-chats-'));
+  // an archive left by an older version (agent replies only) is moved into chats/
+  fs.mkdirSync(path.join(dir, '.canvas'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.canvas', 'log-1000.jsonl'), JSON.stringify({ from: 'agent', text: 'old reply', at: 1000 }) + '\n');
+  const port = 5391;
+  // in its own process: the server watches the app folder for live reload, which would keep this one alive
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore' });
+  for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${port}/api/chats`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  const api = async (method, route, body) => (await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) })).json();
+  try {
+    assert.ok(!fs.existsSync(path.join(dir, '.canvas', 'log-1000.jsonl')));
+    let { chats } = await api('GET', '/api/chats');
+    assert.deepEqual(chats.map((c) => [c.id, c.title, c.count]), [['1000', 'old reply', 1]]);
+
+    const { prompt } = await api('POST', '/api/prompt', { text: 'a red   box\non a table' });
+    await api('POST', '/api/prompt/status', { id: prompt.id, status: 'taken' });
+    await api('POST', '/api/say', { text: 'Added it', reply: prompt.id });
+    const { prompt: queued } = await api('POST', '/api/prompt', { text: 'still waiting' });
+    const r = await api('POST', '/api/chat/new');
+    assert.equal(r.kept, 1); // the queued prompt stays in the new chat
+    ({ chats } = await api('GET', '/api/chats'));
+    assert.equal(chats[0].id, r.archived);
+    assert.equal(chats[0].title, 'a red box on a table');
+    assert.equal(chats[0].count, 2);
+    const { chat } = await api('GET', `/api/chats/get?id=${r.archived}`);
+    assert.deepEqual(chat.prompts.map((p) => p.text), ['a red   box\non a table']);
+    assert.deepEqual(chat.messages.map((m) => m.text), ['Added it']);
+    assert.deepEqual((await api('GET', '/api/prompts')).prompts.map((p) => p.id), [queued.id]);
+    assert.equal((await api('GET', '/api/chats/get?id=../scene')).ok, false);
+    // an empty chat is not archived
+    await api('POST', '/api/prompt/status', { id: queued.id, status: 'done' });
+    await api('POST', '/api/chat/new');
+    assert.equal((await api('POST', '/api/chat/new')).archived, null);
+  } finally { srv.kill(); }
+});
+
 test('shots: one set, several camera timelines; add copies, use swaps, ops can aim at a shot', () => {
   let { doc, results } = applyOps(createDoc(), [{ op: 'add', type: 'box', name: 'house' }, { op: 'shot.add', name: 'Close up' }]);
   assert.equal(results[1].id, 'close-up');

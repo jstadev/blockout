@@ -36,6 +36,8 @@ export const ICONS = {
   sidebarOn: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5h2.5a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H10z" fill="currentColor"/>'),
   chevronDown: s('<path d="M5 6.5 8 9.5 11 6.5"/>'),
   chevronUp: s('<path d="M5 9.5 8 6.5 11 9.5"/>'),
+  chevronLeft: s('<path d="M9.5 5 6.5 8 9.5 11"/>'),
+  history: s('<path d="M2.8 8a5.2 5.2 0 1 0 1.5-3.7"/><path d="M2.5 2.5v2.5H5"/><path d="M8 5.5V8l1.8 1.2"/>'),
   clock: s('<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/>'),
   minus: s('<path d="M4 8h8"/>'),
   compose: s('<path d="M13.5 8.5v4a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12.5V4A1.5 1.5 0 0 1 4 2.5h4"/><path d="M11.5 2.5l2 2L8 10H6V8z"/>'),
