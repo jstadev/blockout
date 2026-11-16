@@ -66,6 +66,19 @@ async function load(a) {
   return cur.loading;
 }
 
+// Other shots' tracks, decoded on demand for a sequence export (the active one stays in `cur`).
+const others = new Map();
+function decodeOther(file) {
+  if (!others.has(file)) {
+    others.set(file, (async () => {
+      const res = await fetch(`/audio/${encodeURIComponent(file)}`);
+      if (!res.ok) throw new Error(`audio file ${file} not found in the scene's audio/ folder`);
+      return new OfflineAudioContext(1, 1, RATE).decodeAudioData(await res.arrayBuffer());
+    })().catch((e) => { others.delete(file); store.emit('error', `Could not read the audio: ${e.message || e}`); return null; }));
+  }
+  return others.get(file);
+}
+
 function stopVoice() {
   if (voice?.src) { try { voice.src.stop(); } catch {} voice.src.disconnect(); }
   voice = null;
@@ -96,7 +109,7 @@ export const audio = {
   get peaks() { return cur.peaks; },
   get loading() { return !!cur.file && !cur.buffer && !cur.error; },
   get error() { return cur.error; },
-  PEAK_RATE,
+  PEAK_RATE, RATE,
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   load: () => load(track()),
   play, stop: stopVoice,
@@ -122,16 +135,20 @@ export const audio = {
     });
   },
 
-  /** The track as it sounds over [0, duration] of the shot, at RATE, for the export. Null if there is none. */
-  async mixdown(duration) {
-    const a = track();
+  /**
+   * A track as it sounds over [0, duration] of its shot, at RATE, for the export. Null if there is none.
+   * Defaults to the active shot's track; pass another shot's (timeline.audio) for a sequence export.
+   */
+  async mixdown(duration, a = track(), { channels } = {}) {
     if (!a || a.muted) return null;
-    await load(a);
-    if (!cur.buffer) return null;
-    const ch = Math.min(2, cur.buffer.numberOfChannels) || 1;
+    let buf;
+    if (a.file === track()?.file) { await load(a); buf = cur.buffer; }
+    else buf = await decodeOther(a.file);
+    if (!buf) return null;
+    const ch = channels || Math.min(2, buf.numberOfChannels) || 1;
     const off = new OfflineAudioContext(ch, Math.max(1, Math.ceil(duration * RATE)), RATE);
     const src = off.createBufferSource(), gain = off.createGain();
-    src.buffer = cur.buffer; gain.gain.value = a.volume ?? 1;
+    src.buffer = buf; gain.gain.value = a.volume ?? 1;
     src.connect(gain).connect(off.destination);
     if (a.offset >= 0) src.start(a.offset, 0); else src.start(0, -a.offset);
     return off.startRendering();

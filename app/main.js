@@ -46,7 +46,8 @@ function refreshSel() {
 const SHORTCUTS = [
   ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['W E R', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
   ['Shift D', 'duplicate'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
-  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['X', 'cut at the playhead (new shot on the next frame)'], ['C', 'Free ↔ Shot camera'],
+  ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['X', 'cut at the playhead (the rest becomes a new shot)'], ['C', 'Free ↔ Shot camera'],
+  ['[ ]', 'previous / next shot'], ['Shift [ ]', 'move the shot earlier / later'], ['Shift N', 'new shot (a copy of this camera, same set)'],
   ['← →', 'step a frame (Shift: 1 s)'], ['Home', 'go to start'], ['/', 'prompt your agent'], ['⌘Z ⇧⌘Z', 'undo / redo'], ['⌘S', 'save / load scenes'],
 ];
 const helpPanel = panel({ title: 'Shortcuts', collapsible: false });
@@ -120,9 +121,12 @@ addEventListener('keydown', (e) => {
     delete: () => (store.state.selection ? removeSelected() : timeline.deleteKey()),
     arrowleft: () => step(e.shiftKey ? -1 : -1 / f), arrowright: () => step(e.shiftKey ? 1 : 1 / f),
     home: () => timeline.seek(0), end: () => timeline.seek(store.doc.timeline.duration),
+    '[': () => timeline.shots.next(-1), ']': () => timeline.shots.next(1),
     '/': () => prompt.focus(), '?': () => { helpPanel.hidden = !helpPanel.hidden; helpBtn.setActive(!helpPanel.hidden); },
   };
   if (e.shiftKey && k === 'd') { e.preventDefault(); return duplicate(); }
+  if (e.shiftKey && k === 'n') { e.preventDefault(); return timeline.shots.add(); }
+  if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) { e.preventDefault(); return timeline.shots.move(e.code === 'BracketLeft' ? -1 : 1); }
   const fn = map[k];
   if (fn) { e.preventDefault(); fn(); }
 });
@@ -206,7 +210,7 @@ refreshSel();
 
 // ---------- frame loop ----------
 // While the audio track plays, time comes from the audio clock so picture and sound stay locked.
-let last = performance.now(), lastT = null;
+let last = performance.now(), lastT = null, switching = false;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -214,9 +218,13 @@ function frame(now) {
     const D = store.doc.timeline.duration;
     if (lastT !== null && Math.abs(store.state.time - lastT) > 1e-6) audio.play(store.state.time); // seeked while playing
     let t = audio.now() ?? store.state.time + dt;
-    if (t >= D) { if (store.state.loop) { t %= D; audio.play(t); } else { t = D; store.set({ playing: false }); } }
-    store.set({ time: t, camDirty: false });
-    lastT = t;
+    if (t >= D && store.state.playAll && store.doc.shots.length > 1) {
+      // Play all: hold the last frame while the next shot comes in, then carry on from its start
+      t = D;
+      if (!switching) { switching = true; audio.stop(); timeline.shots.playOn().then((on) => { if (!on) store.set({ playing: false }); }).finally(() => { switching = false; }); }
+    } else if (t >= D) { if (store.state.loop) { t %= D; audio.play(t); } else { t = D; store.set({ playing: false }); } }
+    if (!switching) store.set({ time: t, camDirty: false });
+    lastT = store.state.time;
   } else lastT = null;
   viewport.tick();
   requestAnimationFrame(frame);

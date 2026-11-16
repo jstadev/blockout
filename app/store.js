@@ -11,6 +11,7 @@ export const store = {
     time: 0,
     playing: false,
     loop: true,
+    playAll: false,        // playback runs on through the cuts into the next shot
     view: 'free',          // 'free' (orbit the set) or 'shot' (look through the timeline camera)
     selection: null,       // object id
     key: null,             // selected camera key id
@@ -58,7 +59,7 @@ export const store = {
 };
 
 // Keep runtime state across the auto-reload that happens when the agent edits app code.
-const SAVE = ['time', 'view', 'selection', 'key', 'gizmo', 'loop'];
+const SAVE = ['time', 'view', 'selection', 'key', 'gizmo', 'loop', 'playAll'];
 try {
   const saved = JSON.parse(sessionStorage.getItem('cc-state') || '{}');
   for (const k of SAVE) if (k in saved) store.state[k] = saved[k];

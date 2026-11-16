@@ -136,6 +136,7 @@ export function mountPrompt(root, { viewport, corner }) {
       selection: sel ? [describe(sel)] : [],
       time: +store.state.time.toFixed(3),
       duration: store.doc?.timeline.duration,
+      shot: store.doc?.shots?.length > 1 ? (() => { const i = store.doc.shots.findIndex((x) => x.id === store.doc.shot); return `${store.doc.shot} (${i + 1} of ${store.doc.shots.length})`; })() : undefined,
       view: store.state.view,
       key: store.state.key || undefined,
       camera: viewport.getPose(),

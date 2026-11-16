@@ -188,7 +188,9 @@ export class Viewport {
     if (store.state.view === 'shot' && store.doc) {
       const A = store.doc.meta.width / store.doc.meta.height;
       const right = store.state.chat ? SAFE.chat : SAFE.side;
-      const aw = W - SAFE.side - right, ah = H - SAFE.top - SAFE.bottom;
+      const tl = document.getElementById('timeline'); // the timeline grows with the audio lane
+      const bottom = tl ? Math.max(SAFE.bottom, innerHeight - tl.getBoundingClientRect().top + 12) : SAFE.bottom;
+      const aw = W - SAFE.side - right, ah = H - SAFE.top - bottom;
       if (aw / ah > A) { h = ah; w = ah * A; } else { w = aw; h = aw / A; }
       x = SAFE.side + (aw - w) / 2; y = SAFE.top + (ah - h) / 2;
     }
@@ -342,8 +344,8 @@ export class Viewport {
 
   // ---------- camera ----------
   /** Put a camera at the timeline pose for time t. */
-  poseCamera(cam, t, orbit) {
-    const s = sampleCamera(store.doc.timeline, t);
+  poseCamera(cam, t, orbit, timeline = store.doc.timeline) {
+    const s = sampleCamera(timeline, t);
     if (!s) return null;
     cam.position.fromArray(s.position);
     cam.up.set(0, 1, 0);
@@ -406,12 +408,12 @@ export class Viewport {
 
   // ---------- per frame ----------
   /** Put animated objects where they are at time t (the one being dragged stays under the pointer). */
-  poseObjects(t) {
+  poseObjects(t, timeline = store.doc.timeline) {
     for (const o of store.doc.objects) {
       if (!o.anim?.length) continue;
       const m = this.meshes.get(o.id);
       if (!m || (this.dragging && this.gizmo.object === m.mesh)) continue;
-      const s = sampleObject(o, store.doc.timeline, t);
+      const s = sampleObject(o, timeline, t);
       m.mesh.position.fromArray(s.position);
       m.mesh.rotation.set(s.rotation[0] * DEG, s.rotation[1] * DEG, s.rotation[2] * DEG, 'XYZ');
       m.mesh.scale.fromArray(s.scale);
@@ -430,7 +432,7 @@ export class Viewport {
     this.objKeyDots.clear();
     if (!has) return;
     const t0 = o.anim[0].t, t1 = o.anim[o.anim.length - 1].t;
-    const tl = { ...store.doc.timeline, speed: 'linear' };
+    const tl = { ...store.doc.timeline, speed: 'linear', start: 0 }; // anim key times are action time
     const N = Math.max(2, Math.ceil((t1 - t0) * 30));
     const pts = [];
     for (let i = 0; i <= N; i++) {
@@ -481,8 +483,9 @@ export class Viewport {
   /**
    * Render the shot camera at time t into an offscreen canvas of width × height.
    * Helpers and gizmos are hidden; the grid follows opts.grid (default: the scene setting).
+   * opts.timeline renders another shot's camera and action instead of the active one.
    */
-  renderShot(t, width, height, { grid, view = 'shot', from, target, fov } = {}) {
+  renderShot(t, width, height, { grid, view = 'shot', from, target, fov, timeline = store.doc.timeline } = {}) {
     if (!this.off || this.off.w !== width || this.off.h !== height) {
       this.off?.renderer.dispose();
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
@@ -496,14 +499,14 @@ export class Viewport {
     if (from && target) { // a camera of the agent's own, e.g. to check one area without touching the user's view
       cam.position.fromArray(from); cam.up.set(0, 1, 0); cam.lookAt(...target); cam.fov = fov || 40;
     } else if (view === 'free') { cam.position.copy(this.freeCam.position); cam.quaternion.copy(this.freeCam.quaternion); cam.fov = this.freeCam.fov; }
-    else this.poseCamera(cam, t);
+    else this.poseCamera(cam, t, null, timeline);
     cam.aspect = width / height; cam.updateProjectionMatrix();
     const restore = [[this.helpers, this.helpers.visible], [this.gizmoHelper, this.gizmoHelper.visible], [this.grid, this.grid.visible]];
     this.helpers.visible = false; this.gizmoHelper.visible = false;
     if (grid != null) this.grid.visible = !!grid;
     const sel = store.state.selection && this.meshes.get(store.state.selection);
     if (sel) { sel.edges.material.color.set(0x000000); sel.edges.material.opacity = 0.22; sel.mesh.material.emissive.set(0x000000); }
-    this.poseObjects(t);
+    this.poseObjects(t, timeline);
     renderer.render(this.scene, cam);
     this.poseObjects(store.state.time);
     for (const [o, v] of restore) o.visible = v;

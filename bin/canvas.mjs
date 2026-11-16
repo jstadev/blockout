@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PRIMITIVES, createDoc } from '../core/doc.js';
+import { PRIMITIVES, createDoc, shotTimeline } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
 import { dataDir } from '../server/paths.mjs';
 
@@ -52,6 +52,22 @@ Moving objects (keys on the shot timeline; straight-line moves with an ease, obj
   canvas okey <id> --t 2 [--pos x,y,z] [--rot x,y,z] [--scale ..] [--ease name]   key an object at a time
   canvas okey-rm <id> [--t 2]               remove one object key (or, without --t, all of its animation)
 
+Shots (one set, several cameras: objects and their moves are shared, each shot has its own camera
+timeline, length, fps and audio; camera, timeline and render commands work on the active shot)
+  canvas shots                              list the shots in sequence order (* = active)
+  canvas shot <id|name|n>                   switch to a shot (the user's timeline follows)
+  canvas shot-add [--name n] [--from id] [--blank] [--stay] [--start s]
+                                            new shot after the current one, copying its camera (or --from
+                                            another shot; --blank: a fresh two-key move), then switch to it.
+                                            It picks up the action where the current shot ends (--start 0:
+                                            from the beginning, for coverage of the same moment)
+  canvas shot-cut <seconds> [--name n] [--stay]          cut the active shot there: the rest becomes a new shot
+  canvas shot-set [id] [--name n] [--to n] [--start s]   rename, move to position n in the sequence, or set
+                                            where the shot picks up the action (s seconds into the object moves)
+  canvas shot-rm <id>                       delete a shot (not the last one)
+  --shot <id>   on key, key-set, key-rm, keys-clear, ease-all, timeline, audio, move, okey, okey-rm,
+                snapshot, storyboard and export: work on that shot without switching to it
+
 Camera timeline
   canvas key --t 2 --pos x,y,z --target x,y,z [--fov 40 | --lens 35] [--roll 0] [--ease name|x1,y1,x2,y2]
   canvas key --t 2 --from-view              key the camera the user is looking through right now
@@ -60,7 +76,8 @@ Camera timeline
   canvas key-rm <keyId|index>
   canvas keys-clear
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
-                  [--speed name|x1,y1,x2,y2] [--ease name]   (--ease sets every segment)
+                  [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
+                  --start: where this shot picks up the shared action, like shot-set --start)
   canvas audio [file] [--offset s] [--volume 1] [--mute on|off] [--fit]
                   load a music / dialogue track onto the timeline (mixed into the export). --offset: where
                   the audio starts on the timeline (negative skips into it); --fit: shot length = audio
@@ -74,7 +91,8 @@ Render (needs the canvas tab open)
           [--from x,y,z --target x,y,z [--lens 35]]           ...or from a camera of your own (the user's view is untouched)
   canvas storyboard [--frames 8] [--cols 4]                     contact sheet across the shot
   canvas export [--fps 24] [--width 1280 --height 720] [--grid on|off] [--name shot]
-                                                                 blockout video (mp4); prints its path
+                                                                 blockout video (mp4) of the active shot; prints its path
+  canvas export --sequence [same flags]                          every shot in order, cut together in one mp4
 
 Prompts from the canvas
   canvas wait [--timeout 600] [--json]      block until the user types a prompt in the canvas; prints it.
@@ -99,7 +117,7 @@ Raw / batch
 
 // ---------- helpers ----------
 // Flags that never take a value, so `say --working "text"` keeps "text" as the message.
-const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats']);
+const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay']);
 
 function parseArgs(argv) {
   const pos = [], flags = {};
@@ -152,7 +170,10 @@ async function api(method, route, body, { quietFail = false } = {}) {
   return data;
 }
 
-const op = (ops, label) => api('POST', '/api/op', { ops, label, source: 'agent' });
+// --shot <id> on a camera/timeline/render command: aim it at that shot without switching the user's view.
+let SHOT = null;
+const op = (ops, label) => api('POST', '/api/op', { ops: SHOT ? [].concat(ops).map((o) => ({ ...o, shot: SHOT })) : ops, label, source: 'agent' });
+const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps, ${s.keys} camera key${s.keys === 1 ? '' : 's'}${s.start ? `, action from ${s.start}s` : ''}${s.audio ? `, audio ${s.audio}` : ''}`;
 const rpc = (method, params = {}, timeout) => api('POST', '/api/rpc', { method, params, timeout }).then((d) => d.result);
 const out = (v) => console.log(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 
@@ -202,7 +223,7 @@ function formatPrompt(p) {
   const lines = [`[canvas prompt ${p.id}] ${p.text || '(no text, see the attached images)'}`];
   if (p.images?.length) lines.push(`images attached (open each with your Read tool): ${p.images.map((i) => i.path).join(' | ')}`);
   if (c.selection?.length) lines.push(`selected: ${c.selection.join(' | ')}`);
-  if (c.time != null) lines.push(`playhead: ${Number(c.time).toFixed(2)}s of ${c.duration}s, view: ${c.view}${c.key ? `, key: ${c.key}` : ''}`);
+  if (c.time != null) lines.push(`${c.shot ? `shot: ${c.shot}, ` : ''}playhead: ${Number(c.time).toFixed(2)}s of ${c.duration}s, view: ${c.view}${c.key ? `, key: ${c.key}` : ''}`);
   if (c.camera) lines.push(`camera: pos=${c.camera.position.map((v) => +v.toFixed(2)).join(',')} target=${c.camera.target.map((v) => +v.toFixed(2)).join(',')} fov=${+c.camera.fov.toFixed(1)}`);
   lines.push(`→ do it with canvas commands, then: canvas say --reply ${p.id} "<one line on what changed>"`);
   lines.push('→ then run "canvas wait" again so the next canvas prompt reaches you (until the user says stop).');
@@ -326,7 +347,8 @@ const commands = {
       `scene "${s.meta.name}" ${s.meta.width}x${s.meta.height}, rev ${s.rev}, ${s.tabs} tab(s) open${s.agent ? '' : ''}`,
       `env: background ${s.env.background}, ground ${s.env.ground ? 'on' : 'off'}, grid ${s.env.grid ? 'on' : 'off'}, fog ${s.env.fog}, people ${s.env.people || 'low'}`,
       `objects (${s.objects.length}):`, ...s.objects.map((o) => `  ${o}`),
-      `timeline: ${s.timeline.duration}s @ ${s.timeline.fps}fps, ${s.timeline.interp} path, speed ${JSON.stringify(s.timeline.speed)}`,
+      `shots (${s.shots.length}, sequence order, * = active):`, ...s.shots.map((x, i) => ` ${shotLine(x, i)}`),
+      `timeline of shot ${s.shot}: ${s.timeline.duration}s @ ${s.timeline.fps}fps, ${s.timeline.interp} path, speed ${JSON.stringify(s.timeline.speed)}${s.timeline.start ? `, shows the action from ${s.timeline.start}s (object key times below are action time)` : ''}`,
       ...(s.timeline.audio ? [`audio: ${s.timeline.audio.name} at ${s.timeline.audio.offset}s${s.timeline.audio.length ? `, ${s.timeline.audio.length}s long` : ''}, volume ${s.timeline.audio.volume}${s.timeline.audio.muted ? ', muted' : ''}`] : []),
       `camera keys (${s.keys.length}):`, ...s.keys.map((k) => `  ${k}`),
     ];
@@ -369,6 +391,49 @@ const commands = {
     if (flags.width) o.width = num(flags.width);
     if (flags.height) o.height = num(flags.height);
     out((await op(o)).results[0]);
+  },
+
+  async shots() {
+    const s = await api('GET', '/api/summary');
+    out(s.shots.map(shotLine).join('\n'));
+  },
+  async shot({ pos }) {
+    if (!pos[0]) return commands.shots();
+    const r = (await api('POST', '/api/op', { ops: { op: 'shot.use', id: pos.join(' ') }, label: 'switch shot', source: 'agent', amend: true })).results[0];
+    out(`now on shot ${r.id}${r.name !== r.id ? ` "${r.name}"` : ''}`);
+  },
+  async 'shot-add'({ flags }) {
+    const o = { op: 'shot.add' };
+    if (flags.name != null) o.name = String(flags.name);
+    if (flags.from != null) o.from = String(flags.from);
+    if (flags.blank) o.blank = true;
+    if (flags.stay) o.switch = false;
+    if (flags.start != null) o.start = num(flags.start);
+    const r = (await op(o, 'new shot')).results[0];
+    out(`added shot ${r.id} "${r.name}" (${r.shots} shots, active: ${r.active})`);
+  },
+  async 'shot-cut'({ pos, flags }) {
+    if (pos[0] == null) throw new Error('usage: canvas shot-cut <seconds> [--name n] [--stay]');
+    const o = { op: 'shot.split', t: num(pos[0]) };
+    if (flags.name != null) o.name = String(flags.name);
+    if (flags.stay) o.switch = false;
+    const r = (await op(o, 'cut')).results[0];
+    out(`cut at ${r.at}s: shot ${r.id} "${r.name}" starts there (${r.shots} shots, active: ${r.active})`);
+  },
+  async 'shot-set'({ pos, flags }) {
+    const id = pos.length ? pos.join(' ') : undefined;
+    const ops = [];
+    if (flags.name != null) ops.push({ op: 'shot.update', id, name: String(flags.name) });
+    if (flags.to != null) ops.push({ op: 'shot.move', id, to: num(flags.to) });
+    if (flags.start != null) ops.push({ op: 'timeline', start: num(flags.start), ...(id ? { shot: id } : {}) });
+    if (!ops.length) throw new Error('usage: canvas shot-set [id] [--name n] [--to position] [--start seconds]');
+    await op(ops, 'edit shot');
+    return commands.shots();
+  },
+  async 'shot-rm'({ pos }) {
+    if (!pos[0]) throw new Error('usage: canvas shot-rm <id>');
+    const r = (await op({ op: 'shot.remove', id: pos.join(' ') }, 'delete shot')).results[0];
+    out(`removed shot ${r.removed}; active: ${r.active}`);
   },
 
   async key({ flags }) {
@@ -437,6 +502,7 @@ const commands = {
     if (flags.interp != null) o.interp = String(flags.interp);
     if (flags.speed != null) o.speed = easeArg(flags.speed);
     if (flags.ease != null) o.ease = easeArg(flags.ease);
+    if (flags.start != null) o.start = num(flags.start);
     out((await op(o)).results[0].timeline);
   },
 
@@ -457,9 +523,13 @@ const commands = {
     if (flags.mute != null) o.muted = bool(flags.mute);
     if (Object.keys(o).length > 1) await op(o, pos[0] ? 'load audio' : 'edit audio');
     let info = null;
+    if ((flags.fit || flags.beats) && SHOT) {
+      const d = (await api('GET', '/api/doc')).doc;
+      if (shotTimeline(d, SHOT) !== d.timeline) throw new Error(`--fit and --beats need the tab to play the audio: switch to the shot first (canvas shot ${SHOT})`);
+    }
     if (flags.fit || flags.beats) info = await rpc('audio', { beats: !!flags.beats }, 60000); // the tab decodes it (and records its length)
     if (flags.fit) await op({ op: 'audio', fit: true }, 'fit shot to audio');
-    const a = (await api('GET', '/api/doc')).doc.timeline;
+    const a = shotTimeline((await api('GET', '/api/doc')).doc, SHOT ?? undefined);
     if (!a.audio) return out('no audio on the timeline (load one: canvas audio song.mp3)');
     if (flags.beats && flags.json) return out(info);
     const au = a.audio;
@@ -480,20 +550,21 @@ const commands = {
     const own = flags.from != null && flags.target != null
       ? { from: vec(flags.from), target: vec(flags.target), fov: flags.lens != null ? lensToFov(num(flags.lens)) : flags.fov != null ? num(flags.fov) : undefined }
       : {};
-    const r = await rpc('snapshot', { t: flags.t != null ? num(flags.t) : undefined, view: flags.view, name: flags.out ? path.basename(String(flags.out)) : undefined, width: flags.width && num(flags.width), height: flags.height && num(flags.height), ...own }, 60000);
+    const r = await rpc('snapshot', { t: flags.t != null ? num(flags.t) : undefined, view: flags.view, name: flags.out ? path.basename(String(flags.out)) : undefined, width: flags.width && num(flags.width), height: flags.height && num(flags.height), shot: SHOT ?? undefined, ...own }, 60000);
     out(copyOut(r.path, flags.out));
   },
   async storyboard({ flags }) {
-    const r = await rpc('storyboard', { frames: flags.frames ? num(flags.frames) : 8, cols: flags.cols ? num(flags.cols) : 4 }, 120000);
+    const r = await rpc('storyboard', { frames: flags.frames ? num(flags.frames) : 8, cols: flags.cols ? num(flags.cols) : 4, shot: SHOT ?? undefined }, 120000);
     out(copyOut(r.path, flags.out));
   },
   async export({ flags }) {
     const params = {
       fps: flags.fps && num(flags.fps), width: flags.width && num(flags.width), height: flags.height && num(flags.height),
       grid: flags.grid != null ? bool(flags.grid) : undefined, name: flags.name ? String(flags.name) : undefined,
+      shot: SHOT ?? undefined, sequence: flags.sequence || undefined,
     };
-    const r = await rpc('export', params, 30 * 60 * 1000);
-    out(`${copyOut(r.path, flags.out)}\n${r.frames} frames, ${r.width}x${r.height} @ ${r.fps}fps, ${r.codec}${r.audio ? ` + ${r.audio} audio` : ''}, ${(r.bytes / 1e6).toFixed(2)} MB`);
+    const r = await rpc('export', params, 60 * 60 * 1000);
+    out(`${copyOut(r.path, flags.out)}\n${r.shots ? `${r.shots.length} shots (${r.shots.map((x) => `${x.id} ${x.frames}f`).join(', ')}), ` : ''}${r.frames} frames, ${r.width}x${r.height} @ ${r.fps}fps, ${r.codec}${r.audio ? ` + ${r.audio} audio` : ''}, ${(r.bytes / 1e6).toFixed(2)} MB`);
   },
 
   async wait({ flags }) {
@@ -633,7 +704,9 @@ const [cmdName = 'help', ...rest] = process.argv.slice(2);
 const cmd = commands[aliases[cmdName] || cmdName];
 if (!cmd) { console.error(`unknown command "${cmdName}". Run: canvas help`); process.exit(2); }
 try {
-  await cmd(parseArgs(rest));
+  const args = parseArgs(rest);
+  if (args.flags.shot != null) { SHOT = String(args.flags.shot); delete args.flags.shot; }
+  await cmd(args);
 } catch (e) {
   console.error(`error: ${e.message}`);
   process.exit(1);

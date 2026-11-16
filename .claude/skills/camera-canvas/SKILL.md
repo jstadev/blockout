@@ -98,8 +98,9 @@ canvas key --t 2 --from-view          # key whatever the user is looking at righ
 
 - Eases: `linear ease easeIn easeOut easeInOut slowIn slowOut snap anticipate overshoot hold`, or a
   custom cubic bezier `--ease 0.2,0,0,1`. `hold` freezes until the next key, then cuts to it.
-- Hard cuts: a `hold` key ends a shot and the next key starts a new one; the path on each side of the
-  cut is independent. To cut from one moving shot straight into another, give the last key of shot A
+- Hard cuts inside one shot: a `hold` key ends a move and the next key starts a new one; the path on each
+  side of the cut is independent. For a different camera setup on the same set (a wide, then a close-up,
+  then a reverse) make separate **shots** instead (section 4d): each gets its own timeline and export. To cut from one moving shot straight into another, give the last key of shot A
   `--ease hold` at the cut time and put the first key of shot B one frame later (t + 1/fps):
   `canvas key --t 3 --pos ... --ease hold` then `canvas key --t 3.042 --pos ...` at 24 fps.
 - `canvas ease-all slowOut` gives every camera segment one ease (cuts stay cuts); `--from <keyId>`
@@ -154,6 +155,48 @@ canvas audio --mute on | --volume 0.5 | --clear
 To cut or key on the music, read `canvas audio --beats` and put keys and cuts on those times (snap to
 the frame grid). `canvas ls` shows the audio line.
 
+## 4d. Shots: several cameras on one set
+
+A scene has one or more **shots**. The set, the people and their moves are shared; each shot has its
+own camera keys, length, fps, speed curve and audio, and exports on its own or as part of the sequence.
+Move a prop once and every shot sees it. Camera, timeline, audio and render commands work on the
+**active** shot (the one on the user's timeline); `canvas ls` lists the shots and marks the active one.
+
+```bash
+canvas shots                                  # 1 shot-1 "Shot 1" ... (* = active)
+canvas shot-add --name "Close up"             # new shot after this one, a copy of its camera; switches to it
+canvas key-set 0 --pos 2,1.6,3 --target 0,1.5,0 --lens 50   # re-frame the copy
+canvas shot-add --name Reverse --blank        # or start from the default two-key move
+canvas shot 1                                 # switch by position, id or name
+canvas key --t 2 --pos ... --target ... --shot close-up    # --shot: edit another shot without switching
+canvas shot-cut 2.5 --name "Second half"      # cut the active shot at 2.5 s: the rest becomes a new shot
+canvas shot-set close-up --name "CU hero" --to 1           # rename / move to position 1 in the sequence
+canvas shot-set close-up --start 2            # this shot picks up the action 2 s in
+canvas shot-rm reverse
+canvas storyboard --shot close-up             # render any shot without switching
+canvas export --sequence                      # every shot in order, cut together, one mp4
+```
+
+- The user asks for "another angle", "a close-up of this", "cut to", "coverage": add a shot rather than
+  a hold-cut, unless they want one continuous clip. "Cut here" = `canvas shot-cut <t>`: the shot ends at t
+  and a new one carries on from the same framing (the user's Cut button and X key do the same); re-frame
+  the new shot's first key.
+- Object moves are in **action time**, shared by every shot. A new shot picks up the action where the
+  current one ends (shot 1 is 0–3 s → the new shot starts at 3 s), so a sequence continues across cuts.
+  For coverage of the same moment from another angle, use `shot-add --start 0` (or the start you want);
+  `shot-set <id> --start s` changes it later.
+  `move`, `okey` and `okey-rm` take shot time (like the playhead); `ls` prints object keys in action time.
+- Stretching a shot with `timeline --duration --retime` only stretches that shot's camera keys when there
+  are several shots (the shared action keeps its timing).
+- Exports are named `<scene>-<shot>-<time>.mp4` once there are several shots; `export --sequence` uses
+  `--fps` or the active shot's fps for every shot and joins each shot's audio.
+- With two or more shots the user's key track stacks them, one row per shot on the action-time axis
+  (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
+  `--start`, up or down reorders; Delete on a clicked bar removes it; Play all plays through the cuts).
+  They add a shot with + Shot or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
+  Shift-click Export for the whole sequence.
+  Canvas prompts carry `shot:` (the active shot) when there are several.
+
 ## 4b. Save and load versions
 
 The scene autosaves continuously, and once it has been saved under a name every change also autosaves into that named version (`meta.name`). Before a big rework (or when the user says "save this"), keep a
@@ -164,8 +207,9 @@ prefer a new name such as `street-v2`.
 ## 5. Export
 
 ```bash
-canvas export                 # mp4 (H.264) of the whole shot at the doc's size/fps; prints the path
+canvas export                 # mp4 (H.264) of the active shot at the doc's size/fps; prints the path
 canvas export --fps 24 --width 1920 --height 1080 --grid off --name street-chase
+canvas export --shot close-up # another shot;  canvas export --sequence  every shot in order
 ```
 
 Exports land in `scenes/exports/`. Give the user the path. Grid lines are kept by default because
