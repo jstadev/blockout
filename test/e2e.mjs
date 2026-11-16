@@ -136,7 +136,7 @@ try {
   cli('view', 'free');
   await page.waitForTimeout(200);
   const before = await page.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
-  const vp = await page.evaluate(() => { const r = window.canvas.viewport.canvas.getBoundingClientRect(); return { x: r.left + r.width * 0.25, y: r.top + r.height * 0.85 }; });
+  const vp = await page.evaluate(() => { const r = window.canvas.viewport.canvas.getBoundingClientRect(); return { x: r.left + r.width * 0.25, y: r.top + r.height * 0.75 }; });
   await page.mouse.click(vp.x, vp.y);
   await page.waitForTimeout(500);
   const after = await page.evaluate(() => window.canvas.viewport.freeOrbit.target.toArray());
@@ -264,7 +264,7 @@ try {
   const freePose = await page.evaluate(() => ({ p: window.canvas.viewport.freeCam.position.toArray(), f: window.canvas.viewport.freeCam.fov }));
   ok(freePose.p.every((v, i) => Math.abs(v - shotPose.p[i]) < 1e-3) && Math.abs(freePose.f - shotPose.f) < 1e-3, 'back to free with a key selected keeps the shot position and lens');
 
-  // Cut at the playhead: this shot ends on the frame, the next starts a frame later from the same framing
+  // Cut at the playhead: this shot ends there and a new shot carries on from the same framing
   const tlBefore = JSON.parse(cli('doc')).timeline, fr = tlBefore.fps;
   let tc = null;
   for (let f = Math.round((tlBefore.duration * fr) / 2); f < tlBefore.duration * fr - 2; f++) {
@@ -272,23 +272,33 @@ try {
   }
   cli('seek', String(tc)); await page.waitForTimeout(150);
   await page.click('.tl-bar button[title^="Cut at the playhead"]');
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
+  const dCut = JSON.parse(cli('doc')), first = dCut.shots[0].timeline, second = dCut.timeline;
+  const endKey = first.keys[first.keys.length - 1];
+  ok(dCut.shot === 'shot-2' && first.duration === tc && second.start === tc && Math.abs(first.duration + second.duration - tlBefore.duration) < 1e-6
+    && endKey.t === tc && second.keys[0].t === 0 && second.keys[0].position.every((v, i) => Math.abs(v - endKey.position[i]) < 1e-6),
+    'Cut splits the shot at the playhead: a new shot carries on from the same framing');
+  ok(await page.evaluate(() => window.canvas.store.state.key) === second.keys[0].id, 'after a cut the new shot\'s first key is selected');
+  cli('undo'); cli('shot', '1');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+  ok(JSON.parse(cli('doc')).timeline.keys.length === tlBefore.keys.length, 'one undo removes the whole cut');
+  // a hold key inside a shot still cuts within the clip; the pair is drawn as one split key either side
+  // of the cut line and each half selects its own key
+  cli('key', '--t', String(tc), '--pos', '5,2,5', '--target', '0,1,0', '--ease', 'hold');
+  cli('key', '--t', String(+(tc + 1 / fr).toFixed(3)), '--pos', '5,2,5', '--target', '0,1,0');
+  await page.waitForTimeout(300);
   const tlCut = JSON.parse(cli('doc')).timeline;
   const ka = tlCut.keys.find((k) => Math.abs(k.t - tc) < 1e-3), kb = tlCut.keys.find((k) => Math.abs(k.t - (tc + 1 / fr)) < 2e-3);
-  ok(tlCut.keys.length === tlBefore.keys.length + 2 && ka?.ease === 'hold' && !!kb && kb.position.every((v, i) => Math.abs(v - ka.position[i]) < 1e-6),
-    'Cut adds a hold key at the playhead and starts the next shot a frame later from the same framing');
-  ok(await page.evaluate(() => window.canvas.store.state.key) === kb?.id, 'after a cut the new shot\'s first key is selected');
-  // the pair is drawn as one split key either side of the cut line: each half selects its own key
   const tb = await page.locator('.tl-track').boundingBox();
   const txOf = (t) => tb.x + 14 + (t / tlCut.duration) * (tb.width - 28);
-  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + tb.height / 2 + 6;
+  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + 18 + (tb.height - 18) / 2;
   await page.mouse.click(cutX - 3, midY); await page.waitForTimeout(120);
   const leftSel = await page.evaluate(() => window.canvas.store.state.key);
   await page.mouse.click(cutX + 4, midY); await page.waitForTimeout(120);
   const rightSel = await page.evaluate(() => window.canvas.store.state.key);
   ok(leftSel === ka.id && rightSel === kb.id, 'left half of a split key selects the end of the shot, right half the start of the next');
-  cli('undo');
-  ok(JSON.parse(cli('doc')).timeline.keys.length === tlBefore.keys.length, 'one undo removes the whole cut');
+  cli('undo'); cli('undo');
+  ok(JSON.parse(cli('doc')).timeline.keys.length === tlBefore.keys.length, 'undo removes the hold cut');
 
   // the play button pauses while playing (its icon must not be rebuilt every frame)
   await page.click('.tl-bar button[title^="Play"]').catch(async () => page.keyboard.press(' '));
@@ -436,6 +446,71 @@ try {
   ok(JSON.stringify(kt()) === JSON.stringify([0, 0.5, 2, 2.5]), `only the ctrl-picked keys move (${kt()})`);
   await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
   ok(JSON.stringify(kt()) === JSON.stringify([0, 2]), 'Backspace deletes every selected key');
+
+  // shots: a second camera on the same set, switched from the bar, exported one by one and as a sequence
+  cli('timeline', '--duration', '1', '--fps', '12');
+  ok(/added shot close/.test(cli('shot-add', '--name', 'close')), 'shot-add makes a second shot and switches to it');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
+  const tr = await page.locator('.tl-track').boundingBox();
+  ok(tr.height > 80, `with two shots the key track stacks them (${Math.round(tr.height)} px tall)`);
+  // lanes: ruler 18 px, then shot-1 (24 px), then the active close (40 px); names in a 96 px header column
+  await page.mouse.click(tr.x + tr.width * 0.3, tr.y + 26);
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  ok(true, 'clicking another shot\'s row switches to it');
+  // the ruler is scrubbable across shots: close picks up the action at 1 s, so 1.5 s in is close at 0.5 s
+  await page.mouse.click(tr.x + tr.width * 0.75, tr.y + 8);
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close' && Math.abs(window.canvas.store.state.time - 0.5) < 0.1);
+  ok(true, 'clicking the ruler at a moment another shot covers switches to it there');
+  // and so is the empty part of the active row (close is active, lane 2: 18 + 24); 0.25 s in is shot-1
+  await page.mouse.click(tr.x + tr.width * 0.25, tr.y + 18 + 24 + 30);
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  ok(true, 'clicking the empty part of the active row switches to the shot that covers that moment');
+  // now close is the inactive second row (top 18 + 40): drag it sideways so it picks up the action later
+  ok(JSON.parse(cli('doc')).shots.find((x) => x.id === 'close').timeline.start === 1, 'the new shot picks up the action where the first one ends');
+  cli('shot-set', 'close', '--start', '0');
+  await page.waitForFunction(() => !window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start);
+  const ry = tr.y + 18 + 40 + 12;
+  await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
+  await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();
+  await page.waitForFunction(() => (window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start || 0) > 0.1);
+  ok(true, `dragging a shot's row sets where it picks up the action`);
+  await page.waitForTimeout(200);
+  cli('shot', 'close');
+  cli('shot-set', 'close', '--start', '0');
+  cli('key-set', '0', '--pos', '2,1.5,3', '--target', '0,1,0');
+  cli('timeline', '--shot', 'shot-1', '--duration', '0.5');
+  await page.keyboard.press('BracketLeft');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  ok(JSON.parse(cli('doc')).timeline.duration === 0.5, '[ switches to the previous shot and --shot edited it in place');
+  // Play all runs on through the cut into the next shot
+  await page.evaluate(() => window.canvas.store.set({ playAll: true, loop: false }));
+  cli('shot', '1');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  await page.evaluate(() => window.canvas.store.set({ time: 0.4, playing: true }));
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close', null, { timeout: 5000 });
+  ok(true, 'Play all carries playback into the next shot');
+  await page.evaluate(() => window.canvas.store.set({ playing: false, playAll: false, loop: true }));
+  const sq = cli('export', '--sequence', '--width', '160', '--height', '90');
+  ok(/2 shots \(shot-1 6f, close 12f\), 18 frames/.test(sq), `export --sequence cuts every shot together (${sq.split('\n')[1]})`);
+  const one = cli('export', '--shot', 'shot-1', '--width', '160', '--height', '90');
+  ok(/-shot-1-.*\.mp4/.test(one.split('\n')[0]) && /6 frames/.test(one), 'export --shot renders just that shot');
+  // reorder by dragging the active shot's name (header column) up a lane, then pick the other shot and press Delete
+  cli('shot', 'close');
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(100);
+  await page.mouse.move(tr.x + 40, tr.y + 18 + 24 + 20); await page.mouse.down();
+  await page.mouse.move(tr.x + 40, tr.y + 30, { steps: 6 }); await page.mouse.up();
+  await page.waitForFunction(() => window.canvas.store.doc.shots[0].id === 'close');
+  ok(true, 'dragging a shot up a lane moves it earlier in the sequence');
+  await page.mouse.click(tr.x + 40, tr.y + 18 + 40 + 12);
+  await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
+  await page.keyboard.press('Backspace');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+  ok(true, 'clicking a shot and pressing Backspace deletes it');
+  cli('undo');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
+  cli('shot-rm', 'shot-1');
+  ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
 
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

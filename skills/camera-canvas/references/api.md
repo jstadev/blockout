@@ -16,13 +16,20 @@ Three ways in, all equivalent: the `canvas` CLI (`canvas …` with the plugin, `
       "anim": [ { "t": 1, "position": [-3, 0, -2], "rotation": [0, 0, 0], "scale": [1, 1, 1], "ease": "easeInOut" },
                 { "t": 3, "position": [-3, 0, 2], "rotation": [0, 0, 0], "scale": [1, 1, 1], "ease": "easeInOut" } ] }
   ],
+  // the ACTIVE shot's camera timeline (start: optional, where the shot picks up the action, s)
   "timeline": {
     "duration": 5, "fps": 24, "interp": "smooth", "speed": "linear",
     "keys": [ { "id": "k1", "t": 0, "position": [7, 3.5, 9], "target": [0, 1, 0], "fov": 40, "roll": 0, "ease": "easeInOut" } ]
   },
+  // shots in sequence order; the active one (shot) has no timeline here because it is doc.timeline
+  "shots": [ { "id": "shot-1", "name": "Wide" }, { "id": "close-up", "name": "Close up", "timeline": { "duration": 3, "...": "..." } } ],
+  "shot": "shot-1",
   "controls": {}
 }
 ```
+
+Objects, their moves, env and meta are shared by every shot. Object `anim` key times are action time:
+a shot shows the action from its `timeline.start` (default 0). Scenes saved before shots load as one shot.
 
 Rotation is degrees XYZ. `fov` is vertical, in degrees (`--lens` converts from full-frame mm).
 `ease` on a key is the curve used from that key to the next.
@@ -47,11 +54,20 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `key.update` | `id` or `index` (by time order), any key field | `{ id }` |
 | `key.remove` | `id` or `index` | `{ removed }` |
 | `key.clear` | | `{ removed }` |
-| `timeline` | `duration`, `retime?` (scale key times), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
+| `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
 | `audio` | `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (s on the timeline where the audio starts; negative skips into it), `volume` (0–4), `muted`, `length` (set by the tab), `fit` (duration = length + offset), `clear` | `{ audio, duration }` |
+| `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends). Inserted after the active shot | `{ id, name, shots, active }` |
+| `shot.split` | `t` (shot time, snapped to a frame, inside the shot), `name?`, `id?`, `switch?` (default true). The active shot ends at `t`; a new shot after it gets the same framing at its first key, the later keys, the rest of the length, `start` = this shot's start + t and the audio carried on. Needs a linear shot speed | `{ id, name, at, shots, active }` |
+| `shot.use` | `id` (id, name or 1-based position) — make it the active shot | `{ id, name }` |
+| `shot.update` | `id?` (default active), `name` | `{ id, name }` |
+| `shot.move` | `id?`, `to` (1-based position in the sequence) | `{ id, order }` |
+| `shot.remove` | `id?` (not the last shot; removing the active one activates its neighbour) | `{ removed, active }` |
 | `controls.set` | `key`, `value` (any JSON; omit to delete) — state for custom controls | `{ key }` |
 | `load` | `doc` — replace the whole scene | |
 | `batch` | `ops: []` | `{ results }` |
+
+Any op except `shot.*`, `load` and `batch` also takes `shot` (id, name or position): it is applied to that
+shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot time (action time minus `start`).
 
 ### Primitives (pivot at bottom centre)
 
@@ -97,11 +113,17 @@ shot A's last (hold) key.
 
 `seek <s>`, `play`, `pause`, `view shot|free`, `select <id|none>`, `frame [id]`, `key --from-view`,
 `snapshot [--t s] [--view shot|free] [--out file]`, `storyboard [--frames n] [--cols n]`,
-`export [--fps] [--width --height] [--grid on|off] [--name]` (mixes in the audio track),
+`export [--fps] [--width --height] [--grid on|off] [--name]` (mixes in the audio track), `export --sequence`
+(every shot in order in one mp4); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
 `canvas audio <file> [--offset s] [--volume v] [--mute on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
+
+## Shots
+
+`canvas shots`, `canvas shot <id|name|n>` (switch), `canvas shot-add [--name] [--from id] [--blank] [--stay]`,
+`canvas shot-cut <t> [--name n] [--stay]` (split the active shot at t), `canvas shot-set [id] [--name n] [--to position] [--start s]`, `canvas shot-rm <id>`. `canvas ls` lists them.
 
 ## Save / load
 
@@ -127,4 +149,7 @@ shot A's last (hold) key.
 | `POST /api/listen` | `{ on, session?, cwd? }` | the agent session that owns listen mode |
 | `GET /api/events` | Server-Sent Events: doc, status, prompt, say, rpc, reload | |
 
-Prompt objects: `{ id, text, status: pending|taken|done, context: { selection: [..], time, duration, view, key, camera: { position, target, fov } } }`.
+Prompt objects: `{ id, text, status: pending|taken|done, context: { selection: [..], time, duration, shot?, view, key, camera: { position, target, fov } } }`
+(`shot` is set when the scene has more than one).
+
+RPC `snapshot`, `storyboard` and `export` take `shot`; `export` also takes `sequence: true` and then returns `shots: [{ id, name, frames }]`.

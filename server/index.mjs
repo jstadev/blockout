@@ -13,7 +13,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { applyOps, createDoc, migrate, describe, AUDIO_FILE } from '../core/doc.js';
+import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE } from '../core/doc.js';
 import crypto from 'node:crypto';
 import { dataDir } from './paths.mjs';
 
@@ -274,7 +274,9 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         rev, scene: scenePath, exports: exportsDir, ...statusPayload(), tabs: clients.size,
         meta: doc.meta, env: doc.env,
         objects: doc.objects.map(describe),
-        timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, audio: tl.audio || null },
+        timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, start: tl.start || 0, audio: tl.audio || null },
+        shot: doc.shot,
+        shots: shotList(doc).map((s) => ({ id: s.id, name: s.name, active: s.active, duration: s.timeline.duration, fps: s.timeline.fps, start: s.timeline.start || 0, keys: s.timeline.keys.length, audio: s.timeline.audio?.name || null })),
         keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}`),
       });
     },
