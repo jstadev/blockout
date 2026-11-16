@@ -161,14 +161,6 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-ease:disabled .tl-glyph { color: var(--cc-text-faint); }
 .tl-key .cc-affix { margin-left: 2px; }
 .tl-shot { gap: 6px; background: transparent; border-color: var(--cc-line); }
-.shots-pop { position: fixed; bottom: calc(120px + var(--stack-h, 0px)); width: 260px; z-index: 25; }
-.shots-pop[hidden] { display: none; }
-body.has-audio .shots-pop { bottom: calc(150px + var(--stack-h, 0px)); }
-.shots-pop .cc-row > .cc-label { width: 72px; }
-.shots-pop .cc-row > .cc-field { flex: 1; min-width: 0; }
-.shots-pop .cc-row > .cc-affix { flex: 1; justify-content: flex-end; }
-.shots-pop .cc-affix > .cc-field { flex: 1; min-width: 0; width: auto !important; text-align: right; }
-.shots-actions { gap: 2px; }
 .tl-shot svg:last-child { width: 10px; height: 10px; color: var(--cc-text-dim); }
 .tl-shot.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar > .cc-btn--primary { margin-left: 2px; }

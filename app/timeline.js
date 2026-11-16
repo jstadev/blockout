@@ -66,7 +66,8 @@ export function mountTimeline(root, { viewport, exporter }) {
   const shotDur = h('span'), shotFps = h('span');
   const shotBtn = h('button.cc-btn.tl-shot', { type: 'button', title: 'Shot length, frame rate and size', onClick: () => shot.toggle() },
     h('span.cc-mono', {}, shotDur, h('span.cc-affix__unit', {}, ' s')), h('span.tl-faint', {}, '·'), h('span.cc-mono', {}, shotFps, h('span.cc-affix__unit', {}, ' fps')), icon('chevronDown'));
-  const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)', onClick: () => exporter.exportVideo().catch((e) => toast(e.message, { kind: 'error' })) });
+  const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)',
+    onClick: (e) => exporter.exportVideo({ sequence: e.shiftKey && store.doc.shots.length > 1 }).catch((err) => toast(err.message, { kind: 'error' })) });
 
   // audio: a waveform lane under the track, an Audio button in the bar (functions below are hoisted)
   const audioTrack = mountAudioTrack(root, {
@@ -74,7 +75,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     cutXs: () => cutsOf(liveKeys()).map((c) => c.x), keyXs: () => [...keyXs(liveKeys()).values()],
   });
 
-  const shots = mountShots({ exporter, anchor: () => track });
+  const shots = mountShots();
   const bar = h('div.tl-bar',
     {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, cutBtn, lensField, keyGroup, objKeyBtn,
     h('span.cc-spacer'), shots.playAllBtn, shots.addBtn, audioTrack.btn, shotBtn, exportBtn);
@@ -83,6 +84,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   const track = h('canvas.tl-track');
   root.append(bar, track, audioTrack.lane);
   const ctx = track.getContext('2d');
+  let picked = null; // a shot picked by clicking its bar: Delete removes it
   let drag = null; // { kind: 'key'|'okey'|'scrub', id, t, moved }; a key drag moves every selected key
   // Selected camera keys. store.state.key is the primary one (its ease, lens, time show in the bar);
   // shift-click adds the range from it, ctrl/cmd-click toggles one, and dragging any of them moves them all.
@@ -100,7 +102,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // With several shots the one track stacks them: a row per shot on the shared action-time axis, each shot
   // a bar from where it picks up the action. The active shot's row is the full key editor; times stay
   // shot time, so xOf/tOf just add the shot's start. With one shot the track is exactly as before.
-  const RULER = 16, ACTIVE_H = 40, ROW_H = 20, GAP = 2, LANE = 12;
+  const RULER = 22, ACTIVE_H = 40, ROW_H = 20, GAP = 2, LANE = 12;
   let L = null; // { T, start, rows: [{ s, top, h }], active, height }
   function relayout() {
     const doc = store.doc;
@@ -118,6 +120,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   const xOf = (t) => PAD + ((axis0() + t) / axisT()) * (width() - PAD * 2);
   const tOf = (x, free) => { const t = ((x - PAD) / (width() - PAD * 2)) * axisT() - axis0(); return free ? t : Math.max(0, Math.min(dur(), t)); };
   const xAction = (a) => PAD + (a / axisT()) * (width() - PAD * 2);
+  const aOf = (x) => Math.max(0, ((x - PAD) / (width() - PAD * 2)) * axisT()); // action time at x
+  const covers = (s, a) => a >= (s.timeline.start || 0) - 1e-6 && a <= (s.timeline.start || 0) + s.timeline.duration + 1e-6;
+  // a shot's bar handle: anywhere on another shot's bar, or the name strip along the top of the active one
+  const onHandle = (r, x, y) => !!r && y < r.top + r.h && covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 13);
   const rowAt = (y) => (L ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
   const inActive = (y) => !L || (y >= L.active.top && y < L.active.top + L.active.h);
   const snap = (t, e) => (e?.shiftKey ? t : Math.round(t * fps()) / fps());
@@ -168,13 +174,14 @@ export function mountTimeline(root, { viewport, exporter }) {
     const k = ok ? null : keyAt(x, e.offsetY);
     track.setPointerCapture(e.pointerId);
     const row = !ok && !k && rowAt(e.offsetY);
-    // another shot's row, or the name strip at the top of the active one: click to edit it there (or open
-    // the active shot's settings), drag sideways to change where it picks up the action
-    if (row && e.button === 0 && (!row.s.active || e.offsetY < row.top + 13)) {
-      drag = { kind: 'shot', s: row.s, x0: x, start0: row.s.timeline.start || 0, moved: false };
+    // a shot's bar: click to pick it (and put the playhead there), drag sideways to change where it picks
+    // up the action, drag up or down to reorder the sequence
+    if (row && e.button === 0 && onHandle(row, x, e.offsetY)) {
+      drag = { kind: 'shot', s: row.s, x0: x, y0: e.offsetY, from: L.rows.indexOf(row), to: L.rows.indexOf(row), start0: row.s.timeline.start || 0, moved: false, axis: null };
       store.set({ playing: false });
       return;
     }
+    if (!ok && !k) picked = null;
     if (ok && e.button === 0) {
       drag = { kind: 'okey', id: selObj().id, t: ok.t, t0: ok.t, moved: false };
       store.set({ playing: false });
@@ -201,27 +208,36 @@ export function mountTimeline(root, { viewport, exporter }) {
       const ts = [...moving.values()];
       drag = { kind: 'key', id: k.id, t: k.t, t0: k.t, dt: 0, moved: false, moving, collapse, shift0: e.shiftKey, lo: -Math.min(...ts), hi: dur() - Math.max(...ts) };
       store.set({ key: k.id });
+      picked = null;
       if (!e.shiftKey && !e.ctrlKey && !e.metaKey) seek(k.t);
     } else if (e.button === 0) {
       drag = { kind: 'scrub', moved: false };
       store.set({ playing: false });
-      seek(snap(tOf(x), e));
+      scrubTo(x, e);
     }
   });
   track.addEventListener('pointermove', (e) => {
     if (!drag) {
       const r = rowAt(e.offsetY);
-      track.style.cursor = okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) ? 'grab' : r && (!r.s.active || e.offsetY < r.top + 13) ? 'pointer' : 'default';
+      track.style.cursor = okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) || onHandle(r, e.offsetX, e.offsetY) ? 'grab' : 'default';
       return;
     }
     if (drag.kind === 'shot') {
-      if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return;
+      const dx = e.offsetX - drag.x0, dy = e.offsetY - drag.y0;
+      if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
+      if (!drag.moved) drag.axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
       drag.moved = true;
+      track.style.cursor = drag.axis === 'y' ? 'ns-resize' : 'grabbing';
+      if (drag.axis === 'y') { // reorder: the lane under the pointer
+        const ys = L.rows.map((r) => r.top + r.h / 2);
+        let to = 0; for (let i = 0; i < ys.length; i++) if (Math.abs(e.offsetY - ys[i]) < Math.abs(e.offsetY - ys[to])) to = i;
+        drag.to = to;
+        return draw();
+      }
       const F = drag.s.timeline.fps;
       let st = Math.max(0, drag.start0 + ((e.offsetX - drag.x0) / (width() - PAD * 2)) * axisT());
       if (!e.shiftKey) st = Math.round(st * F) / F;
       drag.start = +st.toFixed(3);
-      track.style.cursor = 'grabbing';
       return draw();
     }
     drag.moved = true;
@@ -230,19 +246,19 @@ export function mountTimeline(root, { viewport, exporter }) {
       drag.dt = Math.max(drag.lo, Math.min(drag.hi, snap(tOf(e.offsetX, true), drag.shift0 ? null : e) - drag.t0));
       drag.t = drag.t0 + drag.dt; seek(drag.t);
     } else if (drag.kind === 'okey') { drag.t = t; seek(t); }
-    else seek(t);
+    else scrubTo(e.offsetX, e);
     draw();
   });
   track.addEventListener('pointerup', (e) => {
     const d = drag; drag = null;
     if (!d) return;
     if (d.kind === 'shot') {
+      if (d.moved && d.axis === 'y') { if (d.to !== d.from) store.op({ op: 'shot.move', id: d.s.id, to: d.to + 1 }, 'reorder shots').catch(() => {}); draw(); return; }
       if (d.moved) { if (Math.abs(d.start - d.start0) > 1e-4) store.op({ op: 'timeline', start: d.start, shot: d.s.id }, 'shot action start').catch(() => {}); draw(); return; }
-      if (d.s.active) return shots.toggle(undefined, e.clientX);
-      const a = ((e.offsetX - PAD) / (width() - PAD * 2)) * axisT(); // action time clicked
-      const t = Math.max(0, Math.min(d.s.timeline.duration, a - (d.s.timeline.start || 0)));
-      shots.use(d.s.id).then(() => store.set({ time: Math.round(t * d.s.timeline.fps) / d.s.timeline.fps }));
-      return;
+      // a click picks the shot (Delete removes it) and puts the playhead where it was clicked
+      picked = d.s.id; selKeys.clear(); store.set({ key: null });
+      playAt(d.s, aOf(e.offsetX), e);
+      return draw();
     }
     if (d.kind === 'key' && d.moved && Math.abs(d.dt) > 1e-4) {
       const ops = [...d.moving].map(([id, t0]) => ({ op: 'key.update', id, t: +(t0 + d.dt).toFixed(3) }));
@@ -257,17 +273,46 @@ export function mountTimeline(root, { viewport, exporter }) {
     draw();
   });
   track.addEventListener('dblclick', (e) => {
-    const r = rowAt(e.offsetY);
-    if (r && (!r.s.active || e.offsetY < r.top + 13)) return; // the shot rows' handles
+    if (!inActive(e.offsetY) || onHandle(rowAt(e.offsetY), e.offsetX, e.offsetY)) return; // keys go on the active shot's row
     if (!keyAt(e.offsetX, e.offsetY)) keyFromView(snap(tOf(e.offsetX), e));
   });
   track.addEventListener('contextmenu', (e) => {
     if (e.ctrlKey && !e.button) { e.preventDefault(); return; } // macOS ctrl-click is a selection toggle, not a right-click
+    const r = rowAt(e.offsetY);
+    if (onHandle(r, e.offsetX, e.offsetY)) { e.preventDefault(); removeShot(r.s.id); return; }
     const ok = okeyAt(e.offsetX, e.offsetY);
     if (ok) { e.preventDefault(); store.op({ op: 'anim.remove', id: selObj().id, t: ok.t }, 'remove object key').catch(() => {}); return; }
     const k = keyAt(e.offsetX, e.offsetY); if (k) { e.preventDefault(); if (!selKeys.has(k.id)) { selKeys = new Set([k.id]); store.set({ key: k.id }); } deleteKey(); } });
 
   // ---------- actions ----------
+  /** Several shots: put the playhead at action time `a`, in shot `s` (switching to it if it isn't active). */
+  let switching = null, pendingAt = null;
+  function playAt(s, a, e) {
+    const tl = s.timeline, F = tl.fps;
+    let t = Math.max(0, Math.min(tl.duration, a - (tl.start || 0)));
+    if (!e?.shiftKey) t = Math.round(t * F) / F;
+    if (s.id === store.doc.shot) return seek(t);
+    if (switching) { pendingAt = [s, a, e]; return; } // scrubbing across a cut: catch up once the switch lands
+    switching = shots.use(s.id).then(() => store.set({ time: t })).finally(() => {
+      switching = null;
+      const p = pendingAt; pendingAt = null;
+      if (p) { relayout(); const s2 = L?.rows.find((r) => r.s.id === p[0].id)?.s; if (s2) playAt(s2, p[1], p[2]); }
+    });
+  }
+  /** Scrub to x: one shot, in its time. Several: the action time at x, in the active shot if it covers it,
+   *  else the first shot that does, so the ruler and the empty parts of the rows are scrubbable too. */
+  function scrubTo(x, e) {
+    if (!L) return seek(snap(tOf(x), e));
+    const a = aOf(x), cur = L.active.s;
+    const s = covers(cur, a) ? cur : L.rows.map((r) => r.s).find((x) => covers(x, a)) || cur;
+    playAt(s, a, e);
+  }
+  function removeShot(id) {
+    if (store.doc.shots.length < 2) return toast('A scene needs at least one shot');
+    const s = store.doc.shots.find((x) => x.id === id);
+    picked = null;
+    store.op({ op: 'shot.remove', id }, 'delete shot').then(() => toast(`Deleted ${s?.name || id}. Undo brings it back`)).catch(() => {});
+  }
   async function keyObject(t = store.state.time) {
     const o = selObj();
     if (!o) return;
@@ -311,7 +356,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   }
   function deleteKey() {
     const id = store.state.key;
-    if (!id) return;
+    if (!id) { if (picked) removeShot(picked); return; }
     syncSel();
     const ids = [...selKeys];
     store.op(ids.map((id) => ({ op: 'key.remove', id })), ids.length > 1 ? `delete ${ids.length} keys` : 'delete key')
@@ -334,12 +379,13 @@ export function mountTimeline(root, { viewport, exporter }) {
       const x0 = xAction(st), x1 = xAction(st + tl.duration);
       ctx.fillStyle = r.s.active ? soft : solid;
       ctx.beginPath(); ctx.roundRect(x0, r.top + 1, Math.max(3, x1 - x0), r.h - 2, 4); ctx.fill();
-      ctx.strokeStyle = r.s.active ? accent : strong; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = r.s.active || r.s.id === picked ? accent : strong; ctx.lineWidth = r.s.id === picked ? 2 : 1; ctx.stroke(); ctx.lineWidth = 1;
       // name, clipped to the bar
       ctx.save(); ctx.beginPath(); ctx.rect(x0 + 1, r.top, Math.max(0, x1 - x0 - 2), r.h); ctx.clip();
       ctx.fillStyle = r.s.active ? text : dim;
       ctx.fillText(`${i + 1}  ${r.s.name}`, x0 + (r.s.active ? 6 : 9), r.top + (r.s.active ? 3 : 5));
       ctx.restore();
+      if (drag?.kind === 'shot' && drag.axis === 'y' && drag.s.id === r.s.id) { ctx.globalAlpha = 0.35; ctx.fillStyle = text; ctx.fillRect(x0, r.top + 1, Math.max(3, x1 - x0), r.h - 2); ctx.globalAlpha = 1; }
       if (r.s.active) continue;
       // another shot's camera keys, small and quiet
       ctx.fillStyle = dim;
@@ -349,6 +395,11 @@ export function mountTimeline(root, { viewport, exporter }) {
         const x = xAction(st + k.t);
         ctx.beginPath(); ctx.moveTo(x, my - 3); ctx.lineTo(x + 3, my); ctx.lineTo(x, my + 3); ctx.lineTo(x - 3, my); ctx.closePath(); ctx.fill();
       }
+    }
+    // reordering: where the dragged shot will land
+    if (drag?.kind === 'shot' && drag.axis === 'y' && drag.to !== drag.from) {
+      const r = L.rows[drag.to], y = drag.to < drag.from ? r.top - GAP / 2 : r.top + r.h + GAP / 2;
+      ctx.fillStyle = accent; ctx.fillRect(PAD, Math.round(y) - 1, W - PAD * 2, 2);
     }
     ctx.font = `10px ${css('--cc-mono')}`;
   }
@@ -554,7 +605,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     lensNum.disabled = lensOff;
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
-    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Click the shot\'s name in the track → Export all renders the whole sequence' : 'Render the blockout video (mp4)';
+    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Shift-click: every shot in order, cut together into one video' : 'Render the blockout video (mp4)';
     draw();
     audioTrack.refresh();
     curve.refresh();

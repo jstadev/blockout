@@ -188,8 +188,10 @@ canvas export --sequence                      # every shot in order, cut togethe
 - Exports are named `<scene>-<shot>-<time>.mp4` once there are several shots; `export --sequence` uses
   `--fps` or the active shot's fps for every shot and joins each shot's audio.
 - With two or more shots the user's key track stacks them, one row per shot on the action-time axis
-  (click a row to switch, drag it sideways to set `--start`, Play all plays through the cuts). They add a
-  shot with + Shot or Shift+N and switch with `[` / `]`.
+  (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
+  `--start`, up or down reorders; Delete on a clicked bar removes it; Play all plays through the cuts).
+  They add a shot with + Shot or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
+  Shift-click Export for the whole sequence.
   Canvas prompts carry `shot:` (the active shot) when there are several.
 
 ## 4b. Save and load versions

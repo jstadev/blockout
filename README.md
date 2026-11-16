@@ -90,7 +90,7 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
 | `X` | cut at the playhead: the camera holds on this frame and jumps on the next, from the same framing (re-frame it, then `K`). Drag either half of a cut to move it. |
-| `[` `]` · `Shift N` | previous / next shot · new shot (a copy of this camera on the same set) |
+| `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · new shot |
 | `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
 | `⌘Z` / `⇧⌘Z` | undo / redo (also undoes agent changes) |
 
@@ -101,17 +101,18 @@ the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
 **Shots:** one set can have several cameras. **+ Shot** in the timeline bar (or Shift+N) adds a shot
-that starts as a copy of this camera. With two or more, the key track stacks them: one row per shot on
-the shared action-time axis, each shot a bar from where it picks up the action. The active shot's row is
-the full key editor; click another row to edit that shot at that moment, drag a row sideways to change
-where it picks up the action, and click the active shot's name for its settings (rename, order, delete,
-**Export all**). Rows run top to bottom in sequence order, and the layers button (**Play all**) plays on
-through the cuts. The set, the people and their moves are shared, so moving a prop updates every shot;
-each shot has its own keys, length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`,
-`canvas shot-add` and `--shot`.
+that picks up the action where the current one ends, with a copy of its camera. With two or more, the key
+track stacks them: one row per shot on the shared action-time axis, each shot a bar from where it picks up
+the action. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
+empty part of a row) to put the playhead at that moment, switching to the shot that covers it. Drag a bar
+sideways to change where it picks up the action, drag it up or down to reorder, and click it and press
+Delete (or right-click it) to remove it. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
+top to bottom in sequence order, and the layers button (**Play all**) plays on through the cuts. The set,
+the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
+length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add` and `--shot`.
 
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
-the scene size and fps and encodes an H.264 MP4 in the browser. **Export all** (click the active shot's name in the track, or
+the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Export** (or
 `canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
 
 ## Saving and loading
