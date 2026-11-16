@@ -80,6 +80,8 @@ Prompts from the canvas
   canvas wait [--timeout 600] [--json]      block until the user types a prompt in the canvas; prints it.
                                             Marks earlier prompts done and turns listen mode on.
   canvas inbox                              list recent prompts and their status
+  canvas chats [id] [--json]                past chats (archived by "New chat"), newest first; with an id,
+                                            that chat's transcript
   canvas say "text" [--reply <promptId>] [--working]   message shown in the canvas
   canvas listen on|off                      keep a Claude Code session waiting for canvas prompts (Stop hook)
 
@@ -513,6 +515,20 @@ const commands = {
   async inbox() {
     const r = await api('GET', '/api/prompts');
     out(r.prompts.map((p) => `${p.id} [${p.status}] ${p.text}`).join('\n') || 'no prompts yet');
+  },
+  async chats({ pos, flags }) {
+    const when = (at) => new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    if (!pos[0]) {
+      const r = await api('GET', '/api/chats');
+      if (flags.json) return out(r.chats);
+      return out(r.chats.map((c) => `${c.id}  ${when(c.endedAt)}  (${c.count})  ${c.title}`).join('\n') || 'no past chats yet');
+    }
+    const { chat } = await api('GET', `/api/chats/get?id=${encodeURIComponent(pos[0])}`);
+    if (flags.json) return out(chat);
+    const items = [...chat.prompts.map((p) => ({ at: p.at, who: 'user', text: p.text, images: p.images })), ...chat.messages.map((m) => ({ at: m.at, who: m.from || 'agent', text: m.text }))]
+      .sort((a, b) => a.at - b.at);
+    out([`${chat.title}  (${when(chat.startedAt)} to ${when(chat.endedAt)})`, '',
+      ...items.map((x) => `${x.who}: ${x.text || ''}${x.images?.length ? ` [images: ${x.images.map((i) => i.path).join(' | ')}]` : ''}`)].join('\n'));
   },
   async say({ pos, flags }) {
     const text = pos.join(' ');

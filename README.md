@@ -65,7 +65,9 @@ Type in the chat sidebar on the right (`/` focuses it; Enter sends, Shift+Enter 
 message goes to your agent session together with what you have selected, the playhead time and the
 camera pose (shown as chips above the input), so "make this taller" or "slow the camera down here"
 just work. The agent's replies appear in the thread. Hide the sidebar with the panel button in its
-header; a dot on the chat button in the corner marks unread replies.
+header; a dot on the chat button in the corner marks unread replies. The conversation survives reloads;
+the compose button starts a new chat and keeps the old one under the history button (past chats), where
+you can read it back. Your agent can read them too with `canvas chats`.
 
 Tell your agent to listen first:
 

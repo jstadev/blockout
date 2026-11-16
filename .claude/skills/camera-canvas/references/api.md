@@ -124,6 +124,9 @@ shot A's last (hold) key.
 | `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |
 | `POST /api/say` | `{ text, reply?, done? }` | |
+| `POST /api/chat/new` | | archives the open chat to `.canvas/chats/<id>.json`; `{ kept, archived }` |
+| `GET /api/chats` | | past chats, newest first: `{ chats: [{ id, title, startedAt, endedAt, count }] }` |
+| `GET /api/chats/get?id=<id>` | | `{ chat: { id, title, startedAt, endedAt, prompts, messages } }` |
 | `POST /api/listen` | `{ on, session?, cwd? }` | the agent session that owns listen mode |
 | `GET /api/events` | Server-Sent Events: doc, status, prompt, say, rpc, reload | |
 
