@@ -61,6 +61,7 @@ timeline, length, fps and audio; camera, timeline and render commands work on th
                                             another shot; --blank: a fresh two-key move), then switch to it.
                                             It picks up the action where the current shot ends (--start 0:
                                             from the beginning, for coverage of the same moment)
+  canvas shot-cut <seconds> [--name n] [--stay]          cut the active shot there: the rest becomes a new shot
   canvas shot-set [id] [--name n] [--to n] [--start s]   rename, move to position n in the sequence, or set
                                             where the shot picks up the action (s seconds into the object moves)
   canvas shot-rm <id>                       delete a shot (not the last one)
@@ -408,6 +409,14 @@ const commands = {
     if (flags.start != null) o.start = num(flags.start);
     const r = (await op(o, 'new shot')).results[0];
     out(`added shot ${r.id} "${r.name}" (${r.shots} shots, active: ${r.active})`);
+  },
+  async 'shot-cut'({ pos, flags }) {
+    if (pos[0] == null) throw new Error('usage: canvas shot-cut <seconds> [--name n] [--stay]');
+    const o = { op: 'shot.split', t: num(pos[0]) };
+    if (flags.name != null) o.name = String(flags.name);
+    if (flags.stay) o.switch = false;
+    const r = (await op(o, 'cut')).results[0];
+    out(`cut at ${r.at}s: shot ${r.id} "${r.name}" starts there (${r.shots} shots, active: ${r.active})`);
   },
   async 'shot-set'({ pos, flags }) {
     const id = pos.length ? pos.join(' ') : undefined;

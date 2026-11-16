@@ -39,7 +39,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
-  const cutBtn = button({ icon: 'cut', label: 'Cut', title: 'Cut at the playhead: the camera holds here and jumps to the next key on the next frame (X)', onClick: () => cutHere() });
+  const cutBtn = button({ icon: 'cut', label: 'Cut', title: 'Cut at the playhead: this shot ends here and a new shot carries on from the same framing (X)', onClick: () => cutHere() });
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -334,26 +334,17 @@ export function mountTimeline(root, { viewport, exporter }) {
   }
   /** Cut at the playhead: the current shot ends on this frame (a hold key with the camera as it is here) and
    *  a new shot starts on the next frame from the same framing, selected so it can be re-framed. */
+  /** Cut: split this shot at the playhead. It ends there; a new shot carries on from the same framing. */
   async function cutHere(t = store.state.time) {
-    const tl = store.doc.timeline;
-    if (!tl.keys.length) return toast('Key the camera first, then cut', { kind: 'error' });
-    const F = tl.fps, f = 1 / F;
+    const tl = store.doc.timeline, F = tl.fps;
     t = Math.round(t * F) / F;
-    if (t > tl.duration - f) return toast('Move the playhead before the end of the shot to cut there', { kind: 'error' });
-    const ks = keys();
-    const here = ks.find((k) => Math.abs(k.t - t) < 1e-3);
-    if (here && isCut(here) && ks.some((k) => k.t > t && k.t - t <= 1.5 * f)) return toast(`There is already a cut at ${t.toFixed(2)}s`);
-    if (ks.some((k) => k.t > t + 1e-3 && k.t - t <= 1.5 * f)) return toast('A key sits on the next frame: move the playhead to cut', { kind: 'error' });
-    const s = sampleCamera(tl, t);
-    const r3 = (v) => +v.toFixed(3);
-    const pose = { position: s.position.map(r3), target: s.target.map(r3), fov: r3(s.fov), roll: r3(s.roll) };
-    const seg = ks[s.segment];
-    const ease = seg && !isCut(seg) && s.segment < ks.length - 1 ? seg.ease : 'easeInOut'; // the move carries on into the new shot
-    const next = r3(t + f);
-    const res = await store.op([{ op: 'key.add', t: r3(t), ...pose, ease: 'hold' }, { op: 'key.add', t: next, ...pose, ease }], 'cut');
-    store.set({ key: res[1].id, time: next, playing: false, camDirty: false });
-    const n = 1 + keys().filter((k) => isCut(k) && k.t < next - 1e-3).length;
-    toast(`Cut at ${t.toFixed(2)}s. Shot ${n} starts here with the same framing: re-frame it, then press K`);
+    if (t < 1 / F - 1e-6 || t > tl.duration - 1 / F + 1e-6) return toast('Move the playhead inside the shot to cut there', { kind: 'error' });
+    store.set({ playing: false });
+    const res = await store.op({ op: 'shot.split', t: +t.toFixed(3) }, 'cut').catch((e) => { toast(e.message, { kind: 'error' }); return null; });
+    if (!res) return;
+    selKeys.clear();
+    store.set({ key: store.doc.timeline.keys[0]?.id ?? null, time: 0, camDirty: false });
+    toast(`Cut at ${t.toFixed(2)}s. ${res[0].name} starts here with the same framing: re-frame it, then press K`);
   }
   function updateKey(patch) {
     const id = store.state.key;
@@ -602,7 +593,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     loopBtn.setActive(store.state.loop);
     viewSeg.value = store.state.view;
     keyBtn.setActive(store.state.camDirty);
-    cutBtn.disabled = !tl.keys.length;
+    cutBtn.disabled = false;
     keyBtn.title = store.state.camDirty ? 'The camera moved: press K to key this framing' : 'Key the current view at the playhead (K)';
     shotDur.textContent = tl.duration.toFixed(2);
     shotFps.textContent = fmtFps(tl.fps);

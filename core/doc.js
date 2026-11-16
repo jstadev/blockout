@@ -4,7 +4,7 @@
 // Conventions: meters, Y up, rotations in degrees (XYZ order), colors as "#rrggbb".
 // Every primitive's pivot is at its bottom centre, so position [x, 0, z] sits on the ground.
 
-import { resolveEase, EASES, sampleObject } from './curves.js';
+import { resolveEase, EASES, sampleObject, sampleCamera } from './curves.js';
 
 export const PRIMITIVES = {
   box: { params: { w: 1, h: 1, d: 1 }, size: ['w', 'h', 'd'], about: 'cuboid, w × h × d' },
@@ -479,6 +479,48 @@ export const OPS = {
     doc.shots.splice(at + 1, 0, { id, name, timeline: tl });
     if (op.switch !== false) activate(doc, id);
     return { id, name, shots: doc.shots.length, active: doc.shot };
+  },
+
+  /**
+   * Cut: split the active shot at shot time `t` into two shots. This one ends at t on the framing it has
+   * there; the new one (inserted after it, made active unless switch: false) picks up the action at that
+   * moment with the same framing, the rest of the keys, the rest of the length and the audio carried on.
+   */
+  'shot.split'(doc, op) {
+    const tl = doc.timeline, F = tl.fps, f = 1 / F;
+    const t = round(Math.round(Number(op.t) * F) / F);
+    if (!(t >= f - 1e-6 && t <= tl.duration - f + 1e-6)) throw new Error(`cut inside the shot: t must be ${round(f)}–${round(tl.duration - f)} s`);
+    if ((tl.speed ?? 'linear') !== 'linear') throw new Error('this shot has a speed curve: set it to linear before cutting (canvas timeline --speed linear)');
+    const keys = [...tl.keys].sort((a, b) => a.t - b.t);
+    const pose = sampleCamera(tl, t);
+    const here = keys.find((k) => Math.abs(k.t - t) < 1e-3);
+    const r3 = (v) => round(v);
+    const framing = pose && { position: pose.position.map(r3), target: pose.target.map(r3), fov: r3(pose.fov), roll: r3(pose.roll) };
+    const freeId = (ks) => { let n = 1; while (ks.some((k) => k.id === `k${n}`)) n++; return `k${n}`; };
+    // the new shot: the keys after t, moved to its own time, behind a first key on the same framing
+    const rest = clone(tl);
+    rest.keys = keys.filter((k) => k.t > t + 1e-3).map((k) => ({ ...clone(k), t: round(k.t - t) }));
+    if (here) rest.keys.unshift({ ...clone(here), t: 0, ease: here.ease === 'hold' && !rest.keys.length ? 'easeInOut' : here.ease });
+    else if (framing) {
+      const seg = keys[pose.segment]; // the move carries on into the new shot
+      const ease = seg && seg.ease !== 'hold' && pose.segment < keys.length - 1 ? seg.ease : 'easeInOut';
+      rest.keys.unshift({ id: freeId(rest.keys), ...normKey({ t: 0, ...framing, ease }) });
+    }
+    rest.duration = round(tl.duration - t);
+    rest.start = round((tl.start || 0) + t);
+    if (rest.audio) rest.audio.offset = round((rest.audio.offset || 0) - t);
+    // this shot: ends at t
+    tl.keys = keys.filter((k) => k.t < t + 1e-3);
+    if (!here && framing) tl.keys.push({ id: freeId(tl.keys), ...normKey({ t, ...framing, ease: 'easeInOut' }) });
+    tl.duration = t;
+    const n = doc.shots.length + 1;
+    const taken = new Set(doc.shots.map((s) => s.id));
+    let id = op.id || op.name ? slug(op.id || op.name) : `shot-${n}`;
+    if (taken.has(id)) { let i = 2; while (taken.has(`${id}-${i}`)) i++; id = `${id}-${i}`; }
+    const name = op.name != null ? String(op.name) : op.id ? String(op.id) : `Shot ${n}`;
+    doc.shots.splice(doc.shots.findIndex((s) => s.id === doc.shot) + 1, 0, { id, name, timeline: rest });
+    if (op.switch !== false) activate(doc, id);
+    return { id, name, at: t, shots: doc.shots.length, active: doc.shot };
   },
 
   /** Make a shot the active one: the timeline, camera and exports follow it. */

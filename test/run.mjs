@@ -311,6 +311,33 @@ test('shots: one set, several camera timelines; add copies, use swaps, ops can a
   assert.throws(() => applyOps(doc, { op: 'shot.use', id: 'nope' }), /no shot "nope"/);
 });
 
+test('shots: split cuts the active shot in two at a time, same framing either side', () => {
+  let { doc } = applyOps(createDoc(), [{ op: 'key.clear' },
+    { op: 'key.add', t: 0, position: [0, 1, 10], target: [0, 1, 0], ease: 'linear' },
+    { op: 'key.add', t: 4, position: [8, 1, 10], target: [0, 1, 0] },
+    { op: 'timeline', duration: 5, interp: 'linear' }, { op: 'audio', file: 'a.wav', offset: 0.5 }]);
+  let results;
+  ({ doc, results } = applyOps(doc, { op: 'shot.split', t: 2 }));
+  assert.equal(results[0].id, 'shot-2');
+  assert.equal(doc.shot, 'shot-2');
+  const a = shotTimeline(doc, 'shot-1'), b = doc.timeline;
+  assert.equal(a.duration, 2); assert.equal(b.duration, 3); assert.equal(b.start, 2);
+  assert.deepEqual(a.keys.map((k) => k.t), [0, 2]);
+  assert.deepEqual(b.keys.map((k) => k.t), [0, 2]);
+  assert.deepEqual(a.keys[1].position, [4, 1, 10]);
+  assert.deepEqual(b.keys[0].position, [4, 1, 10], 'the new shot starts on the framing the first ends on');
+  assert.equal(b.keys[0].ease, 'linear', 'the move carries on');
+  assert.equal(b.audio.offset, -1.5, 'the audio carries on');
+  assert.throws(() => applyOps(doc, { op: 'shot.split', t: 0 }), /cut inside the shot/);
+  // on an existing key: it ends this shot and starts the next
+  ({ doc } = applyOps(doc, { op: 'shot.split', t: 2, switch: false, name: 'tail' }));
+  assert.equal(doc.shot, 'shot-2');
+  assert.deepEqual(doc.shots.map((s) => s.id), ['shot-1', 'shot-2', 'tail']);
+  assert.equal(doc.timeline.keys.length, 2);
+  assert.equal(shotTimeline(doc, 'tail').keys.length, 1);
+  assert.equal(shotTimeline(doc, 'tail').start, 4);
+});
+
 test('shots: old single-timeline scenes migrate to one shot and shots round-trip', () => {
   const old = createDoc(); delete old.shots; delete old.shot; old.timeline.duration = 7;
   const m = migrate(old);

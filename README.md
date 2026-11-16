@@ -89,7 +89,7 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
-| `X` | cut at the playhead: the camera holds on this frame and jumps on the next, from the same framing (re-frame it, then `K`). Drag either half of a cut to move it. |
+| `X` | cut at the playhead: this shot ends there and a new shot carries on from the same framing (re-frame it, then `K`) |
 | `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · new shot |
 | `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
 | `⌘Z` / `⇧⌘Z` | undo / redo (also undoes agent changes) |
@@ -109,7 +109,8 @@ sideways to change where it picks up the action, drag it up or down to reorder, 
 Delete (or right-click it) to remove it. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
 top to bottom in sequence order, and the layers button (**Play all**) plays on through the cuts. The set,
 the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
-length, fps and audio. Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add` and `--shot`.
+length, fps and audio. **Cut** (or `X`) splits the current shot at the playhead into two.
+Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.
 
 **Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
 the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Export** (or

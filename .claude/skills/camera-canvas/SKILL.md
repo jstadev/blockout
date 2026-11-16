@@ -169,6 +169,7 @@ canvas key-set 0 --pos 2,1.6,3 --target 0,1.5,0 --lens 50   # re-frame the copy
 canvas shot-add --name Reverse --blank        # or start from the default two-key move
 canvas shot 1                                 # switch by position, id or name
 canvas key --t 2 --pos ... --target ... --shot close-up    # --shot: edit another shot without switching
+canvas shot-cut 2.5 --name "Second half"      # cut the active shot at 2.5 s: the rest becomes a new shot
 canvas shot-set close-up --name "CU hero" --to 1           # rename / move to position 1 in the sequence
 canvas shot-set close-up --start 2            # this shot picks up the action 2 s in
 canvas shot-rm reverse
@@ -177,7 +178,9 @@ canvas export --sequence                      # every shot in order, cut togethe
 ```
 
 - The user asks for "another angle", "a close-up of this", "cut to", "coverage": add a shot rather than
-  a hold-cut, unless they want one continuous clip.
+  a hold-cut, unless they want one continuous clip. "Cut here" = `canvas shot-cut <t>`: the shot ends at t
+  and a new one carries on from the same framing (the user's Cut button and X key do the same); re-frame
+  the new shot's first key.
 - Object moves are in **action time**, shared by every shot. A new shot picks up the action where the
   current one ends (shot 1 is 0–3 s → the new shot starts at 3 s), so a sequence continues across cuts.
   For coverage of the same moment from another angle, use `shot-add --start 0` (or the start you want);
