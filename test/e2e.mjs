@@ -443,7 +443,7 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
   const tr = await page.locator('.tl-track').boundingBox();
   ok(tr.height > 80, `with two shots the key track stacks them (${Math.round(tr.height)} px tall)`);
-  // rows: ruler 22 px, then shot-1 (20 px), then the active close (40 px)
+  // lanes: ruler 18 px, then shot-1 (24 px), then the active close (40 px); names in a 96 px header column
   await page.mouse.click(tr.x + tr.width * 0.3, tr.y + 26);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking another shot\'s row switches to it');
@@ -451,15 +451,15 @@ try {
   await page.mouse.click(tr.x + tr.width * 0.75, tr.y + 8);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close' && Math.abs(window.canvas.store.state.time - 0.5) < 0.1);
   ok(true, 'clicking the ruler at a moment another shot covers switches to it there');
-  // and so is the empty part of the active row (close is active, row 2: 22 + 20 + 2); 0.25 s in is shot-1
-  await page.mouse.click(tr.x + tr.width * 0.25, tr.y + 22 + 20 + 2 + 30);
+  // and so is the empty part of the active row (close is active, lane 2: 18 + 24); 0.25 s in is shot-1
+  await page.mouse.click(tr.x + tr.width * 0.25, tr.y + 18 + 24 + 30);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking the empty part of the active row switches to the shot that covers that moment');
-  // now close is the inactive second row (top 22 + 40 + 2): drag it sideways so it picks up the action later
+  // now close is the inactive second row (top 18 + 40): drag it sideways so it picks up the action later
   ok(JSON.parse(cli('doc')).shots.find((x) => x.id === 'close').timeline.start === 1, 'the new shot picks up the action where the first one ends');
   cli('shot-set', 'close', '--start', '0');
   await page.waitForFunction(() => !window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start);
-  const ry = tr.y + 22 + 40 + 2 + 10;
+  const ry = tr.y + 18 + 40 + 12;
   await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
   await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();
   await page.waitForFunction(() => (window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start || 0) > 0.1);
@@ -484,15 +484,15 @@ try {
   ok(/2 shots \(shot-1 6f, close 12f\), 18 frames/.test(sq), `export --sequence cuts every shot together (${sq.split('\n')[1]})`);
   const one = cli('export', '--shot', 'shot-1', '--width', '160', '--height', '90');
   ok(/-shot-1-.*\.mp4/.test(one.split('\n')[0]) && /6 frames/.test(one), 'export --shot renders just that shot');
-  // reorder by dragging the active shot's name strip up a lane, then pick the other shot and press Delete
+  // reorder by dragging the active shot's name (header column) up a lane, then pick the other shot and press Delete
   cli('shot', 'close');
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
   await page.keyboard.press('Escape'); await page.waitForTimeout(100);
-  await page.mouse.move(tr.x + tr.width * 0.08, tr.y + 22 + 20 + 2 + 5); await page.mouse.down();
-  await page.mouse.move(tr.x + tr.width * 0.08, tr.y + 30, { steps: 6 }); await page.mouse.up();
+  await page.mouse.move(tr.x + 40, tr.y + 18 + 24 + 20); await page.mouse.down();
+  await page.mouse.move(tr.x + 40, tr.y + 30, { steps: 6 }); await page.mouse.up();
   await page.waitForFunction(() => window.canvas.store.doc.shots[0].id === 'close');
   ok(true, 'dragging a shot up a lane moves it earlier in the sequence');
-  await page.mouse.click(tr.x + tr.width * 0.08, tr.y + 22 + 40 + 2 + 10);
+  await page.mouse.click(tr.x + 40, tr.y + 18 + 40 + 12);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   await page.keyboard.press('Backspace');
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);

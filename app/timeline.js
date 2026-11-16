@@ -102,7 +102,9 @@ export function mountTimeline(root, { viewport, exporter }) {
   // With several shots the one track stacks them: a row per shot on the shared action-time axis, each shot
   // a bar from where it picks up the action. The active shot's row is the full key editor; times stay
   // shot time, so xOf/tOf just add the shot's start. With one shot the track is exactly as before.
-  const RULER = 22, ACTIVE_H = 40, ROW_H = 20, GAP = 2, LANE = 12;
+  // Layout (px). Every state shares the ruler band; stacked adds a header column (GUT) with the shots'
+  // names, hairline-separated lanes and a lane for the selected object's keys at the bottom.
+  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56;
   let L = null; // { T, start, rows: [{ s, top, h }], active, height }
   function relayout() {
     const doc = store.doc;
@@ -117,13 +119,16 @@ export function mountTimeline(root, { viewport, exporter }) {
   }
   const axisT = () => (L ? L.T : dur());
   const axis0 = () => (L ? L.start : 0);
-  const xOf = (t) => PAD + ((axis0() + t) / axisT()) * (width() - PAD * 2);
-  const tOf = (x, free) => { const t = ((x - PAD) / (width() - PAD * 2)) * axisT() - axis0(); return free ? t : Math.max(0, Math.min(dur(), t)); };
-  const xAction = (a) => PAD + (a / axisT()) * (width() - PAD * 2);
-  const aOf = (x) => Math.max(0, ((x - PAD) / (width() - PAD * 2)) * axisT()); // action time at x
+  const left = () => (L ? GUT : 0) + PAD, span = () => width() - left() - PAD; // the time axis, in px
+  const xOf = (t) => left() + ((axis0() + t) / axisT()) * span();
+  const tOf = (x, free) => { const t = ((x - left()) / span()) * axisT() - axis0(); return free ? t : Math.max(0, Math.min(dur(), t)); };
+  const xAction = (a) => left() + (a / axisT()) * span();
+  const aOf = (x) => Math.max(0, ((x - left()) / span()) * axisT()); // action time at x
+  const inGutter = (x) => !!L && x < GUT;
   const covers = (s, a) => a >= (s.timeline.start || 0) - 1e-6 && a <= (s.timeline.start || 0) + s.timeline.duration + 1e-6;
   // a shot's bar handle: anywhere on another shot's bar, or the name strip along the top of the active one
-  const onHandle = (r, x, y) => !!r && y < r.top + r.h && covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 13);
+  // (its top strip keeps the rest free for keys), or its name in the header column
+  const onHandle = (r, x, y) => !!r && y < r.top + r.h && (inGutter(x) || (covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 12)));
   const rowAt = (y) => (L ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
   const inActive = (y) => !L || (y >= L.active.top && y < L.active.top + L.active.h);
   const snap = (t, e) => (e?.shiftKey ? t : Math.round(t * fps()) / fps());
@@ -163,7 +168,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   const selObj = () => (store.state.selection && store.object(store.state.selection)) || null;
   // object keys are stored in action time; this shot shows the action from its timeline.start
   const okeys = () => { const t0 = store.doc.timeline.start || 0; return (selObj()?.anim || []).map((k) => ({ ...k, t: +(k.t - t0).toFixed(3) })); };
-  const laneY = () => track.clientHeight - (L ? 6 : 8); // object keys sit in a lane under the camera keys
+  const laneY = () => track.clientHeight - (L ? LANE / 2 : 7); // object keys sit in a lane under the camera keys
   const okeyAt = (x, y) => (y > laneY() - 8 ? okeys().find((k) => Math.abs(xOf(drag?.kind === 'okey' && drag.t0 === k.t ? drag.t : k.t) - x) < 7) : null);
 
   function seek(t) { store.set({ time: Math.max(0, Math.min(dur(), t)), camDirty: false }); }
@@ -177,11 +182,12 @@ export function mountTimeline(root, { viewport, exporter }) {
     // a shot's bar: click to pick it (and put the playhead there), drag sideways to change where it picks
     // up the action, drag up or down to reorder the sequence
     if (row && e.button === 0 && onHandle(row, x, e.offsetY)) {
-      drag = { kind: 'shot', s: row.s, x0: x, y0: e.offsetY, from: L.rows.indexOf(row), to: L.rows.indexOf(row), start0: row.s.timeline.start || 0, moved: false, axis: null };
+      drag = { kind: 'shot', gut: inGutter(x), s: row.s, x0: x, y0: e.offsetY, from: L.rows.indexOf(row), to: L.rows.indexOf(row), start0: row.s.timeline.start || 0, moved: false, axis: null };
       store.set({ playing: false });
       return;
     }
     if (!ok && !k) picked = null;
+    if (!ok && !k && inGutter(x)) return; // the header column is not time
     if (ok && e.button === 0) {
       drag = { kind: 'okey', id: selObj().id, t: ok.t, t0: ok.t, moved: false };
       store.set({ playing: false });
@@ -224,8 +230,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     }
     if (drag.kind === 'shot') {
       const dx = e.offsetX - drag.x0, dy = e.offsetY - drag.y0;
-      if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
-      if (!drag.moved) drag.axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+      if (!drag.moved && (drag.gut ? Math.abs(dy) : Math.max(Math.abs(dx), Math.abs(dy))) < 4) return;
+      if (!drag.moved) drag.axis = drag.gut || Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
       drag.moved = true;
       track.style.cursor = drag.axis === 'y' ? 'ns-resize' : 'grabbing';
       if (drag.axis === 'y') { // reorder: the lane under the pointer
@@ -235,7 +241,7 @@ export function mountTimeline(root, { viewport, exporter }) {
         return draw();
       }
       const F = drag.s.timeline.fps;
-      let st = Math.max(0, drag.start0 + ((e.offsetX - drag.x0) / (width() - PAD * 2)) * axisT());
+      let st = Math.max(0, drag.start0 + ((e.offsetX - drag.x0) / span()) * axisT());
       if (!e.shiftKey) st = Math.round(st * F) / F;
       drag.start = +st.toFixed(3);
       return draw();
@@ -257,7 +263,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       if (d.moved) { if (Math.abs(d.start - d.start0) > 1e-4) store.op({ op: 'timeline', start: d.start, shot: d.s.id }, 'shot action start').catch(() => {}); draw(); return; }
       // a click picks the shot (Delete removes it) and puts the playhead where it was clicked
       picked = d.s.id; selKeys.clear(); store.set({ key: null });
-      playAt(d.s, aOf(e.offsetX), e);
+      playAt(d.s, d.gut ? L.start + store.state.time : aOf(e.offsetX), e); // from its name: stay at this moment
       return draw();
     }
     if (d.kind === 'key' && d.moved && Math.abs(d.dt) > 1e-4) {
@@ -365,43 +371,83 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   // ---------- drawing ----------
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  /** Several shots: the action-time ruler and a row per shot (the active row's keys are drawn by draw()). */
-  function drawStack(W, { text, dim, line, accent }) {
-    const pxPerSec = (W - PAD * 2) / L.T;
+  /** The ruler band: labels against the top, a tick beside each, frame ticks along the hairline under it.
+   *  `xf` maps seconds to px; labels that would run into a cut's scissors (`cuts`) are left out. */
+  function drawRuler(W, T, xf, F, { dim, line }, cuts = []) {
+    const x0 = xf(0), pxPerSec = (xf(T) - x0) / T;
     const step = pxPerSec > 120 ? 0.5 : pxPerSec > 40 ? 1 : pxPerSec > 16 ? 2 : 5;
+    ctx.fillStyle = line; ctx.fillRect(L ? GUT : 0, RULER, W, 1);
     ctx.fillStyle = dim;
-    for (let a = 0; a <= L.T + 1e-6; a += step) { const x = Math.round(xAction(a)); ctx.fillRect(x, 0, 1, 6); ctx.fillText(`${+a.toFixed(1)}s`, x + 3, 1); }
-    const solid = css('--cc-surface-solid'), soft = css('--cc-accent-soft'), strong = css('--cc-line-strong');
-    ctx.font = `500 10px ${css('--cc-font')}`;
+    if (F && pxPerSec / F > 5) { // frame ticks
+      ctx.globalAlpha = 0.45;
+      for (let f = 0; f <= T * F + 1e-6; f++) ctx.fillRect(Math.round(xf(f / F)), RULER - 3, 1, 3);
+      ctx.globalAlpha = 1;
+    }
+    for (let t = 0; t <= T + 1e-6; t += step) {
+      const x = Math.round(xf(t));
+      ctx.globalAlpha = 0.6; ctx.fillRect(x, 3, 1, RULER - 3); ctx.globalAlpha = 1;
+      const label = `${+t.toFixed(1)}s`, w = ctx.measureText(label).width;
+      const lx = x + 4 + w > W - 3 ? x - 4 - w : x + 4; // the last label sits left of its tick rather than clip
+      if (!cuts.some((c) => lx < c.x + 11 && lx + w > c.x - 9)) ctx.fillText(label, lx, 3);
+    }
+  }
+
+  /** Several shots: header column, action-time ruler and a lane per shot (the active lane's keys are drawn
+   *  by draw()). Inactive shots are quiet bars with their keys as ticks; accent marks only the active one. */
+  function drawStack(W, H0, { text, dim, line, accent }) {
+    const soft = css('--cc-accent-soft'), font = css('--cc-font'), mono = css('--cc-mono');
+    const reorder = drag?.kind === 'shot' && drag.axis === 'y';
+    // structure: the active lane's header cell, lane hairlines, the header column's edge
+    const act = L.active;
+    ctx.fillStyle = text; ctx.globalAlpha = 0.05; ctx.fillRect(0, act.top + 1, GUT, act.h - 1); ctx.globalAlpha = 1;
+    ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
+    ctx.fillStyle = line;
+    for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
+    ctx.fillRect(GUT, 0, 1, H0);
+    drawRuler(W, L.T, xAction, 0, { dim, line });
+    // faint gridlines carry the ruler's ticks down through the lanes
+    const step = (xAction(L.T) - xAction(0)) / L.T > 40 ? 1 : 5;
+    ctx.fillStyle = line; ctx.globalAlpha = 0.6;
+    for (let a = 0; a <= L.T + 1e-6; a += step) ctx.fillRect(Math.round(xAction(a)), RULER + 1, 1, H0 - RULER - 1);
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = 'middle';
     for (const [i, r] of L.rows.entries()) {
-      const tl = r.s.timeline;
-      const st = drag?.kind === 'shot' && drag.moved && drag.s.id === r.s.id ? drag.start : tl.start || 0;
-      const x0 = xAction(st), x1 = xAction(st + tl.duration);
-      ctx.fillStyle = r.s.active ? soft : solid;
-      ctx.beginPath(); ctx.roundRect(x0, r.top + 1, Math.max(3, x1 - x0), r.h - 2, 4); ctx.fill();
-      ctx.strokeStyle = r.s.active || r.s.id === picked ? accent : strong; ctx.lineWidth = r.s.id === picked ? 2 : 1; ctx.stroke(); ctx.lineWidth = 1;
-      // name, clipped to the bar
-      ctx.save(); ctx.beginPath(); ctx.rect(x0 + 1, r.top, Math.max(0, x1 - x0 - 2), r.h); ctx.clip();
-      ctx.fillStyle = r.s.active ? text : dim;
-      ctx.fillText(`${i + 1}  ${r.s.name}`, x0 + (r.s.active ? 6 : 9), r.top + (r.s.active ? 3 : 5));
+      const tl = r.s.timeline, my = r.top + r.h / 2 + 1;
+      const st = drag?.kind === 'shot' && drag.moved && drag.axis === 'x' && drag.s.id === r.s.id ? drag.start : tl.start || 0;
+      const x0 = xAction(st), bw = Math.max(3, xAction(st + tl.duration) - x0), by = r.top + 1 + INSET, bh = r.h - 1 - INSET * 2;
+      const lifted = reorder && drag.s.id === r.s.id;
+      // header: position in the sequence, then the name
+      ctx.save(); ctx.beginPath(); ctx.rect(0, r.top, GUT - 8, r.h); ctx.clip();
+      ctx.globalAlpha = lifted ? 0.4 : 1;
+      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(String(i + 1), 12, my);
+      ctx.font = `${r.s.active ? 500 : 400} 11px ${font}`; ctx.fillStyle = r.s.active ? text : dim; ctx.fillText(r.s.name, 28, my);
       ctx.restore();
-      if (drag?.kind === 'shot' && drag.axis === 'y' && drag.s.id === r.s.id) { ctx.globalAlpha = 0.35; ctx.fillStyle = text; ctx.fillRect(x0, r.top + 1, Math.max(3, x1 - x0), r.h - 2); ctx.globalAlpha = 1; }
-      if (r.s.active) continue;
-      // another shot's camera keys, small and quiet
-      ctx.fillStyle = dim;
-      const my = r.top + r.h / 2 + 1;
-      for (const k of tl.keys) {
-        if (k.t > tl.duration + 1e-6) continue;
-        const x = xAction(st + k.t);
-        ctx.beginPath(); ctx.moveTo(x, my - 3); ctx.lineTo(x + 3, my); ctx.lineTo(x, my + 3); ctx.lineTo(x - 3, my); ctx.closePath(); ctx.fill();
+      // the shot: a bar from where it picks up the action
+      ctx.globalAlpha = lifted ? 0.4 : 1;
+      ctx.beginPath(); ctx.roundRect(x0, by, bw, bh, 3);
+      if (r.s.active) { ctx.fillStyle = soft; ctx.fill(); }
+      else { ctx.save(); ctx.fillStyle = text; ctx.globalAlpha *= 0.08; ctx.fill(); ctx.restore(); }
+      if (r.s.id === picked) { ctx.strokeStyle = r.s.active ? accent : dim; ctx.lineWidth = 1; ctx.stroke(); }
+      if (!r.s.active) { // its camera keys, as ticks
+        ctx.fillStyle = text; ctx.globalAlpha *= 0.3;
+        for (const k of tl.keys) if (k.t > 1e-6 && k.t < tl.duration - 1e-6) ctx.fillRect(Math.round(xAction(st + k.t)), by + 4, 1, bh - 8);
       }
+      ctx.globalAlpha = 1;
+    }
+    // the selected object's key lane is named after it
+    const so = selObj();
+    if (so?.anim?.length) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
+      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
+      ctx.restore();
     }
     // reordering: where the dragged shot will land
-    if (drag?.kind === 'shot' && drag.axis === 'y' && drag.to !== drag.from) {
-      const r = L.rows[drag.to], y = drag.to < drag.from ? r.top - GAP / 2 : r.top + r.h + GAP / 2;
-      ctx.fillStyle = accent; ctx.fillRect(PAD, Math.round(y) - 1, W - PAD * 2, 2);
+    if (reorder && drag.to !== drag.from) {
+      const r = L.rows[drag.to];
+      ctx.fillStyle = accent; ctx.fillRect(0, (drag.to < drag.from ? r.top : r.top + r.h) - 0.5, W, 2);
     }
-    ctx.font = `10px ${css('--cc-mono')}`;
+    ctx.textBaseline = 'top';
+    ctx.font = `10px ${mono}`;
   }
 
   function draw() {
@@ -416,36 +462,24 @@ export function mountTimeline(root, { viewport, exporter }) {
     const D = dur(), F = fps();
     ctx.font = `10px ${css('--cc-mono')}`;
     ctx.textBaseline = 'top';
-    if (L) drawStack(W, { text, dim, line, accent });
+    if (L) drawStack(W, H0, { text, dim, line, accent });
     const H = L ? L.active.h : H0; // the key editor: the whole track, or the active shot's row
-    const mid = L ? 26 : H / 2 + 6;
+    // inside it: `ct`..`cb` is where shots' bands and cut lines run (under the ruler, or within the bar),
+    // and the keys sit on `mid`
+    const ct = L ? 12 : RULER + 1, cb = L ? H - INSET : H;
+    const mid = L ? H / 2 + 2 : RULER + Math.round((H - RULER) / 2);
 
     const ks = liveKeys();
     const cuts = cutsOf(ks), xs = keyXs(ks);
     if (L) { ctx.save(); ctx.translate(0, L.active.top); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); }
 
     // ruler (one shot: in shot time; several: the stack's action-time ruler is drawn above)
-    if (!L) {
-    const pxPerSec = (W - PAD * 2) / D;
-    const step = pxPerSec > 120 ? 0.5 : pxPerSec > 40 ? 1 : pxPerSec > 16 ? 2 : 5;
-    ctx.fillStyle = dim;
-    if (pxPerSec / F > 5) { // frame ticks
-      ctx.globalAlpha = 0.5;
-      for (let f = 0; f <= D * F; f++) ctx.fillRect(Math.round(xOf(f / F)), 0, 1, 3);
-      ctx.globalAlpha = 1;
-    }
-    for (let t = 0; t <= D + 1e-6; t += step) {
-      const x = Math.round(xOf(t));
-      ctx.fillRect(x, 0, 1, 6);
-      const label = `${+t.toFixed(1)}s`, w = ctx.measureText(label).width;
-      if (!cuts.some((c) => x + 3 < c.x + 11 && x + 3 + w > c.x - 9)) ctx.fillText(label, x + 3, 1); // leave room for a cut's scissors
-    }
-    }
+    if (!L) drawRuler(W, D, xOf, F, { dim, line }, cuts);
     // shots and cuts: every hold key (but the last) ends a shot and the camera cuts to the next key.
     // With at least one cut, shots get a faint alternating band and a name; the baseline breaks at each cut.
     const edges = [xOf(0), ...cuts.map((c) => c.x), xOf(D)];
     ctx.fillStyle = text; ctx.globalAlpha = 0.045;
-    for (let i = 1; i < edges.length - 1; i += 2) ctx.fillRect(edges[i], 12, edges[i + 1] - edges[i], H - 12);
+    for (let i = 1; i < edges.length - 1; i += 2) ctx.fillRect(edges[i], ct, edges[i + 1] - edges[i], cb - ct);
     ctx.globalAlpha = 1;
     ctx.fillStyle = line;
     for (let i = 0; i < edges.length - 1; i++) {
@@ -461,7 +495,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     const speed = resolveEase(store.doc.timeline.speed ?? 'linear');
     if (easeName(speed) !== 'linear') {
       ctx.strokeStyle = accent; ctx.globalAlpha = 0.25; ctx.beginPath();
-      for (let i = 0; i <= 80; i++) { const u = i / 80; const y = H - 4 - bezier(speed, u) * (H - 18); i ? ctx.lineTo(xOf(u * D), y) : ctx.moveTo(xOf(u * D), y); }
+      for (let i = 0; i <= 80; i++) { const u = i / 80; const y = cb - 4 - bezier(speed, u) * (cb - ct - 6); i ? ctx.lineTo(xOf(u * D), y) : ctx.moveTo(xOf(u * D), y); }
       ctx.stroke(); ctx.globalAlpha = 1;
     }
 
@@ -477,7 +511,7 @@ export function mountTimeline(root, { viewport, exporter }) {
         ctx.beginPath(); ctx.moveTo(x0, mid + 0.5); ctx.lineTo(x1, mid + 0.5); ctx.stroke();
         ctx.setLineDash([]); ctx.globalAlpha = 1;
       } else if (x1 - x0 >= 6) {
-        const room = mid - 16, k = Math.min(10, room / 2.2); // linear sits at k px; peaks clamp to the room above the line
+        const room = mid - ct - 3, k = Math.min(10, room / 2.2); // linear sits at k px; peaks clamp to the room above the line
         const n = Math.max(16, Math.round((x1 - x0) / 3));
         const pts = [];
         for (let j = 0; j <= n; j++) {
@@ -497,18 +531,20 @@ export function mountTimeline(root, { viewport, exporter }) {
     // shot names, then the cut lines with a scissors tab over the ruler
     if (cuts.length) {
       ctx.font = `500 10px ${css('--cc-font')}`; ctx.fillStyle = dim;
-      for (let i = 0; i < edges.length - 1; i++) if (edges[i + 1] - edges[i] >= 56) ctx.fillText(`Shot ${i + 1}`, edges[i] + (i ? 7 : 2), 14);
+      for (let i = 0; i < edges.length - 1; i++) if (edges[i + 1] - edges[i] >= 56) ctx.fillText(`Shot ${i + 1}`, edges[i] + (i ? 7 : 2), ct + 2);
       ctx.font = `10px ${css('--cc-mono')}`;
     }
     const sunk = css('--cc-surface-sunk');
     for (const c of cuts) {
       const x = Math.round(c.x) + 0.5;
-      ctx.fillStyle = text; ctx.fillRect(x - 0.75, 12, 1.5, H - 12);
-      ctx.fillStyle = sunk; ctx.fillRect(x - 7, 0, 14, 12);
+      ctx.fillStyle = text; ctx.fillRect(x - 0.75, ct, 1.5, cb - ct);
+      ctx.save(); ctx.translate(0, ct - 12); // the scissors tab sits in the 12 px above the cut line
+      ctx.fillStyle = sunk; if (!L) ctx.fillRect(x - 7, 0, 14, 12);
       ctx.strokeStyle = text; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.arc(x - 2.8, 8.6, 1.8, 0, Math.PI * 2); ctx.moveTo(x + 4.6, 8.6); ctx.arc(x + 2.8, 8.6, 1.8, 0, Math.PI * 2);
       ctx.moveTo(x - 1.5, 7.2); ctx.lineTo(x + 2.8, 1.2); ctx.moveTo(x + 1.5, 7.2); ctx.lineTo(x - 2.8, 1.2);
       ctx.stroke(); ctx.lineWidth = 1; ctx.lineCap = 'butt';
+      ctx.restore();
     }
 
     // keys. At a cut the pair becomes one split key: half square = the shot ends, half diamond = the next starts.
@@ -613,7 +649,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     shots.refresh();
     // the track grows to fit the stacked shots
     relayout();
-    const extra = L ? Math.max(0, L.height - 56) : 0;
+    const extra = L ? Math.max(0, L.height - BASE_H) : 0;
     if (extra !== lastExtra) { lastExtra = extra; document.documentElement.style.setProperty('--stack-h', `${extra}px`); requestAnimationFrame(draw); }
   }
   let lastExtra = 0;

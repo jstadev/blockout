@@ -103,7 +103,7 @@ camera's speed), **Shot speed** remaps time across the whole shot for speed ramp
 **Shots:** one set can have several cameras. **+ Shot** in the timeline bar (or Shift+N) adds a shot
 that picks up the action where the current one ends, with a copy of its camera. With two or more, the key
 track stacks them: one row per shot on the shared action-time axis, each shot a bar from where it picks up
-the action. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
+the action. Shot names sit in a header column on the left; click one to switch, drag it up or down to reorder. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
 empty part of a row) to put the playhead at that moment, switching to the shot that covers it. Drag a bar
 sideways to change where it picks up the action, drag it up or down to reorder, and click it and press
 Delete (or right-click it) to remove it. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
