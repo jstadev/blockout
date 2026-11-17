@@ -37,6 +37,16 @@ export function launchInfo(env = process.env, root = ROOT) {
   return { by, plugin, checkout: fs.existsSync(path.join(root, '.git')), root, dir };
 }
 
+// How a camera key's segment travels, for ls: " → orbit 90° around car-1".
+const pathNote = (k) => {
+  const p = k.path;
+  if (!p) return '';
+  const deg = p.angle ? ` ${p.angle}°` : '';
+  if (p.type === 'orbit') return ` → orbit${deg} around ${p.around || (p.center || k.target).join(',')}`;
+  if (p.type === 'turn') return ` → turn${deg}`;
+  return ` → ${p.type}`;
+};
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
@@ -317,7 +327,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         timeline: { duration: tl.duration, fps: tl.fps, interp: tl.interp, speed: tl.speed, start: tl.start || 0, audio: tl.audio || null },
         shot: doc.shot,
         shots: shotList(doc).map((s) => ({ id: s.id, name: s.name, active: s.active, duration: s.timeline.duration, fps: s.timeline.fps, start: s.timeline.start || 0, keys: s.timeline.keys.length, audio: s.timeline.audio?.name || null })),
-        keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}`),
+        keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}${pathNote(k)}`),
       });
     },
     'GET /api/status': (req, res) => json(res, 200, { ...statusPayload(), tabs: clients.size, scene: scenePath, exports: exportsDir }),

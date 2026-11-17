@@ -102,6 +102,11 @@ With a key selected: its ease, lens (mm), "set to current view" and delete. The 
 the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
 camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
 
+**Moves:** the Moves button next to Key applies a preset camera move from the playhead: pan, tilt, orbit,
+push in, truck, crane, pedestal, zoom, dolly zoom or dutch. A move is two ordinary keys; the first one
+remembers how the camera travels to the second (an arc round the subject, a turn on the spot, a dolly zoom),
+shown under the track and in the selected key's path menu. The agent does the same with `canvas cam`.
+
 **Shots:** one set can have several cameras. The key track shows them as rows on the shared action-time
 axis, each shot a bar from where it picks up the action, with a **+ New shot** row underneath. Hover that row
 to preview the next shot (from where the current one ends, starting on its last frame); click it (or press

@@ -566,6 +566,18 @@ try {
   cli('shot-rm', 'shot-1');
   ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
 
+  // --- camera moves: the Moves popover applies a preset as two keys with a path ---
+  await page.evaluate(() => window.canvas.store.set({ time: 0, selection: null, key: null }));
+  await page.getByRole('button', { name: 'Moves' }).click();
+  await page.locator('.moves-pop .moves-tile', { hasText: 'Orbit' }).click();
+  await page.locator('.moves-pop button', { hasText: 'Apply' }).click();
+  await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.some((k) => k.path?.type === 'orbit'));
+  ok(/→ orbit 90°/.test(cli('ls')), 'the Moves popover keys an orbit from the playhead');
+  ok(await page.locator('.tl-path').inputValue() === 'orbit', 'the selected key shows its path');
+  await page.locator('.tl-path').selectOption('smooth');
+  await page.waitForFunction(() => !window.canvas.store.doc.timeline.keys.some((k) => k.path));
+  ok(true, 'the path select turns the move back into a smooth segment');
+  ok(/dollyZoom from 0s to 2s/.test(cli('cam', 'dolly-zoom', '--t', '0', '--over', '2', '--by', '1')), 'canvas cam keys a dolly zoom');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();
