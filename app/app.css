@@ -186,6 +186,22 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-shot svg:last-child { width: 10px; height: 10px; color: var(--cc-text-dim); }
 .tl-shot.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar > .cc-btn--primary { margin-left: 2px; }
+/* timeline bar, narrow: icon-only buttons first, then shorter readouts (full text stays in the tooltips) */
+@container tl (max-width: 1180px) {
+  .tl-frame, .tl-bar .cc-seg__label, .tl-bar > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
+  .tl-bar > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
+  .tl-bar .cc-seg > button { padding: 0 6px; }
+}
+@container tl (max-width: 960px) {
+  .tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .tl-bar .cc-btn__label { display: none; }
+  .tl-bar > .cc-btn--primary { padding: 0; width: var(--cc-h); }
+  .tl-audiobtn, .tl-objkey { padding: 0; width: var(--cc-h); justify-content: center; }
+  .tl-ease { padding: 0 4px; }
+}
+@container tl (max-width: 760px) {
+  .tl-time > .tl-faint, .tl-keytime { display: none; }
+  .tl-key .tl-diamond { margin-right: 4px; }
+}
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }
@@ -253,19 +269,3 @@ code { font-family: var(--cc-mono); font-size: 11px; }
 .tl-objkey > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-odot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--cc-accent); flex: none; box-sizing: border-box; }
 .tl-objkey.is-animated .tl-odot { background: var(--cc-accent); }
-/* timeline bar, narrow: icon-only buttons first, then shorter readouts (full text stays in the tooltips) */
-@container tl (max-width: 1180px) {
-  .tl-frame, .tl-bar .cc-seg__label, .tl-bar > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
-  .tl-bar > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
-  .tl-bar .cc-seg > button { padding: 0 6px; }
-}
-@container tl (max-width: 960px) {
-  .tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .tl-bar .cc-btn__label { display: none; }
-  .tl-bar > .cc-btn--primary { padding: 0; width: var(--cc-h); }
-  .tl-audiobtn, .tl-objkey { padding: 0; width: var(--cc-h); justify-content: center; }
-  .tl-ease { padding: 0 4px; }
-}
-@container tl (max-width: 760px) {
-  .tl-time > .tl-faint, .tl-keytime { display: none; }
-  .tl-key .tl-diamond { margin-right: 4px; }
-}
