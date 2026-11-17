@@ -258,6 +258,34 @@ try {
   cli('seek', '0'); cli('view', 'free');
   await page.waitForTimeout(200);
 
+  // keyboard fly: hold the right mouse button, W moves forward, E rises, and neither changes the gizmo
+  {
+    const vp = () => page.evaluate(() => { const v = window.canvas.viewport; return { p: v.freeCam.position.toArray(), t: v.freeOrbit.target.toArray(), g: window.canvas.store.state.gizmo }; });
+    await page.evaluate(() => window.canvas.store.set({ key: null, gizmo: 'translate' }));
+    await page.mouse.move(mid.x, mid.y);
+    const a = await vp();
+    const fwd = a.t.map((v, i) => v - a.p[i]); const fl = Math.hypot(...fwd);
+    await page.mouse.down({ button: 'right' });
+    await page.keyboard.down('w'); await page.waitForTimeout(400); await page.keyboard.up('w');
+    await page.keyboard.down('e'); await page.waitForTimeout(300); await page.keyboard.up('e');
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(100);
+    const b = await vp();
+    const d = b.p.map((v, i) => v - a.p[i]);
+    const along = d.reduce((s, v, i) => s + v * fwd[i] / fl, 0);
+    ok(along > 0.5 && d[1] > 0.3, `right button + W flies forward and E rises (forward ${along.toFixed(2)} m, up ${d[1].toFixed(2)} m)`);
+    ok(b.g === 'translate', 'fly keys do not switch the gizmo mode');
+    await page.keyboard.press('e'); await page.waitForTimeout(50);
+    ok((await vp()).g === 'rotate', 'after letting go of the right button, E is the rotate shortcut again');
+    await page.keyboard.press('w');
+    await page.mouse.down({ button: 'right' }); await page.mouse.move(mid.x + 60, mid.y + 30, { steps: 4 }); await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(300);
+    const c = await vp();
+    ok(c.p.some((v, i) => Math.abs(v - b.p[i]) > 0.05), 'right-drag without a fly key still pans');
+    // stop the pan's damping glide so later checks see a still camera
+    await page.evaluate(() => { const o = window.canvas.viewport.freeOrbit; o.enableDamping = false; o.update(); o.enableDamping = true; });
+  }
+
   // orchestration helpers: scoped batches, per-area listing, snapshots from the agent's own camera
   const fsx = await import('node:fs');
   const scoped = path.join(dir, 'scoped.json');

@@ -7,6 +7,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { buildGeometry } from './geometry.js';
 import { isCut, sampleCamera, sampleObject, fovToLens, lensToFov } from '/core/curves.js';
 import { store } from './store.js';
+import { toast } from './ui/kit.js';
 
 const DEG = Math.PI / 180;
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -39,6 +40,7 @@ export class Viewport {
     this._buildShotHelpers();
     this._bindPicking();
     this._bindLensWheel();
+    this._bindFly();
 
     this.layout();
     addEventListener('resize', () => this.layout());
@@ -211,6 +213,93 @@ export class Viewport {
       }
       store.emit('state', { lens: true }); // refresh the lens field
     }, { capture: true, passive: false });
+  }
+
+  // Fly with the keyboard, the way 3D tools do: hold the right mouse button, then W A S D (or the arrow
+  // keys) move, Q / E go down / up, Shift is faster, Alt slower, and the mouse looks around. Scrolling
+  // while held changes the fly speed. Right-drag without a fly key still pans, and outside a right-drag
+  // the keys keep their usual shortcuts (W E R gizmo, arrows step frames). In shot view it hand-frames
+  // the shot camera like orbit does, so press K to key it.
+  _bindFly() {
+    const MOVE = {
+      KeyW: [0, 0, 1], ArrowUp: [0, 0, 1], KeyS: [0, 0, -1], ArrowDown: [0, 0, -1],
+      KeyA: [-1, 0, 0], ArrowLeft: [-1, 0, 0], KeyD: [1, 0, 0], ArrowRight: [1, 0, 0],
+      KeyQ: [0, -1, 0], KeyE: [0, 1, 0],
+    };
+    let speed = 4; try { speed = +localStorage.getItem('cc-flyspeed') || 4; } catch {}
+    const fly = this.fly = { held: false, active: false, keys: new Set(), speed, last: 0, MOVE };
+    const start = () => {
+      if (fly.active) return;
+      fly.active = true; fly.last = performance.now();
+      this.aim = null;
+      // the orbit stops panning; it is turned back on before its own pointerup runs (on the document)
+      this.activeOrbit.enabled = false;
+      if (store.state.view === 'shot') { if (store.state.playing) store.set({ playing: false }); store.set({ camDirty: true }); }
+      this.canvas.style.cursor = 'none';
+    };
+    const stop = () => {
+      fly.held = false; fly.keys.clear();
+      if (!fly.active) return;
+      fly.active = false;
+      this.freeOrbit.enabled = store.state.view === 'free' && !this.dragging;
+      this.shotOrbit.enabled = store.state.view === 'shot' && !this.dragging;
+      this.canvas.style.cursor = '';
+    };
+    this.canvas.addEventListener('pointerdown', (e) => { if (e.button === 2) fly.held = true; });
+    this.canvas.addEventListener('pointerup', (e) => { if (e.button === 2) stop(); });
+    this.canvas.addEventListener('pointercancel', stop);
+    addEventListener('blur', stop);
+    // capture on window, so a fly key held with the right button never reaches the scene shortcuts
+    const mods = (e) => { fly.shift = e.shiftKey; fly.alt = e.altKey; };
+    addEventListener('keydown', mods, true);
+    addEventListener('keyup', mods, true);
+    addEventListener('keydown', (e) => {
+      if (!fly.held || !MOVE[e.code] || e.metaKey || e.ctrlKey || e.target.closest?.('input, select, textarea')) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      fly.keys.add(e.code); start();
+    }, true);
+    addEventListener('keyup', (e) => { if (fly.keys.delete(e.code)) e.preventDefault(); }, true);
+    // mouse look while flying: turn the aim point around the camera
+    addEventListener('pointermove', (e) => {
+      mods(e);
+      if (!fly.active) return;
+      const cam = this.activeCam, orbit = this.activeOrbit;
+      const off = orbit.target.clone().sub(cam.position);
+      const dist = Math.max(0.5, off.length());
+      const sph = new THREE.Spherical().setFromVector3(off);
+      sph.theta -= e.movementX * 0.003;
+      sph.phi = Math.max(0.05, Math.min(Math.PI - 0.05, sph.phi + e.movementY * 0.003));
+      sph.radius = dist;
+      orbit.target.copy(cam.position).add(new THREE.Vector3().setFromSpherical(sph));
+      orbit.update();
+    });
+    // scroll while the right button is held sets the fly speed instead of dollying
+    this.canvas.addEventListener('wheel', (e) => {
+      if (!fly.held || e.ctrlKey || e.metaKey) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      fly.speed = Math.max(0.25, Math.min(100, fly.speed * (e.deltaY < 0 ? 1.25 : 0.8)));
+      try { localStorage.setItem('cc-flyspeed', String(fly.speed)); } catch {}
+      fly.toast?.remove(); // one toast that follows the wheel, not a stack of them
+      fly.toast = toast(`Fly speed ${fly.speed < 10 ? fly.speed.toFixed(1) : Math.round(fly.speed)} m/s`, { ms: 1200 });
+    }, { capture: true, passive: false });
+  }
+
+  _stepFly() {
+    const fly = this.fly;
+    if (!fly?.active) return;
+    const now = performance.now(), dt = Math.min(0.1, (now - fly.last) / 1000);
+    fly.last = now;
+    if (!fly.keys.size) return;
+    const v = new THREE.Vector3();
+    for (const c of fly.keys) v.add(new THREE.Vector3().fromArray(fly.MOVE[c]));
+    if (!v.lengthSq()) return;
+    const cam = this.activeCam, orbit = this.activeOrbit;
+    const fwd = orbit.target.clone().sub(cam.position).normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+    const step = fly.speed * (fly.shift ? 4 : fly.alt ? 0.25 : 1) * dt;
+    const d = fwd.multiplyScalar(v.z).add(right.multiplyScalar(v.x)).add(new THREE.Vector3(0, v.y, 0)).normalize().multiplyScalar(step);
+    cam.position.add(d); orbit.target.add(d);
+    orbit.update();
   }
 
   get activeCam() { return store.state.view === 'shot' ? this.shotCam : this.freeCam; }
@@ -486,6 +575,7 @@ export class Viewport {
     if (!store.doc) return;
     this.poseObjects(time);
     this._stepAim();
+    this._stepFly();
     // shot camera follows the timeline unless the user is hand-framing it
     if (!(view === 'shot' && camDirty)) this.poseCamera(this.shotCam, time, view === 'shot' ? this.shotOrbit : null);
     if (view === 'free') {

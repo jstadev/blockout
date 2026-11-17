@@ -44,6 +44,7 @@ function refreshSel() {
 
 // ---------- help (top right) ----------
 const SHORTCUTS = [
+  ['WASD', 'fly while you hold the right mouse button (arrows too)'], ['Q E', 'fly down / up · Shift faster · scroll: speed'],
   ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['W E R', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
   ['Shift D', 'duplicate'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
   ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['C', 'Free ↔ Shot camera'],
