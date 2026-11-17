@@ -266,6 +266,6 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .tl-path { width: auto; max-width: 96px; margin-left: 2px; }
 .moves-grid .moves-tile svg { width: 28px; height: 28px; }
 .moves-from { font-size: var(--cc-size-sm); white-space: nowrap; }
-.moves-moderow { min-height: 22px; }
-.moves-mode { color: var(--cc-text-dim); font-size: var(--cc-size-sm); }
-.moves-new { height: 22px; padding: 0 8px; font-size: var(--cc-size-sm); }
+.moves-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.moves-at { margin-left: 6px; color: var(--cc-text-faint); font-weight: 400; text-transform: none; }
+.moves-pop .cc-panel__head .moves-new { height: 20px; padding: 0 7px; font-size: var(--cc-size-sm); text-transform: none; letter-spacing: 0; }

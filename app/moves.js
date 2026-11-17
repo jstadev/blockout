@@ -70,10 +70,11 @@ export function mountMoves({ anchor, viewport, onApplied }) {
   let editing = null;   // the key whose move is being edited
   let loadedFor = null; // the key id the fields were last loaded from
   let forceNew = false; // the user chose "New move" for this key
-  const modeText = h('span.moves-mode');
-  const newBtn = button({ label: 'New move', kind: 'ghost', title: 'Add a new move at the playhead instead', onClick: () => { forceNew = true; loadedFor = null; refresh(); } });
+  // the header says what Apply will do: "Moves" (a new one) or "Edit pedestal"; New move sits beside close
+  const titleText = h('span', {}, 'Moves'), titleTime = h('span.cc-mono.moves-at');
+  const titleEl = h('span.moves-title', {}, titleText, titleTime);
+  const newBtn = button({ label: 'New move', kind: 'ghost', title: 'Leave this move as it is and add a new one at the playhead', onClick: () => { forceNew = true; loadedFor = null; refresh(); } });
   newBtn.classList.add('moves-new');
-  const modeRow = h('div.cc-row.moves-moderow', {}, modeText, h('span.cc-spacer'), newBtn);
   const amountLabel = h('span.cc-label');
   const aroundSel = select({ options: [], title: 'What to orbit round: an object, or the point the camera is aiming at', onChange: (v) => { around = v; } });
   const riseNum = number({ value: 0, step: 0.25, min: -50, max: 50, precision: 2, width: 48, title: 'Metres to rise (or drop) over the orbit', onChange: (v) => { rise = v; } });
@@ -85,11 +86,10 @@ export function mountMoves({ anchor, viewport, onApplied }) {
   const rowEl = (label, ...c) => h('div.cc-row', {}, typeof label === 'string' ? h('span.cc-label', {}, label) : label, ...c);
   const aroundRow = rowEl('Around', aroundSel);
   const riseRow = rowEl('Rise', affix(riseNum, 'm'));
-  const p = panel({ title: 'Moves', collapsible: false, actions: [button({ icon: 'close', kind: 'ghost', title: 'Close (Esc)', onClick: () => toggle(false) })] });
+  const p = panel({ title: titleEl, id: 'moves', collapsible: false, actions: [newBtn, button({ icon: 'close', kind: 'ghost', title: 'Close (Esc)', onClick: () => toggle(false) })] });
   p.classList.add('moves-pop');
   p.hidden = true;
   p.body.append(
-    modeRow,
     h('div.moves-grid', {}, ...tiles),
     help,
     rowEl(amountLabel, ...Object.values(amountFields)),
@@ -145,7 +145,9 @@ export function mountMoves({ anchor, viewport, onApplied }) {
     editing = mk;
     if (mk && loadedFor !== mk.key.id) { load(mk); loadedFor = mk.key.id; }
     if (!mk) loadedFor = forceNew ? sel : null;
-    modeText.textContent = mk ? `Editing the ${MOVES.find((m) => m.id === mk.key.path.move).label.toLowerCase()} at ${mk.key.t.toFixed(2)} s` : 'New move at the playhead';
+    titleText.textContent = mk ? `Edit ${MOVES.find((m) => m.id === mk.key.path.move).label.toLowerCase()}` : 'Moves';
+    titleTime.textContent = mk ? `${mk.key.t.toFixed(2)} s` : '';
+    titleEl.title = mk ? `The move that starts at ${mk.key.t.toFixed(2)} s` : 'A new move from the playhead';
     newBtn.style.display = mk ? '' : 'none'; // .cc-btn sets display
     applyBtn.lastChild.textContent = mk ? 'Update' : 'Apply';
     applyBtn.title = mk ? 'Redo this move with these settings, from the same starting framing' : 'Key the move from the playhead';

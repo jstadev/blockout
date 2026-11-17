@@ -576,7 +576,7 @@ try {
   ok(await page.locator('.tl-path').inputValue() === 'orbit', 'the selected key shows its path');
   // editing: the selected key starts a move, so the menu shows its settings and Update redoes it
   await page.locator('.moves-pop .moves-new').waitFor();
-  ok((await page.locator('.moves-pop .moves-mode').textContent()).startsWith('Editing the orbit'), 'the Moves menu opens on the selected move');
+  ok((await page.locator('.moves-pop .moves-title').textContent()).startsWith('Edit orbit'), 'the Moves menu opens on the selected move');
   const ang = page.locator('.moves-pop .cc-affix:visible input').first();
   await ang.click(); await ang.fill('180'); await ang.press('Enter');
   await page.locator('.moves-pop button', { hasText: 'Update' }).click();
