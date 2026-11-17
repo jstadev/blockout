@@ -1,7 +1,7 @@
 /* Blockout UI kit. Components are .cc-* classes built by app/ui/kit.js. */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--cc-bg); color: var(--cc-text);
-  font: var(--cc-size)/1.35 var(--cc-font); -webkit-font-smoothing: antialiased; }
+  font: var(--cc-size)/1.35 var(--cc-font); font-variation-settings: var(--cc-round); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
 .cc-panel { background: var(--cc-surface); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
