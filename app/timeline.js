@@ -90,8 +90,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   document.body.append(morePop); // outside #timeline, like the other popovers
   loopBtn.dataset.menuLabel = 'Loop';
   shots.playAllBtn.dataset.menuLabel = 'Play all';
-  // each overflow control keeps a marker where it sits in the bar, so it goes back to the same place
-  const overflow = [loopBtn, shots.playAllBtn, audioTrack.btn, shotBtn, objKeyBtn].map((el) => {
+  // A control opts into the menu with data-overflow. Each keeps a marker where it sits in the bar, so it goes
+  // back to the same place.
+  for (const el of [loopBtn, shots.playAllBtn, audioTrack.btn, shotBtn, objKeyBtn]) el.dataset.overflow = '';
+  const overflow = [...bar.querySelectorAll(':scope > [data-overflow]')].map((el) => {
     const mark = document.createComment('');
     el.after(mark);
     return { el, mark };

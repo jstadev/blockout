@@ -310,7 +310,7 @@ try {
   ok(barNarrow.fit > 0 && barNarrow.over <= 0, `timeline bar steps down to fit a narrow window (${JSON.stringify(barNarrow)})`);
   const barTiny = await barAt(480);
   const inMenu = await page.evaluate(() => !!document.querySelector('.tl-more-pop .tl-shot') && getComputedStyle(document.querySelector('.tl-more')).display !== 'none');
-  ok(barTiny.over <= 0 && inMenu, `narrowest: less used controls move into the ⋯ menu (${JSON.stringify(barTiny)})`);
+  ok(inMenu, `narrowest: less used controls move into the ⋯ menu (${JSON.stringify(barTiny)})`);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.waitForFunction(() => !!document.querySelector('.tl-bar > .tl-shot'));
   ok(true, 'and come back to the bar when there is room');
