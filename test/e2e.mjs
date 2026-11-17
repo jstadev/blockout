@@ -297,6 +297,23 @@ try {
     if (!tlBefore.keys.some((k) => Math.abs(k.t - f / fr) < 2.5 / fr)) { tc = +(f / fr).toFixed(3); break; }
   }
   ok(await page.locator('.tl-bar button', { hasText: /^Cut$/ }).count() === 0, 'the bar has no Cut button');
+  // the timeline bar steps down (icon-only buttons, shorter readouts) instead of squeezing its controls together
+  const barAt = async (w) => {
+    await page.setViewportSize({ width: w, height: 800 });
+    await page.waitForFunction(() => { const b = document.querySelector('.tl-bar'); return b.scrollWidth <= b.clientWidth + 0.5; }, null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(100);
+    return page.evaluate(() => { const b = document.querySelector('.tl-bar'); return { over: b.scrollWidth - b.clientWidth, fit: [1, 2, 3].filter((i) => b.classList.contains(`is-fit${i}`)).length }; });
+  };
+  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: s.doc.timeline.keys[0]?.id || null }); });
+  const barWide = await barAt(1600), barNarrow = await barAt(720);
+  ok(barWide.fit === 0 && barWide.over <= 0, `timeline bar keeps its labels when there is room (${JSON.stringify(barWide)})`);
+  ok(barNarrow.fit > 0 && barNarrow.over <= 0, `timeline bar steps down to fit a narrow window (${JSON.stringify(barNarrow)})`);
+  const barTiny = await barAt(480);
+  const inMenu = await page.evaluate(() => !!document.querySelector('.tl-more-pop .tl-shot') && getComputedStyle(document.querySelector('.tl-more')).display !== 'none');
+  ok(barTiny.over <= 0 && inMenu, `narrowest: less used controls move into the ⋯ menu (${JSON.stringify(barTiny)})`);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForFunction(() => !!document.querySelector('.tl-bar > .tl-shot'));
+  ok(true, 'and come back to the bar when there is room');
   const nb = await page.locator('.tl-track').boundingBox();
   const nY = nb.y + await page.evaluate(() => window.canvas.timeline.newRowY());
   const nX = async (a) => nb.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
@@ -565,24 +582,6 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
   cli('shot-rm', 'shot-1');
   ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
-
-  // the timeline bar steps down (icon-only buttons, shorter readouts) instead of squeezing its controls together
-  const barAt = async (w) => {
-    await page.setViewportSize({ width: w, height: 800 });
-    await page.waitForFunction(() => { const b = document.querySelector('.tl-bar'); return b.scrollWidth <= b.clientWidth + 0.5; }, null, { timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(100);
-    return page.evaluate(() => { const b = document.querySelector('.tl-bar'); return { over: b.scrollWidth - b.clientWidth, fit: [1, 2, 3].filter((i) => b.classList.contains(`is-fit${i}`)).length }; });
-  };
-  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: s.doc.timeline.keys[0]?.id || null }); });
-  const barWide = await barAt(1600), barNarrow = await barAt(720);
-  ok(barWide.fit === 0 && barWide.over <= 0, `timeline bar keeps its labels when there is room (${JSON.stringify(barWide)})`);
-  ok(barNarrow.fit > 0 && barNarrow.over <= 0, `timeline bar steps down to fit a narrow window (${JSON.stringify(barNarrow)})`);
-  const barTiny = await barAt(480);
-  const inMenu = await page.evaluate(() => !!document.querySelector('.tl-more-pop .tl-shot') && getComputedStyle(document.querySelector('.tl-more')).display !== 'none');
-  ok(barTiny.over <= 0 && inMenu, `narrowest: less used controls move into the ⋯ menu (${JSON.stringify(barTiny)})`);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.waitForFunction(() => !!document.querySelector('.tl-bar > .tl-shot'));
-  ok(true, 'and come back to the bar when there is room');
 
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
