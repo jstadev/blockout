@@ -507,3 +507,29 @@ test('sweep: shortest way round unless the hint says otherwise', () => {
   assert.equal(d(sweep(0, 0, 360)), 360);
   assert.equal(d(sweep(0, -Math.PI / 2, 270)), 270);
 });
+
+test('camera moves remember their settings and can be edited in place', () => {
+  let { doc, results } = applyOps(createDoc(), { op: 'cam.move', move: 'orbit', t: 1, over: 2, angle: 90, ease: 'linear' });
+  const [a, b] = results[0].keys;
+  const k = () => doc.timeline.keys.find((x) => x.id === a);
+  assert.deepEqual([k().path.move, k().path.params], ['orbit', { angle: 90 }]);
+  const startPos = [...k().position];
+  // change the angle and length: same start framing, the old end key is replaced (and keeps its id)
+  ({ doc, results } = applyOps(doc, { op: 'cam.move', edit: a, angle: 180, over: 3 }));
+  assert.deepEqual(results[0].keys, [a, b]);
+  assert.equal(results[0].edited, true);
+  assert.deepEqual(k().position, startPos);
+  assert.equal(k().ease, 'linear', 'settings left out keep their values');
+  assert.equal(k().path.params.angle, 180);
+  assert.deepEqual(doc.timeline.keys.map((x) => x.t), [0, 1, 4, 5]);
+  // a shorter move leaves later keys alone
+  ({ doc } = applyOps(doc, { op: 'cam.move', edit: a, over: 1 }));
+  assert.deepEqual(doc.timeline.keys.map((x) => x.t), [0, 1, 2, 5]);
+  // switch it to another move
+  ({ doc } = applyOps(doc, { op: 'cam.move', edit: a, move: 'push', by: 1 }));
+  assert.deepEqual([k().path.type, k().path.move], ['straight', 'push']);
+  // a path picked by hand is no longer a preset move
+  ({ doc } = applyOps(doc, { op: 'key.update', id: a, path: 'orbit' }));
+  assert.equal(k().path.move, undefined);
+  assert.throws(() => applyOps(doc, { op: 'cam.move', edit: 'k1' }), /no move to edit/);
+});

@@ -43,8 +43,9 @@ const pathNote = (k) => {
   if (!p) return '';
   const deg = p.angle ? ` ${p.angle}°` : '';
   if (p.type === 'orbit') return ` → orbit${deg} around ${p.around || (p.center || k.target).join(',')}`;
-  if (p.type === 'turn') return ` → turn${deg}`;
-  return ` → ${p.type}`;
+  const by = p.move && p.move !== p.type && p.move !== 'pan' && p.move !== 'tilt' ? ` (${p.move}${p.params?.by != null ? ` ${p.params.by}m` : ''}${p.params?.lens != null ? ` ${p.params.lens}mm` : ''}${p.params?.angle != null ? ` ${p.params.angle}°` : ''})` : '';
+  if (p.type === 'turn') return ` → turn${deg}${p.move === 'tilt' ? ' (tilt)' : ''}`;
+  return ` → ${p.type}${by}`;
 };
 
 const MIME = {

@@ -174,6 +174,19 @@ function normPath(p) {
     out.angle = round(+p.angle);
   }
   if (type === 'orbit' && p.around != null) out.around = String(p.around);
+  // the preset that made it and its settings, so the Moves menu can reopen and change it
+  if (p.move != null) {
+    if (!MOVES[p.move]) throw new Error(`unknown move "${p.move}" (moves: ${Object.keys(MOVES).join(', ')})`);
+    out.move = p.move;
+    out.params = moveParams(p.params || {});
+  }
+  return out;
+}
+const MOVE_PARAMS = ['angle', 'by', 'lens', 'fov', 'rise'];
+function moveParams(src) {
+  const out = {};
+  for (const k of MOVE_PARAMS) if (src[k] != null) { if (!Number.isFinite(+src[k])) throw new Error(`${k} must be a number`); out[k] = round(+src[k]); }
+  if (src.around != null) out.around = typeof src.around === 'string' ? src.around : vec3(src.around, 'around').map(round);
   return out;
 }
 
@@ -445,19 +458,37 @@ export const OPS = {
    * keys in between are replaced. Both are ordinary keys afterwards: drag, re-key or ease them.
    */
   'cam.move'(doc, op) {
-    const def = MOVES[MOVE_ALIASES[op.move] || op.move];
-    if (!def) throw new Error(`unknown move "${op.move}" (moves: ${Object.keys(MOVES).join(', ')})`);
     const tl = doc.timeline;
+    // edit: <keyId|index> redoes the move that starts at that key, from the same framing; its end key is
+    // replaced. Settings not given keep the ones it was made with.
+    let edit = null, oldEnd = null;
+    if (op.edit != null) {
+      edit = findKey(doc, op.edit);
+      const sorted = [...tl.keys].sort((a, b) => a.t - b.t);
+      oldEnd = edit.path ? sorted[sorted.indexOf(edit) + 1] || null : null;
+      const was = edit.path?.move ? { move: edit.path.move, ...edit.path.params } : {};
+      op = { ...was, ease: edit.ease, over: oldEnd ? round(oldEnd.t - edit.t) : undefined, ...Object.fromEntries(Object.entries(op).filter(([, v]) => v !== undefined)), t: edit.t };
+      delete op.from;
+      if (op.move == null) throw new Error(`key ${edit.id} has no move to edit: pass move`);
+    }
+    const name = MOVE_ALIASES[op.move] || op.move;
+    const def = MOVES[name];
+    if (!def) throw new Error(`unknown move "${op.move}" (moves: ${Object.keys(MOVES).join(', ')})`);
     const t0 = round(op.t ?? 0);
     if (!(t0 >= 0)) throw new Error('t must be a time ≥ 0 in seconds');
     const over = op.over ?? 3;
     if (!(over >= 1 / (tl.fps || 24) && over <= 3600)) throw new Error('over (the move\'s length) must be at least one frame, in seconds');
     const t1 = round(t0 + over);
-    const here = tl.keys.find((k) => Math.abs(k.t - t0) < 1e-3);
+    if (oldEnd) tl.keys = tl.keys.filter((k) => k !== oldEnd);
+    const here = edit || tl.keys.find((k) => Math.abs(k.t - t0) < 1e-3);
     let start = op.from ? normKey({ ...op.from, t: t0 }) : here || sampleCamera({ ...tl, speed: 'linear' }, t0);
-    if (!start) throw new Error('the shot has no camera keys yet: key a framing first, or pass from (canvas move ... --from-view)');
+    if (!start) throw new Error('the shot has no camera keys yet: key a framing first, or pass from (canvas cam ... --from-view)');
     start = { position: start.position.map(round), target: start.target.map(round), fov: round(start.fov ?? 40), roll: round(start.roll ?? 0) };
-    const { end, path } = def.make(start, op.move === 'pull-out' ? { ...op, pull: true } : op, doc, t0);
+    const args = op.move === 'pull-out' ? { ...op, by: -Math.abs(op.by ?? 0) || undefined, pull: true } : op;
+    const made = def.make(start, args, doc, t0);
+    const params = moveParams(args);
+    if (args.pull && params.by == null) params.by = round(v3.len(v3.sub(made.end.position, start.position)) * -1);
+    const path = { ...made.path, move: def.name, params };
     const ease = op.ease ?? 'easeInOut';
     resolveEase(ease);
     // replace what was inside the move, then key both ends
@@ -465,11 +496,11 @@ export const OPS = {
     let a = tl.keys.find((k) => Math.abs(k.t - t0) < 1e-3);
     if (a) Object.assign(a, normKey({ ease, path }, a));
     else tl.keys.push(a = { id: uniqueId(doc, 'k', { kind: 'keys' }), ...normKey({ t: t0, ...start, ease, path }) });
-    const b = { id: uniqueId(doc, 'k', { kind: 'keys' }), ...normKey({ t: t1, ...end, ease: 'easeInOut' }) };
+    const b = { id: oldEnd && !tl.keys.some((k) => k.id === oldEnd.id) ? oldEnd.id : uniqueId(doc, 'k', { kind: 'keys' }), ...normKey({ t: t1, ...made.end, ease: oldEnd?.ease ?? 'easeInOut' }) };
     tl.keys.push(b);
     if (t1 > tl.duration) tl.duration = t1;
     sortKeys(doc);
-    return { move: def.name, keys: [a.id, b.id], from: t0, to: t1, path: path ? (path.type ?? path) : 'smooth' };
+    return { move: def.name, keys: [a.id, b.id], from: t0, to: t1, path: path.type, edited: !!edit };
   },
 
   /**

@@ -88,6 +88,8 @@ keys in between are replaced. Both stay ordinary keys you can drag, re-key and e
     crane --by m (+ up, keeps the aim) · zoom --lens 85 | --fov 20 · dolly-zoom --by m (+ in, lens widens)
     roll --angle 15 (dutch)
   --t defaults to the playhead (0 with no tab open); --from-view starts from the user's current view
+  canvas cam [move] --edit <keyId> [params]  change the move that starts at that key (same start framing;
+                                            settings you leave out keep their values, e.g. --angle 180 --over 4)
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
@@ -479,25 +481,27 @@ const commands = {
     out(`set the ease on ${r.updated} segment${r.updated === 1 ? '' : 's'}`);
   },
   async cam({ pos, flags }) {
-    if (!pos[0]) {
+    if (!pos[0] && flags.edit == null) {
       out(['camera moves (canvas cam <move> [--t s] [--over 3] [--ease name] [params]):',
         ...Object.values(MOVES).map((m) => `  ${m.name.padEnd(10)} ${m.about}; ${m.params}`),
         '  aliases: push-in, dolly → push · pull-out (push, reversed) · dolly-zoom, vertigo → dollyZoom · dutch → roll · arc → orbit · boom → crane'].join('\n'));
       return;
     }
-    const o = { op: 'cam.move', move: pos[0] };
+    const o = { op: 'cam.move' };
+    if (pos[0]) o.move = pos[0];
+    if (flags.edit != null) { const r = keyRef(String(flags.edit)); o.edit = r.id ?? r.index; }
     for (const f of ['t', 'over', 'angle', 'by', 'rise', 'lens', 'fov']) if (flags[f] != null) o[f] = num(flags[f]);
     if (flags.ease != null) o.ease = easeArg(flags.ease);
     if (flags.around != null) { const a = String(flags.around); o.around = /^-?[\d.]+,-?[\d.]+,-?[\d.]+$/.test(a) ? vec(a) : a; }
-    if (flags['from-view'] || (o.t == null && !SHOT)) { // the playhead belongs to the active shot
+    if (o.edit == null && (flags['from-view'] || (o.t == null && !SHOT))) { // the playhead belongs to the active shot
       let cam = null;
       try { cam = await rpc('camera'); } catch (e) { if (flags['from-view']) throw e; }
       if (cam && o.t == null) o.t = cam.time;
       if (cam && flags['from-view']) o.from = { position: cam.position, target: cam.target, fov: cam.fov };
     }
-    o.t ??= 0;
-    const r = (await op(o, `camera move: ${pos[0]}`)).results[0];
-    out(`${r.move} from ${r.from}s to ${r.to}s: keys ${r.keys.join(' → ')} (${r.path} path)`);
+    if (o.edit == null) o.t ??= 0;
+    const r = (await op(o, `camera move: ${pos[0] || 'edit'}`)).results[0];
+    out(`${r.edited ? 'changed ' : ''}${r.move} from ${r.from}s to ${r.to}s: keys ${r.keys.join(' → ')} (${r.path} path)`);
   },
   async 'key-rm'({ pos }) { const r = await op({ op: 'key.remove', ...keyRef(pos[0]) }); out(`removed key ${r.results[0].removed}`); },
   async 'keys-clear'() { const r = await op({ op: 'key.clear' }); out(`removed ${r.results[0].removed} keys`); },

@@ -685,6 +685,10 @@ export function mountTimeline(root, { viewport, exporter }) {
     const multi = selKeys.size > 1;
     easeBtn.style.display = toViewBtn.style.display = multi ? 'none' : ''; // .cc-btn sets display, so hidden alone would not hide it
     movesBtn.setActive(moves.open);
+    // a selected key that starts a move: the button reopens that move's settings
+    const editable = !!(k && k.path?.move && selKeys.size < 2 && keys().at(-1)?.id !== k.id);
+    if (movesBtn.lastChild.textContent !== (editable ? 'Edit move' : 'Moves')) movesBtn.lastChild.textContent = editable ? 'Edit move' : 'Moves';
+    movesBtn.title = editable ? 'Change the settings of the move that starts at this key' : 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...';
     delKeyBtn.title = multi ? `Delete ${selKeys.size} keys` : 'Delete key';
     if (k) {
       const sorted = keys();

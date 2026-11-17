@@ -574,6 +574,15 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.some((k) => k.path?.type === 'orbit'));
   ok(/→ orbit 90°/.test(cli('ls')), 'the Moves popover keys an orbit from the playhead');
   ok(await page.locator('.tl-path').inputValue() === 'orbit', 'the selected key shows its path');
+  // editing: the selected key starts a move, so the menu shows its settings and Update redoes it
+  await page.locator('.moves-pop .moves-new').waitFor();
+  ok((await page.locator('.moves-pop .moves-mode').textContent()).startsWith('Editing the orbit'), 'the Moves menu opens on the selected move');
+  const ang = page.locator('.moves-pop .cc-affix:visible input').first();
+  await ang.click(); await ang.fill('180'); await ang.press('Enter');
+  await page.locator('.moves-pop button', { hasText: 'Update' }).click();
+  await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.some((k) => k.path?.params?.angle === 180));
+  ok(/→ orbit 180°/.test(cli('ls')), 'Update changes the move in place');
+  await page.keyboard.press('Escape');
   await page.locator('.tl-path').selectOption('smooth');
   await page.waitForFunction(() => !window.canvas.store.doc.timeline.keys.some((k) => k.path));
   ok(true, 'the path select turns the move back into a smooth segment');

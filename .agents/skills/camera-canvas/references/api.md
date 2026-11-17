@@ -34,7 +34,7 @@ a shot shows the action from its `timeline.start` (default 0). Scenes saved befo
 Rotation is degrees XYZ. `fov` is vertical, in degrees (`--lens` converts from full-frame mm).
 `ease` on a key is the curve used from that key to the next. `path` on a key (optional) is how the camera
 travels to the next key: absent = the smooth spline; `{ "type": "straight" }`; `{ "type": "orbit", "center":
-[x,y,z], "angle": 90, "around": "hero" }` (an arc round the vertical axis through center, default the key's
+[x,y,z], "angle": 90, "around": "hero", "move": "orbit", "params": { "angle": 90 } }` (an arc round the vertical axis through center, default the key's
 target; angle in degrees, + to the camera's right, picks the direction and how far; around is the object it
 was made for); `{ "type": "turn", "angle": -30 }` (pan/tilt on the spot, + pans right); `{ "type": "dollyZoom" }`
 (straight, with the fov set from the distance so the frame keeps its width at the target). Ignored on a hold key.
@@ -57,7 +57,7 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `anim.remove` | `id`, `t?` (omit to remove all of its animation) | `{ id, keys }` |
 | `key.add` | `t`, `position`, `target`, `fov?`, `roll?`, `ease?`. A key already at `t` is updated instead | `{ id, replaced? }` |
 | `key.update` | `id` or `index` (by time order), any key field. `path`: a type name, an object, or `"smooth"` to clear | `{ id }` |
-| `cam.move` | `move` (`pan` `tilt` `orbit` `push` `pull-out` `truck` `pedestal` `crane` `zoom` `dollyZoom` `roll`; aliases `push-in` `dolly` `dolly-zoom` `vertigo` `dutch` `arc` `boom`), `t?` (default 0), `over?` (s, default 3), `ease?`, `from?` ({ position, target, fov?, roll? }; default the camera at `t`), and the move's own: `angle` (pan + right, tilt + up, orbit + right, roll), `by` (m: push/dollyZoom + in, truck + right, crane/pedestal + up), `around` (orbit: object id or [x,y,z]; default the aim), `rise` (orbit, m), `lens` or `fov` (zoom). Keys a path + ease at `t` and the end framing at `t + over`, replacing keys in between | `{ move, keys: [start, end], from, to, path }` |
+| `cam.move` | `move` (`pan` `tilt` `orbit` `push` `pull-out` `truck` `pedestal` `crane` `zoom` `dollyZoom` `roll`; aliases `push-in` `dolly` `dolly-zoom` `vertigo` `dutch` `arc` `boom`), `t?` (default 0), `over?` (s, default 3), `ease?`, `from?` ({ position, target, fov?, roll? }; default the camera at `t`), and the move's own: `angle` (pan + right, tilt + up, orbit + right, roll), `by` (m: push/dollyZoom + in, truck + right, crane/pedestal + up), `around` (orbit: object id or [x,y,z]; default the aim), `rise` (orbit, m), `lens` or `fov` (zoom). Keys a path + ease at `t` and the end framing at `t + over`, replacing keys in between. The path keeps `move` and `params`. `edit: <keyId|index>` redoes the move starting at that key from its framing, replacing its end key; settings left out keep their values | `{ move, keys: [start, end], from, to, path }` |
 | `key.remove` | `id` or `index` | `{ removed }` |
 | `key.clear` | | `{ removed }` |
 | `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |

@@ -58,11 +58,22 @@ export function mountMoves({ anchor, viewport, onApplied }) {
   });
   const help = h('div.cc-label.moves-help');
   // one field per move, so each keeps its own range, step and value
+  const amountNums = {};
   const amountFields = Object.fromEntries(MOVES.map((m) => {
     const a = m.amount;
     const n = number({ value: a.value, step: a.step, min: a.min, max: a.max, precision: a.precision ?? 2, width: 48, title: a.title, onChange: (v) => { amounts[m.id] = v; } });
+    amountNums[m.id] = n;
     return [m.id, affix(n, a.unit)];
   }));
+  // Editing: with a key selected that starts a move, the menu shows that move's settings and Update redoes it
+  // from the same framing. "New move" switches back to adding one at the playhead.
+  let editing = null;   // the key whose move is being edited
+  let loadedFor = null; // the key id the fields were last loaded from
+  let forceNew = false; // the user chose "New move" for this key
+  const modeText = h('span.moves-mode');
+  const newBtn = button({ label: 'New move', kind: 'ghost', title: 'Add a new move at the playhead instead', onClick: () => { forceNew = true; loadedFor = null; refresh(); } });
+  newBtn.classList.add('moves-new');
+  const modeRow = h('div.cc-row.moves-moderow', {}, modeText, h('span.cc-spacer'), newBtn);
   const amountLabel = h('span.cc-label');
   const aroundSel = select({ options: [], title: 'What to orbit round: an object, or the point the camera is aiming at', onChange: (v) => { around = v; } });
   const riseNum = number({ value: 0, step: 0.25, min: -50, max: 50, precision: 2, width: 48, title: 'Metres to rise (or drop) over the orbit', onChange: (v) => { rise = v; } });
@@ -78,6 +89,7 @@ export function mountMoves({ anchor, viewport, onApplied }) {
   p.classList.add('moves-pop');
   p.hidden = true;
   p.body.append(
+    modeRow,
     h('div.moves-grid', {}, ...tiles),
     help,
     rowEl(amountLabel, ...Object.values(amountFields)),
@@ -103,8 +115,40 @@ export function mountMoves({ anchor, viewport, onApplied }) {
       place(); refresh();
     }
   }
+  /** The selected key, if it starts a move made from this menu (and the user didn't ask for a new one). */
+  function moveKey() {
+    const k = store.state.key && store.keyById(store.state.key);
+    if (!k || !k.path?.move || !MOVES.some((m) => m.id === k.path.move)) return null;
+    const ks = [...store.doc.timeline.keys].sort((a, b) => a.t - b.t);
+    const next = ks[ks.indexOf(k) + 1];
+    return next ? { key: k, next } : null;
+  }
+  // load a move's settings into the fields
+  function load({ key, next }) {
+    const pr = key.path.params || {};
+    cur = MOVES.find((m) => m.id === key.path.move);
+    const f = cur.amount.field;
+    let v = pr[f];
+    if (v == null && f === 'lens' && pr.fov != null) v = +(12 / Math.tan((pr.fov * Math.PI) / 360)).toFixed(0);
+    if (v == null) v = cur.amount.value;
+    amounts[cur.id] = v; amountNums[cur.id].set(v);
+    around = typeof pr.around === 'string' ? pr.around : '';
+    rise = pr.rise ?? 0;
+    over = +(next.t - key.t).toFixed(3);
+    ease = typeof key.ease === 'string' && key.ease !== 'hold' ? key.ease : 'easeInOut';
+  }
   function refresh() {
     if (!api.open || !store.doc) return;
+    const sel = store.state.key;
+    if (sel !== loadedFor && sel !== editing?.key.id) forceNew = false;
+    const mk = forceNew ? null : moveKey();
+    editing = mk;
+    if (mk && loadedFor !== mk.key.id) { load(mk); loadedFor = mk.key.id; }
+    if (!mk) loadedFor = forceNew ? sel : null;
+    modeText.textContent = mk ? `Editing the ${MOVES.find((m) => m.id === mk.key.path.move).label.toLowerCase()} at ${mk.key.t.toFixed(2)} s` : 'New move at the playhead';
+    newBtn.style.display = mk ? '' : 'none'; // .cc-btn sets display
+    applyBtn.lastChild.textContent = mk ? 'Update' : 'Apply';
+    applyBtn.title = mk ? 'Redo this move with these settings, from the same starting framing' : 'Key the move from the playhead';
     for (const t of tiles) t.classList.toggle('is-active', t.dataset.move === cur.id);
     help.textContent = cur.help;
     const a = cur.amount;
@@ -124,11 +168,22 @@ export function mountMoves({ anchor, viewport, onApplied }) {
     riseNum.set(rise);
     overNum.set(over);
     easeSel.value = ease;
-    const t = store.state.time;
+    const t = mk ? mk.key.t : store.state.time;
     from.textContent = `${t.toFixed(2)} → ${(t + over).toFixed(2)} s`;
-    from.title = 'From the playhead, starting on the camera\'s framing there';
+    from.title = mk ? 'From the move\'s first key' : 'From the playhead, starting on the camera\'s framing there';
   }
   async function apply() {
+    if (editing) {
+      const op = { op: 'cam.move', edit: editing.key.id, move: cur.id, over: +over.toFixed(3), ease, [cur.amount.field]: amounts[cur.id] };
+      if (cur.around) op.around = around || null;
+      if (cur.rise) op.rise = rise;
+      try {
+        const [r] = await store.op(op, `edit camera move: ${cur.label.toLowerCase()}`);
+        store.set({ key: r.keys[0], camDirty: false });
+        toast(`Updated the ${cur.label.toLowerCase()}: ${r.from.toFixed(2)} to ${r.to.toFixed(2)} s`);
+      } catch {}
+      return;
+    }
     const t = +store.state.time.toFixed(3);
     const op = { op: 'cam.move', move: cur.id, t, over: +over.toFixed(3), ease, [cur.amount.field]: amounts[cur.id] };
     if (cur.around && around) op.around = around;

@@ -132,6 +132,8 @@ move's **path** and ease, and a key where it ends; keys in between are replaced.
 camera travels to the next key: `smooth` (the spline, default), `straight`, `orbit` (an arc round a point,
 so two keys make a real circle), `turn` (pan/tilt on the spot) or `dollyZoom`. The keys stay ordinary:
 drag, re-key or re-ease them; `canvas key-set <id> --path smooth` turns the move back into a plain segment.
+A move remembers its settings: `canvas cam --edit <keyId> --angle 180 --over 4` redoes it from the same
+start framing (settings left out keep their values; name another move to switch it).
 `canvas ls` shows a path as `→ orbit 90° around hero`. Chain moves by starting the next at the previous
 one's end time. Check with a storyboard.
 
