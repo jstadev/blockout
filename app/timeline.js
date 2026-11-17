@@ -47,7 +47,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // selected key: time, ease (opens the curve editor), lens, set to view, delete
   const keyTime = h('span.cc-mono.tl-keytime');
   const easeGlyph = h('span.tl-glyph');
-  const easeName_ = h('span');
+  const easeName_ = h('span.tl-ease-name');
   const easeBtn = h('button.cc-field.tl-ease', { type: 'button', onClick: () => curve.toggle(undefined, 'segment') }, easeGlyph, easeName_, icon('chevronDown'));
   // Lens: sets the selected key's focal length and the free camera's, so the free view looks through the
   // same lens you are keying. With no key selected it sets just the free camera.
@@ -64,7 +64,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // output: shot settings chip + export
   const shotDur = h('span'), shotFps = h('span');
   const shotBtn = h('button.cc-btn.tl-shot', { type: 'button', title: 'Shot length, frame rate and size', onClick: () => shot.toggle() },
-    h('span.cc-mono', {}, shotDur, h('span.cc-affix__unit', {}, ' s')), h('span.tl-faint', {}, '·'), h('span.cc-mono', {}, shotFps, h('span.cc-affix__unit', {}, ' fps')), icon('chevronDown'));
+    h('span.cc-mono', {}, shotDur, h('span.cc-affix__unit', {}, ' s')), h('span.tl-faint.tl-shot-fps', {}, '·'), h('span.cc-mono.tl-shot-fps', {}, shotFps, h('span.cc-affix__unit', {}, ' fps')), icon('chevronDown'));
   const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)',
     onClick: (e) => exporter.exportVideo({ sequence: e.shiftKey && store.doc.shots.length > 1 }).catch((err) => toast(err.message, { kind: 'error' })) });
 

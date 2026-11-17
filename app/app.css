@@ -158,7 +158,13 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 
 /* bottom: timeline */
 #timeline { position: fixed; left: 12px; right: 12px; bottom: 12px; height: calc(104px + var(--stack-h, 0px)); z-index: 10; display: flex; flex-direction: column; padding: 8px; gap: 6px; }
-.tl-bar { display: flex; align-items: center; gap: 4px; height: 26px; flex: none; }
+/* The bar never squeezes its controls into each other: as the timeline narrows it drops labels in steps
+   (container queries at the end of this file), and below the last step it scrolls sideways. The 3px
+   padding, cancelled by the negative margin, keeps focus rings inside the scroll box. */
+#timeline { container: tl / inline-size; }
+.tl-bar { display: flex; align-items: center; gap: 4px; height: 32px; flex: none; margin: -3px; padding: 0 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tl-bar::-webkit-scrollbar { display: none; }
+.tl-bar > *, .tl-key > * { flex-shrink: 0; }
 .tl-time { padding: 0 4px 0 8px; white-space: pre; }
 .tl-faint { color: var(--cc-text-faint); }
 .tl-frame { min-width: 34px; padding-right: 2px; }
@@ -166,7 +172,7 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-bar .cc-seg button svg { width: 12px; height: 12px; }
 .tl-key { display: flex; align-items: center; gap: 2px; height: var(--cc-h); margin-left: 6px; padding: 0 2px 0 8px; border-radius: var(--cc-radius); background: var(--cc-surface-sunk); }
 .tl-diamond { width: 7px; height: 7px; transform: rotate(45deg); background: var(--cc-accent); flex: none; border-radius: 1px; }
-.tl-keytime { padding: 0 6px 0 5px; }
+.tl-keytime { padding: 0 6px 0 5px; white-space: nowrap; }
 .tl-ease { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 0 5px 0 6px; white-space: nowrap; }
 .tl-ease > svg { width: 14px; height: 14px; flex: none; }
 .tl-ease > svg:first-child { color: var(--cc-accent); }
@@ -238,8 +244,6 @@ code { font-family: var(--cc-mono); font-size: 11px; }
 @media (max-width: 900px) {
   #prompt { width: calc(100vw - 24px); top: 56px; bottom: calc(128px + var(--stack-h, 0px)); }
   body.has-audio #prompt { bottom: calc(160px + var(--stack-h, 0px)); }
-  .tl-audio-name { display: none; }
-  .tl-frame, .tl-bar .cc-seg button span { display: none; }
 }
 :is(.shot-pop, .audio-pop) .cc-select { appearance: none; -webkit-appearance: none; padding-right: 22px; background-repeat: no-repeat; background-position: right 7px center; background-size: 10px 10px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23908e88' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 6.5 8 9.5 11 6.5'/%3E%3C/svg%3E"); }
@@ -249,3 +253,19 @@ code { font-family: var(--cc-mono); font-size: 11px; }
 .tl-objkey > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-odot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--cc-accent); flex: none; box-sizing: border-box; }
 .tl-objkey.is-animated .tl-odot { background: var(--cc-accent); }
+/* timeline bar, narrow: icon-only buttons first, then shorter readouts (full text stays in the tooltips) */
+@container tl (max-width: 1180px) {
+  .tl-frame, .tl-bar .cc-seg__label, .tl-bar > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
+  .tl-bar > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
+  .tl-bar .cc-seg > button { padding: 0 6px; }
+}
+@container tl (max-width: 960px) {
+  .tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .tl-bar .cc-btn__label { display: none; }
+  .tl-bar > .cc-btn--primary { padding: 0; width: var(--cc-h); }
+  .tl-audiobtn, .tl-objkey { padding: 0; width: var(--cc-h); justify-content: center; }
+  .tl-ease { padding: 0 4px; }
+}
+@container tl (max-width: 760px) {
+  .tl-time > .tl-faint, .tl-keytime { display: none; }
+  .tl-key .tl-diamond { margin-right: 4px; }
+}
