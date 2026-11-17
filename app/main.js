@@ -54,7 +54,7 @@ const helpPanel = panel({ title: 'Shortcuts', collapsible: false });
 helpPanel.classList.add('help-panel');
 helpPanel.hidden = true;
 helpPanel.body.append(...SHORTCUTS.map(([k, v]) => h('div.help-row', {}, h('span.help-key', {}, ...k.split(' ').map(kbd)), h('span.help-text', {}, v))),
-  h('div.cc-label.help-foot', {}, 'Orbit: drag · Pan: right-drag · Zoom: scroll'));
+  h('div.cc-label.help-foot', {}, 'Orbit: drag · Pan: right-drag · Zoom: scroll · Lens: Ctrl/⌘ scroll or pinch'));
 const helpBtn = button({ icon: 'keyboard', kind: 'ghost', title: 'Shortcuts (?)', onClick: () => { helpPanel.hidden = !helpPanel.hidden; helpBtn.setActive(!helpPanel.hidden); } });
 const saves = mountSaves($('corner'), { viewport });
 document.body.append(helpPanel);

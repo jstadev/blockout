@@ -625,7 +625,8 @@ export function mountTimeline(root, { viewport, exporter }) {
       objKeyBtn.classList.toggle('is-animated', !!n);
     }
     const shotView = store.state.view === 'shot';
-    const lensFov = k ? k.fov : shotView ? (sampleCamera(store.doc.timeline, store.state.time)?.fov ?? viewport.freeCam.fov) : viewport.freeCam.fov;
+    // the live camera wins while it is being changed by hand (Ctrl/Cmd + scroll, or a hand-framed shot)
+    const lensFov = shotView ? (store.state.camDirty ? viewport.shotCam.fov : k ? k.fov : (sampleCamera(store.doc.timeline, store.state.time)?.fov ?? viewport.freeCam.fov)) : viewport.freeCam.fov;
     lensNum.set(Math.round(fovToLens(lensFov)));
     const lensOff = shotView && !k;
     lensField.classList.toggle('is-disabled', lensOff);

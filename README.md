@@ -87,6 +87,7 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | Click | aim the camera at the clicked point (object surface or ground). In Shot view, press `K` to key the new aim. |
 | Ctrl-click (or ⌘-click) | select an object; on empty space, deselect |
 | Drag | orbit · right-drag pan · scroll zoom · double-click frames the selection |
+| Ctrl-scroll (or ⌘-scroll, or pinch) | change the lens (focal length): the free view and selected key, or the shot camera in shot view (press K to key it) |
 | `W` `E` `R` | move / rotate / scale gizmo |
 | `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
