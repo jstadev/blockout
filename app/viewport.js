@@ -110,6 +110,10 @@ export class Viewport {
   _buildCameras() {
     this.freeCam = new THREE.PerspectiveCamera(45, 1, 0.05, 2000);
     this.shotCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.05, 2000);
+    // Roll (Dutch tilt, degrees) of each camera. OrbitControls always levels the camera, so tick puts
+    // the roll back on after the orbit has aimed it. The shot camera's comes from the timeline keys
+    // unless it is being hand-framed.
+    this.freeRoll = 0; this.shotRoll = 0;
     this.freeOrbit = new OrbitControls(this.freeCam, this.canvas);
     this.freeOrbit.enableDamping = true; this.freeOrbit.dampingFactor = 0.12;
     this.shotOrbit = new OrbitControls(this.shotCam, this.canvas);
@@ -123,9 +127,10 @@ export class Viewport {
     this.freeCam.position.fromArray(saved?.p || [11, 7.5, 13]);
     this.freeOrbit.target.fromArray(saved?.t || [0, 1, 0]);
     if (saved?.f) { this.freeCam.fov = saved.f; this.freeCam.updateProjectionMatrix(); }
+    if (saved?.r) this.freeRoll = saved.r;
     this.freeOrbit.update();
     addEventListener('beforeunload', () => {
-      try { sessionStorage.setItem('cc-freecam', JSON.stringify({ p: this.freeCam.position.toArray(), t: this.freeOrbit.target.toArray(), f: this.freeCam.fov })); } catch {}
+      try { sessionStorage.setItem('cc-freecam', JSON.stringify({ p: this.freeCam.position.toArray(), t: this.freeOrbit.target.toArray(), f: this.freeCam.fov, r: this.freeRoll })); } catch {}
     });
   }
 
@@ -225,6 +230,7 @@ export class Viewport {
       KeyW: [0, 0, 1], ArrowUp: [0, 0, 1], KeyS: [0, 0, -1], ArrowDown: [0, 0, -1],
       KeyA: [-1, 0, 0], ArrowLeft: [-1, 0, 0], KeyD: [1, 0, 0], ArrowRight: [1, 0, 0],
       KeyQ: [0, -1, 0], KeyE: [0, 1, 0],
+      KeyZ: [0, 0, 0], KeyX: [0, 0, 0], // roll left / right, see _stepFly
     };
     let speed = 4; try { speed = +localStorage.getItem('cc-flyspeed') || 4; } catch {}
     const fly = this.fly = { held: false, active: false, keys: new Set(), speed, last: 0, MOVE };
@@ -290,6 +296,14 @@ export class Viewport {
     const now = performance.now(), dt = Math.min(0.1, (now - fly.last) / 1000);
     fly.last = now;
     if (!fly.keys.size) return;
+    // Z / X roll the camera (Dutch tilt), 45°/s (Shift 4x, Alt 1/4)
+    const rollDir = (fly.keys.has('KeyX') ? 1 : 0) - (fly.keys.has('KeyZ') ? 1 : 0);
+    if (rollDir) {
+      const shot = store.state.view === 'shot';
+      const r = (shot ? this.shotRoll : this.freeRoll) + rollDir * 45 * (fly.shift ? 4 : fly.alt ? 0.25 : 1) * dt;
+      this.setRoll(r);
+      if (now - (fly.rollEmit || 0) > 100) { fly.rollEmit = now; store.emit('state', { lens: true }); } // refresh the roll field
+    }
     const v = new THREE.Vector3();
     for (const c of fly.keys) v.add(new THREE.Vector3().fromArray(fly.MOVE[c]));
     if (!v.lengthSq()) return;
@@ -335,6 +349,7 @@ export class Viewport {
       this.freeOrbit.target.copy(this.shotOrbit.target);
       this.freeCam.up.set(0, 1, 0);
       this.setFreeFov(this.shotCam.fov);
+      this.freeRoll = this.shotRoll;
       this.freeOrbit.update();
     }
     this._lastView = store.state.view;
@@ -475,9 +490,26 @@ export class Viewport {
     cam.up.set(0, 1, 0);
     cam.lookAt(...s.target);
     if (s.roll) cam.rotateZ(s.roll * DEG);
+    if (cam === this.shotCam) this.shotRoll = s.roll || 0;
     if (cam.fov !== s.fov) { cam.fov = s.fov; cam.updateProjectionMatrix(); }
     if (orbit) orbit.target.fromArray(s.target);
     return s;
+  }
+
+  /** Roll (degrees) of the camera you look through. In shot view it hand-frames the shot camera: press K to key it. */
+  setRoll(deg) {
+    const r = Math.round(Math.max(-180, Math.min(180, deg)) * 100) / 100;
+    if (store.state.view === 'shot') {
+      if (store.state.playing) store.set({ playing: false });
+      this.shotRoll = r;
+      if (!store.state.camDirty) store.set({ camDirty: true });
+    } else this.freeRoll = r;
+  }
+
+  _applyRoll(cam, orbit, roll) {
+    cam.up.set(0, 1, 0);
+    cam.lookAt(orbit.target);
+    if (roll) cam.rotateZ(roll * DEG);
   }
 
   /** Field of view of the free (work) camera, so it can look through the same lens as the shot. */
@@ -490,7 +522,7 @@ export class Viewport {
   getPose() {
     const shot = store.state.view === 'shot';
     const cam = this.activeCam, orbit = this.activeOrbit;
-    return { position: cam.position.toArray().map(r3), target: orbit.target.toArray().map(r3), fov: Math.round(cam.fov * 100) / 100, view: shot ? 'shot' : 'free', time: store.state.time };
+    return { position: cam.position.toArray().map(r3), target: orbit.target.toArray().map(r3), fov: Math.round(cam.fov * 100) / 100, roll: Math.round((shot ? this.shotRoll : this.freeRoll) * 100) / 100, view: shot ? 'shot' : 'free', time: store.state.time };
   }
 
   /** Point the active camera at an object (or the whole set). */
@@ -580,8 +612,9 @@ export class Viewport {
     if (!(view === 'shot' && camDirty)) this.poseCamera(this.shotCam, time, view === 'shot' ? this.shotOrbit : null);
     if (view === 'free') {
       this.freeOrbit.update();
+      this._applyRoll(this.freeCam, this.freeOrbit, this.freeRoll);
       this._updateRig();
-    }
+    } else if (camDirty) this._applyRoll(this.shotCam, this.shotOrbit, this.shotRoll);
     this.renderer.render(this.scene, this.activeCam);
   }
 

@@ -284,6 +284,26 @@ try {
     ok(c.p.some((v, i) => Math.abs(v - b.p[i]) > 0.05), 'right-drag without a fly key still pans');
     // stop the pan's damping glide so later checks see a still camera
     await page.evaluate(() => { const o = window.canvas.viewport.freeOrbit; o.enableDamping = false; o.update(); o.enableDamping = true; });
+
+    // roll: right button + X tilts the free view, K keys the roll, the shot camera plays it back
+    await page.mouse.down({ button: 'right' });
+    await page.keyboard.down('x'); await page.waitForTimeout(400); await page.keyboard.up('x');
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(100);
+    const r = await page.evaluate(() => { const v = window.canvas.viewport; const up = new v.freeCam.up.constructor(0, 1, 0).applyQuaternion(v.freeCam.quaternion); return { roll: v.freeRoll, upX: up.x, upZ: up.z, field: document.querySelector('.tl-bar').textContent.includes('°') }; });
+    ok(r.roll > 5 && Math.hypot(r.upX, r.upZ) > 0.05, `right button + X rolls the free view (${r.roll.toFixed(1)}°)`);
+    ok(r.field, 'the bar shows a roll field');
+    const rollT = 2.25;
+    await page.evaluate((t) => window.canvas.timeline.seek(t), rollT);
+    await page.keyboard.press('k');
+    await page.waitForTimeout(300);
+    const rk = JSON.parse(cli('doc')).timeline.keys.find((k) => Math.abs(k.t - rollT) < 1e-3);
+    ok(rk && Math.abs(rk.roll - r.roll) < 0.05, `K keys the roll (${rk?.roll})`);
+    cli('view', 'shot'); await page.waitForTimeout(200);
+    ok(Math.abs((await page.evaluate(() => window.canvas.viewport.shotRoll)) - rk.roll) < 0.05, 'the shot camera plays the keyed roll back');
+    cli('key-rm', rk.id); cli('view', 'free');
+    await page.evaluate(() => { window.canvas.viewport.freeRoll = 0; window.canvas.store.set({ key: null }); });
+    await page.waitForTimeout(200);
   }
 
   // orchestration helpers: scoped batches, per-area listing, snapshots from the agent's own camera
