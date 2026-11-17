@@ -214,9 +214,19 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 
 .curve-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); left: 12px; width: 292px; padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
 .curve-pop[hidden] { display: none; }
-.curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); cursor: crosshair; align-self: center; touch-action: none; }
-.curve-presets { display: flex; flex-wrap: wrap; gap: 2px; }
-.curve-presets .cc-btn { height: 20px; padding: 0 6px; font-size: var(--cc-size-sm); }
+.curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); align-self: center; touch-action: none; }
+/* the row's flex: 1 split the tabs, spacer and close button in thirds, so the tabs overflowed their track */
+.curve-pop .cc-row > :is(.cc-seg, .cc-btn) { flex: none; }
+.curve-head { min-height: 16px; }
+.curve-head > .cc-label { width: auto; flex: 1; }
+.curve-head > .curve-name { flex: none; font-size: var(--cc-size-sm); color: var(--cc-accent); }
+.curve-name.is-preview { color: var(--cc-text-dim); }
+.curve-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.curve-presets .curve-preset { height: 28px; width: auto; padding: 0; color: var(--cc-text-dim); }
+.curve-presets .curve-preset:hover { color: var(--cc-text); }
+.curve-presets .curve-preset.is-active { color: var(--cc-accent); }
+.curve-presets .curve-preset.is-empty { opacity: .35; }
+.curve-presets .curve-preset svg { width: 18px; height: 18px; }
 .curve-all { align-self: flex-start; height: 22px; padding: 0 8px; font-size: var(--cc-size-sm); }
 .curve-all[hidden] { display: none; }
 .curve-help { white-space: normal; line-height: 1.4; }
