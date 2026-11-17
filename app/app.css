@@ -215,6 +215,8 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .curve-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); left: 12px; width: 292px; padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
 .curve-pop[hidden] { display: none; }
 .curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); align-self: center; touch-action: none; }
+/* the row's flex: 1 split the tabs, spacer and close button in thirds, so the tabs overflowed their track */
+.curve-pop .cc-row > :is(.cc-seg, .cc-btn) { flex: none; }
 .curve-head { min-height: 16px; }
 .curve-head > .cc-label { width: auto; flex: 1; }
 .curve-head > .curve-name { flex: none; font-size: var(--cc-size-sm); color: var(--cc-accent); }
