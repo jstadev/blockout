@@ -183,9 +183,11 @@ export function text({ value = '', placeholder = '', onChange, onEnter } = {}) {
 
 /** Transient message near the bottom of the screen. */
 let stack;
-export function toast(message, { kind = 'info', ms = 3200 } = {}) {
+export function toast(message, { kind = 'info', ms = 3200, action } = {}) {
   stack ??= document.body.appendChild(h('div.cc-toast-stack'));
   const el = h(`div.cc-panel.cc-toast${kind === 'error' ? '.cc-toast--error' : ''}`, {}, message);
+  // action: { label, onClick } adds one button; clicking it runs onClick and closes the toast
+  if (action) el.append(button({ label: action.label, kind: 'default', onClick: () => { el.remove(); action.onClick(); } }));
   stack.append(el);
   setTimeout(() => el.remove(), ms);
   return el;

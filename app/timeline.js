@@ -39,7 +39,6 @@ export function mountTimeline(root, { viewport, exporter }) {
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
-  const cutBtn = button({ icon: 'cut', label: 'Cut', title: 'Cut at the playhead: this shot ends here and a new shot carries on from the same framing (X)', onClick: () => cutHere() });
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -77,8 +76,8 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   const shots = mountShots();
   const bar = h('div.tl-bar',
-    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, cutBtn, lensField, keyGroup, objKeyBtn,
-    h('span.cc-spacer'), shots.playAllBtn, shots.addBtn, audioTrack.btn, shotBtn, exportBtn);
+    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, lensField, keyGroup, objKeyBtn,
+    h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
 
   // ---------- track ----------
   const track = h('canvas.tl-track');
@@ -99,24 +98,38 @@ export function mountTimeline(root, { viewport, exporter }) {
   const dur = () => store.doc.timeline.duration;
   const fps = () => store.doc.timeline.fps;
   const width = () => track.clientWidth;
-  // With several shots the one track stacks them: a row per shot on the shared action-time axis, each shot
-  // a bar from where it picks up the action. The active shot's row is the full key editor; times stay
-  // shot time, so xOf/tOf just add the shot's start. With one shot the track is exactly as before.
-  // Layout (px). Every state shares the ruler band; stacked adds a header column (GUT) with the shots'
-  // names, hairline-separated lanes and a lane for the selected object's keys at the bottom.
-  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56;
-  let L = null; // { T, start, rows: [{ s, top, h }], active, height }
+  // The track stacks the shots, even when there is only one: a row per shot on the shared action-time axis,
+  // each shot a bar from where it picks up the action, then a "+ New shot" row. The active shot's row is the
+  // full key editor; times stay shot time, so xOf/tOf just add the shot's start. The axis runs a little past
+  // the last shot so there is room to see (and draw) where a new one would go.
+  // Layout (px): the ruler band, a header column (GUT) with the shots' names, hairline-separated lanes, the
+  // new-shot row and a lane for the selected object's keys at the bottom.
+  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, NEW_H = 22, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56;
+  let L = null; // { T, end, start, rows: [{ s, top, h }], active, add: { top, h }, height }
+  let hoverNew = false; // the pointer is over the new-shot row: preview the shot a click would add
   function relayout() {
     const doc = store.doc;
-    if (!doc || doc.shots.length < 2) { L = null; return; }
+    if (!doc) { L = null; return; }
     const shots = shotList(doc);
-    let T = 1;
-    for (const x of shots) T = Math.max(T, (x.timeline.start || 0) + x.timeline.duration);
-    for (const o of doc.objects) if (o.anim?.length) T = Math.max(T, o.anim[o.anim.length - 1].t);
+    let end = 0;
+    for (const x of shots) end = Math.max(end, (x.timeline.start || 0) + x.timeline.duration);
+    for (const o of doc.objects) if (o.anim?.length) end = Math.max(end, o.anim[o.anim.length - 1].t);
+    const T = Math.max(1, end + Math.max(1, end * 0.25)); // headroom for the next shot
     let y = RULER;
     const rows = shots.map((x) => { const r = { s: x, top: y, h: x.active ? ACTIVE_H : ROW_H }; y += r.h + GAP; return r; });
-    L = { T, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), height: y + LANE };
+    const add = { top: y, h: NEW_H }; y += NEW_H;
+    L = { T, end, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), add, height: y + LANE };
   }
+  const inNewRow = (y) => !!L && y >= L.add.top && y < L.add.top + L.add.h;
+  /** New shot: snap action time `a` to 0, the playhead, or a shot's start or end within a few px; else a frame. */
+  function snapAction(a, e) {
+    const marks = [0, L.start + store.state.time];
+    for (const r of L.rows) { const st = r.s.timeline.start || 0; marks.push(st, st + r.s.timeline.duration); }
+    if (!e?.shiftKey) for (const m of marks) if (Math.abs(xAction(m) - xAction(a)) < 7) return +m.toFixed(3);
+    const F = fps(); return +(Math.round(a * F) / F).toFixed(3);
+  }
+  /** The shot a click on the new-shot row adds: the next one, from where the active shot ends, as long. */
+  const nextSpan = () => { const tl = store.doc.timeline; return { a0: (tl.start || 0) + tl.duration, a1: (tl.start || 0) + 2 * tl.duration }; };
   const axisT = () => (L ? L.T : dur());
   const axis0 = () => (L ? L.start : 0);
   const left = () => (L ? GUT : 0) + PAD, span = () => width() - left() - PAD; // the time axis, in px
@@ -175,6 +188,13 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   track.addEventListener('pointerdown', (e) => {
     const x = e.offsetX;
+    if (inNewRow(e.offsetY) && e.button === 0) { // new shot: click adds the next one, drag draws its span
+      track.setPointerCapture(e.pointerId);
+      const a = inGutter(x) ? null : snapAction(aOf(x), e);
+      drag = { kind: 'new', x0: x, a0: a, a1: a, moved: false };
+      store.set({ playing: false });
+      return draw();
+    }
     const ok = okeyAt(x, e.offsetY);
     const k = ok ? null : keyAt(x, e.offsetY);
     track.setPointerCapture(e.pointerId);
@@ -224,9 +244,17 @@ export function mountTimeline(root, { viewport, exporter }) {
   });
   track.addEventListener('pointermove', (e) => {
     if (!drag) {
-      const r = rowAt(e.offsetY);
-      track.style.cursor = okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) || onHandle(r, e.offsetX, e.offsetY) ? 'grab' : 'default';
+      const r = rowAt(e.offsetY), hn = inNewRow(e.offsetY);
+      track.style.cursor = hn ? 'pointer' : okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) || onHandle(r, e.offsetX, e.offsetY) ? 'grab' : 'default';
+      if (hn !== hoverNew) { hoverNew = hn; draw(); }
       return;
+    }
+    if (drag.kind === 'new') {
+      if (drag.a0 == null) return; // pressed on the row's name: a click
+      if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return;
+      drag.moved = true;
+      drag.a1 = Math.min(L.T, snapAction(aOf(e.offsetX), e));
+      return draw();
     }
     if (drag.kind === 'shot') {
       const dx = e.offsetX - drag.x0, dy = e.offsetY - drag.y0;
@@ -258,6 +286,12 @@ export function mountTimeline(root, { viewport, exporter }) {
   track.addEventListener('pointerup', (e) => {
     const d = drag; drag = null;
     if (!d) return;
+    if (d.kind === 'new') {
+      const lo = Math.min(d.a0 ?? 0, d.a1 ?? 0), hi = Math.max(d.a0 ?? 0, d.a1 ?? 0);
+      if (d.moved && hi - lo >= 1 / fps() - 1e-6) shots.add({ start: lo, duration: +(hi - lo).toFixed(3) });
+      else shots.add();
+      return draw();
+    }
     if (d.kind === 'shot') {
       if (d.moved && d.axis === 'y') { if (d.to !== d.from) store.op({ op: 'shot.move', id: d.s.id, to: d.to + 1 }, 'reorder shots').catch(() => {}); draw(); return; }
       if (d.moved) { if (Math.abs(d.start - d.start0) > 1e-4) store.op({ op: 'timeline', start: d.start, shot: d.s.id }, 'shot action start').catch(() => {}); draw(); return; }
@@ -278,6 +312,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (d.kind === 'scrub' && !d.moved && !keyAt(e.offsetX, e.offsetY)) { selKeys.clear(); store.set({ key: null }); }
     draw();
   });
+  track.addEventListener('pointerleave', () => { if (hoverNew) { hoverNew = false; draw(); } });
   track.addEventListener('dblclick', (e) => {
     if (!inActive(e.offsetY) || onHandle(rowAt(e.offsetY), e.offsetX, e.offsetY)) return; // keys go on the active shot's row
     if (!keyAt(e.offsetX, e.offsetY)) keyFromView(snap(tOf(e.offsetX), e));
@@ -332,20 +367,6 @@ export function mountTimeline(root, { viewport, exporter }) {
     store.set({ key: r.id, camDirty: false });
     toast(r.replaced ? `Updated key at ${t.toFixed(2)}s` : `Keyed camera at ${t.toFixed(2)}s`);
   }
-  /** Cut at the playhead: the current shot ends on this frame (a hold key with the camera as it is here) and
-   *  a new shot starts on the next frame from the same framing, selected so it can be re-framed. */
-  /** Cut: split this shot at the playhead. It ends there; a new shot carries on from the same framing. */
-  async function cutHere(t = store.state.time) {
-    const tl = store.doc.timeline, F = tl.fps;
-    t = Math.round(t * F) / F;
-    if (t < 1 / F - 1e-6 || t > tl.duration - 1 / F + 1e-6) return toast('Move the playhead inside the shot to cut there', { kind: 'error' });
-    store.set({ playing: false });
-    const res = await store.op({ op: 'shot.split', t: +t.toFixed(3) }, 'cut').catch((e) => { toast(e.message, { kind: 'error' }); return null; });
-    if (!res) return;
-    selKeys.clear();
-    store.set({ key: store.doc.timeline.keys[0]?.id ?? null, time: 0, camDirty: false });
-    toast(`Cut at ${t.toFixed(2)}s. ${res[0].name} starts here with the same framing: re-frame it, then press K`);
-  }
   function updateKey(patch) {
     const id = store.state.key;
     if (!id) return;
@@ -394,6 +415,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
     ctx.fillStyle = line;
     for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
+    ctx.fillRect(0, L.add.top + L.add.h, W, 1);
     ctx.fillRect(GUT, 0, 1, H0);
     drawRuler(W, L.T, xAction, 0, { dim, line });
     // faint gridlines carry the ruler's ticks down through the lanes
@@ -425,6 +447,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       }
       ctx.globalAlpha = 1;
     }
+    drawNewRow(W, { text, dim, line, accent, font, mono });
     // the selected object's key lane is named after it
     const so = selObj();
     if (so?.anim?.length) {
@@ -438,6 +461,39 @@ export function mountTimeline(root, { viewport, exporter }) {
       ctx.fillStyle = accent; ctx.fillRect(0, (drag.to < drag.from ? r.top : r.top + r.h) - 0.5, W, 2);
     }
     ctx.textBaseline = 'top';
+    ctx.font = `10px ${mono}`;
+  }
+
+  /** The "+ New shot" row: its name in the header column and, while hovered or drawn, a dashed preview of
+   *  the shot a click (the next one) or the drag (any span) would add, labelled with where it starts. */
+  function drawNewRow(W, { text, dim, line, accent, font, mono }) {
+    const r = L.add, my = r.top + r.h / 2 + 1, live = drag?.kind === 'new';
+    const span = live && drag.moved ? { a0: Math.min(drag.a0, drag.a1), a1: Math.max(drag.a0, drag.a1) } : hoverNew || live ? nextSpan() : null;
+    if (span) { ctx.fillStyle = accent; ctx.globalAlpha = 0.06; ctx.fillRect(0, r.top + 1, W, r.h - 1); ctx.globalAlpha = 1; }
+    // header: a plus and the row's name
+    const on = !!span;
+    ctx.strokeStyle = on ? accent : dim; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(10, my); ctx.lineTo(18, my); ctx.moveTo(14, my - 4); ctx.lineTo(14, my + 4); ctx.stroke();
+    ctx.lineWidth = 1; ctx.lineCap = 'butt';
+    ctx.font = `400 11px ${font}`; ctx.fillStyle = on ? text : dim; ctx.fillText('New shot', 28, my);
+    if (!span) return;
+    const x0 = xAction(span.a0), x1 = Math.min(W - 2, xAction(span.a1)), by = r.top + 1 + INSET, bh = r.h - 1 - INSET * 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(GUT + 1, r.top, W - GUT - 1, r.h); ctx.clip();
+    ctx.beginPath(); ctx.roundRect(x0 + 0.75, by + 0.75, Math.max(2, x1 - x0 - 1.5), bh - 1.5, 3);
+    ctx.fillStyle = accent; ctx.globalAlpha = 0.08; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
+    // what it is: next shot, the same moment again, or from the playhead (else just its times)
+    const n = store.doc.shots.length + 1, ph = L.start + store.state.time, near = (a, b) => Math.abs(a - b) < 1e-3;
+    const tl = store.doc.timeline, endA = (tl.start || 0) + tl.duration;
+    const what = near(span.a0, endA) ? 'next shot' : near(span.a0, tl.start || 0) ? 'same moment, new angle' : near(span.a0, ph) ? 'from the playhead' : 'new angle';
+    const label = `Shot ${n} · ${what}, ${span.a0.toFixed(2)} → ${span.a1.toFixed(2)} s`;
+    ctx.font = `500 10.5px ${font}`; ctx.fillStyle = text;
+    ctx.fillText(label, x0 + 8, my);
+    ctx.restore();
+    // a guide down through the lanes where it starts
+    ctx.strokeStyle = accent; ctx.globalAlpha = 0.7; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(Math.round(x0) + 0.5, RULER); ctx.lineTo(Math.round(x0) + 0.5, r.top); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
     ctx.font = `10px ${mono}`;
   }
 
@@ -593,7 +649,6 @@ export function mountTimeline(root, { viewport, exporter }) {
     loopBtn.setActive(store.state.loop);
     viewSeg.value = store.state.view;
     keyBtn.setActive(store.state.camDirty);
-    cutBtn.disabled = false;
     keyBtn.title = store.state.camDirty ? 'The camera moved: press K to key this framing' : 'Key the current view at the playhead (K)';
     shotDur.textContent = tl.duration.toFixed(2);
     shotFps.textContent = fmtFps(tl.fps);
@@ -654,7 +709,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   store.on('doc', refresh);
   store.on('state', refresh);
   new ResizeObserver(draw).observe(track);
-  return { refresh, keyFromView, cutHere, seek, deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
+  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
 }
 
 /** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */
