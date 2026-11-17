@@ -195,6 +195,19 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-bar.is-fit3 :is(.tl-time > .tl-faint, .tl-keytime) { display: none; }
 .tl-bar.is-fit3 .tl-diamond { margin-right: 4px; }
 .tl-bar.is-fit3 .tl-key .cc-select { max-width: 76px; }
+.tl-more { display: none; }
+.tl-bar.is-fit4 > .tl-more { display: inline-flex; }
+.tl-more.is-open { background: var(--cc-surface-sunk); }
+/* the ⋯ menu: the bar's own controls, one per row, with their labels back */
+.tl-more-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 25; }
+.tl-more-pop[hidden] { display: none; }
+body.has-audio .tl-more-pop { bottom: calc(156px + var(--stack-h, 0px)); }
+.tl-more-pop > .cc-btn { justify-content: flex-start; width: 100%; max-width: none; background: transparent; border-color: transparent; }
+.tl-more-pop > .cc-btn:hover { background: var(--cc-surface-sunk); }
+.tl-more-pop > .cc-btn.is-active { background: var(--cc-accent-soft); }
+.tl-more-pop > .cc-btn[data-menu-label]::after { content: attr(data-menu-label); }
+.tl-more-pop > .tl-shot > svg:last-child { margin-left: auto; }
+.tl-more-pop > .tl-shot::before { content: 'Shot'; margin-right: 4px; }
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }

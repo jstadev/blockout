@@ -80,21 +80,57 @@ export function mountTimeline(root, { viewport, exporter }) {
     h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
-  // up while it overflows, and one level back whenever it would fit again. Runs on resize and when the bar's
-  // contents change (a key selected, an object keyed, audio loaded), at most once a frame.
+  // up while it overflows, and one level back whenever it would fit again. At the last level (4) the less used
+  // controls move into a ⋯ menu, as they are, so they keep working and show their labels there. Runs on resize
+  // and when the bar's contents change (a key selected, an object keyed, audio loaded), at most once a frame.
+  const moreBtn = button({ icon: 'more', kind: 'ghost', title: 'More: loop, play all, audio, shot settings, object key', onClick: () => toggleMore() });
+  moreBtn.classList.add('tl-more');
+  exportBtn.before(moreBtn);
+  const morePop = h('div.cc-panel.tl-more-pop', { hidden: true });
+  document.body.append(morePop); // outside #timeline, like the other popovers
+  loopBtn.dataset.menuLabel = 'Loop';
+  shots.playAllBtn.dataset.menuLabel = 'Play all';
+  // each overflow control keeps a marker where it sits in the bar, so it goes back to the same place
+  const overflow = [loopBtn, shots.playAllBtn, audioTrack.btn, shotBtn, objKeyBtn].map((el) => {
+    const mark = document.createComment('');
+    el.after(mark);
+    return { el, mark };
+  });
+  const FIT_MAX = 4;
   let fitLevel = 0, fitQueued = false;
-  const setFit = (n) => { fitLevel = n; for (let i = 1; i <= 3; i++) bar.classList.toggle(`is-fit${i}`, i <= n); };
+  function setFit(n) {
+    fitLevel = n;
+    for (let i = 1; i <= 3; i++) bar.classList.toggle(`is-fit${i}`, i <= n);
+    const menu = n >= 4;
+    if (menu !== bar.classList.contains('is-fit4')) {
+      bar.classList.toggle('is-fit4', menu);
+      for (const { el, mark } of overflow) (menu ? morePop : mark.parentNode).insertBefore(el, menu ? null : mark);
+    }
+  }
   const over = () => bar.scrollWidth > bar.clientWidth + 0.5;
   function fit() {
     fitQueued = false;
     if (!bar.clientWidth) return;
     while (fitLevel > 0) { setFit(fitLevel - 1); if (over()) { setFit(fitLevel + 1); break; } }
-    while (fitLevel < 3 && over()) setFit(fitLevel + 1);
+    while (fitLevel < FIT_MAX && over()) setFit(fitLevel + 1);
+    if (fitLevel < 4 && !morePop.hidden) toggleMore(false);
+    fitWatch.takeRecords(); // our own moves are not changes to react to
   }
   const queueFit = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fit); } };
   new ResizeObserver(queueFit).observe(bar);
-  new MutationObserver(queueFit).observe(bar, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'hidden', 'disabled'] });
+  const fitWatch = new MutationObserver(queueFit);
+  for (const el of [bar, morePop]) fitWatch.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'hidden', 'disabled'] });
   document.fonts?.ready.then(queueFit);
+  function toggleMore(on = morePop.hidden) {
+    if (on) { const r = moreBtn.getBoundingClientRect(); morePop.style.right = `${Math.max(12, innerWidth - r.right)}px`; }
+    morePop.hidden = !on;
+    moreBtn.classList.toggle('is-open', on);
+  }
+  // a click on an item does its thing (opening its own popover from where the item is), then the menu closes;
+  // Loop and Play all are toggles, so the menu stays open to show their new state
+  morePop.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b !== loopBtn && b !== shots.playAllBtn) toggleMore(false); });
+  addEventListener('pointerdown', (e) => { if (!morePop.hidden && !morePop.contains(e.target) && !moreBtn.contains(e.target)) toggleMore(false); }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !morePop.hidden) { e.stopPropagation(); toggleMore(false); } }, true);
 
   // ---------- track ----------
   const track = h('canvas.tl-track');
