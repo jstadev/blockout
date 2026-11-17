@@ -197,6 +197,7 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-bar.is-fit3 .tl-key .cc-select { max-width: 76px; }
 .tl-more { display: none; }
 .tl-bar.is-fit4 > .tl-more { display: inline-flex; }
+.tl-bar.is-fit4 { gap: 2px; }
 .tl-more.is-open { background: var(--cc-surface-sunk); }
 /* the ⋯ menu: the bar's own controls, one per row, with their labels back */
 .tl-more-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 25; }
