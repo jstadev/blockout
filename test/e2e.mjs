@@ -566,6 +566,18 @@ try {
   cli('shot-rm', 'shot-1');
   ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
 
+  // the timeline bar steps down (icon-only buttons, shorter readouts) instead of squeezing its controls together
+  const barAt = async (w) => {
+    await page.setViewportSize({ width: w, height: 800 });
+    await page.waitForTimeout(200);
+    return page.evaluate(() => { const b = document.querySelector('.tl-bar'); return { over: b.scrollWidth - b.clientWidth, fit: [1, 2, 3].filter((i) => b.classList.contains(`is-fit${i}`)).length }; });
+  };
+  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: s.doc.timeline.keys[0]?.id || null }); });
+  const barWide = await barAt(1600), barNarrow = await barAt(720);
+  ok(barWide.fit === 0 && barWide.over <= 0, `timeline bar keeps its labels when there is room (${JSON.stringify(barWide)})`);
+  ok(barNarrow.fit > 0 && barNarrow.over <= 0, `timeline bar steps down to fit a narrow window (${JSON.stringify(barNarrow)})`);
+  await page.setViewportSize({ width: 1280, height: 800 });
+
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();
