@@ -289,24 +289,37 @@ try {
   const freePose = await page.evaluate(() => ({ p: window.canvas.viewport.freeCam.position.toArray(), f: window.canvas.viewport.freeCam.fov }));
   ok(freePose.p.every((v, i) => Math.abs(v - shotPose.p[i]) < 1e-3) && Math.abs(freePose.f - shotPose.f) < 1e-3, 'back to free with a key selected keeps the shot position and lens');
 
-  // Cut at the playhead: this shot ends there and a new shot carries on from the same framing
+  // + New shot row: a click adds the next shot on this shot's last frame; a drag from the playhead draws an
+  // overlapping one, and the confirmation's button ends the first shot there (what Cut used to do)
   const tlBefore = JSON.parse(cli('doc')).timeline, fr = tlBefore.fps;
   let tc = null;
   for (let f = Math.round((tlBefore.duration * fr) / 2); f < tlBefore.duration * fr - 2; f++) {
     if (!tlBefore.keys.some((k) => Math.abs(k.t - f / fr) < 2.5 / fr)) { tc = +(f / fr).toFixed(3); break; }
   }
-  cli('seek', String(tc)); await page.waitForTimeout(150);
-  await page.click('.tl-bar button[title^="Cut at the playhead"]');
+  ok(await page.locator('.tl-bar button', { hasText: /^Cut$/ }).count() === 0, 'the bar has no Cut button');
+  const nb = await page.locator('.tl-track').boundingBox();
+  const nY = nb.y + await page.evaluate(() => window.canvas.timeline.newRowY());
+  const nX = async (a) => nb.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
+  await page.mouse.click(nb.x + 40, nY);
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
-  const dCut = JSON.parse(cli('doc')), first = dCut.shots[0].timeline, second = dCut.timeline;
-  const endKey = first.keys[first.keys.length - 1];
-  ok(dCut.shot === 'shot-2' && first.duration === tc && second.start === tc && Math.abs(first.duration + second.duration - tlBefore.duration) < 1e-6
-    && endKey.t === tc && second.keys[0].t === 0 && second.keys[0].position.every((v, i) => Math.abs(v - endKey.position[i]) < 1e-6),
-    'Cut splits the shot at the playhead: a new shot carries on from the same framing');
-  ok(await page.evaluate(() => window.canvas.store.state.key) === second.keys[0].id, 'after a cut the new shot\'s first key is selected');
+  const dNext = JSON.parse(cli('doc')), lastK = [...tlBefore.keys].sort((a, b) => a.t - b.t).pop();
+  ok(dNext.shot === 'shot-2' && dNext.timeline.start === tlBefore.duration && dNext.timeline.keys.length === 1
+    && dNext.timeline.keys[0].position.every((v, i) => Math.abs(v - lastK.position[i]) < 1e-3),
+    'clicking + New shot adds the next shot, starting on the last frame');
   cli('undo'); cli('shot', '1');
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
-  ok(JSON.parse(cli('doc')).timeline.keys.length === tlBefore.keys.length, 'one undo removes the whole cut');
+  cli('seek', String(tc)); await page.waitForTimeout(150);
+  await page.mouse.move(await nX(tc + 0.01), nY); await page.mouse.down();
+  await page.mouse.move(await nX(tc + 0.8), nY, { steps: 4 }); await page.mouse.move(await nX(tc + 1.5), nY, { steps: 4 }); await page.mouse.up();
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2);
+  const dDrag = JSON.parse(cli('doc'));
+  ok(dDrag.timeline.start === tc && Math.abs(dDrag.timeline.duration - 1.5) < 0.1, `dragging across the row draws a shot from the playhead (${dDrag.timeline.start}, ${dDrag.timeline.duration})`);
+  await page.click('.cc-toast button');
+  await page.waitForFunction((tc) => window.canvas.store.doc.shots[0].timeline?.duration === tc, tc);
+  ok(true, 'the confirmation ends the first shot where the new one starts');
+  cli('undo'); cli('undo'); cli('shot', '1');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+  ok(JSON.parse(cli('doc')).timeline.duration === tlBefore.duration, 'undo removes the trim and the new shot');
   // a hold key inside a shot still cuts within the clip; the pair is drawn as one split key either side
   // of the cut line and each half selects its own key
   cli('key', '--t', String(tc), '--pos', '5,2,5', '--target', '0,1,0', '--ease', 'hold');
@@ -315,8 +328,9 @@ try {
   const tlCut = JSON.parse(cli('doc')).timeline;
   const ka = tlCut.keys.find((k) => Math.abs(k.t - tc) < 1e-3), kb = tlCut.keys.find((k) => Math.abs(k.t - (tc + 1 / fr)) < 2e-3);
   const tb = await page.locator('.tl-track').boundingBox();
-  const txOf = (t) => tb.x + 14 + (t / tlCut.duration) * (tb.width - 28);
-  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + 18 + (tb.height - 18) / 2;
+  const txOf = (t) => tb.x + xs[t];
+  const xs = await page.evaluate(([a, b]) => ({ [a]: window.canvas.timeline.xAt(a), [b]: window.canvas.timeline.xAt(b) }), [ka.t, kb.t]);
+  const cutX = (txOf(ka.t) + txOf(kb.t)) / 2, midY = tb.y + await page.evaluate(() => window.canvas.timeline.yAt());
   await page.mouse.click(cutX - 3, midY); await page.waitForTimeout(120);
   const leftSel = await page.evaluate(() => window.canvas.store.state.key);
   await page.mouse.click(cutX + 4, midY); await page.waitForTimeout(120);
@@ -463,7 +477,8 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.length === 4);
   await page.evaluate(() => window.canvas.store.set({ key: null, selection: null }));
   const mb = await page.locator('.tl-track').boundingBox();
-  const mx = (t) => mb.x + 14 + (t / 4) * (mb.width - 28), my = mb.y + mb.height / 2 + 6;
+  const mxs = await page.evaluate(() => [0, 0.5, 1, 1.25, 1.5, 2, 2.5, 2.75, 3].map((t) => [t, window.canvas.timeline.xAt(t)]));
+  const mx = (t) => mb.x + new Map(mxs).get(t), my = mb.y + await page.evaluate(() => window.canvas.timeline.yAt());
   const kt = () => JSON.parse(cli('doc')).timeline.keys.map((k) => k.t).sort((a, b) => a - b);
   await page.mouse.click(mx(0), my); await page.waitForTimeout(80);
   await page.keyboard.down('Shift'); await page.mouse.click(mx(2), my); await page.keyboard.up('Shift');
@@ -491,16 +506,17 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close');
   const tr = await page.locator('.tl-track').boundingBox();
   ok(tr.height > 80, `with two shots the key track stacks them (${Math.round(tr.height)} px tall)`);
+  const xA = async (a) => tr.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
   // lanes: ruler 18 px, then shot-1 (24 px), then the active close (40 px); names in a 96 px header column
-  await page.mouse.click(tr.x + tr.width * 0.3, tr.y + 26);
+  await page.mouse.click(await xA(0.5), tr.y + 26);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking another shot\'s row switches to it');
   // the ruler is scrubbable across shots: close picks up the action at 1 s, so 1.5 s in is close at 0.5 s
-  await page.mouse.click(tr.x + tr.width * 0.75, tr.y + 8);
+  await page.mouse.click(await xA(1.5), tr.y + 8);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close' && Math.abs(window.canvas.store.state.time - 0.5) < 0.1);
   ok(true, 'clicking the ruler at a moment another shot covers switches to it there');
   // and so is the empty part of the active row (close is active, lane 2: 18 + 24); 0.25 s in is shot-1
-  await page.mouse.click(tr.x + tr.width * 0.25, tr.y + 18 + 24 + 30);
+  await page.mouse.click(await xA(0.5), tr.y + 18 + 24 + 30);
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'shot-1');
   ok(true, 'clicking the empty part of the active row switches to the shot that covers that moment');
   // now close is the inactive second row (top 18 + 40): drag it sideways so it picks up the action later
@@ -508,8 +524,8 @@ try {
   cli('shot-set', 'close', '--start', '0');
   await page.waitForFunction(() => !window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start);
   const ry = tr.y + 18 + 40 + 12;
-  await page.mouse.move(tr.x + tr.width * 0.2, ry); await page.mouse.down();
-  await page.mouse.move(tr.x + tr.width * 0.45, ry, { steps: 6 }); await page.mouse.up();
+  await page.mouse.move(await xA(0.4), ry); await page.mouse.down();
+  await page.mouse.move(await xA(0.9), ry, { steps: 6 }); await page.mouse.up();
   await page.waitForFunction(() => (window.canvas.store.doc.shots.find((x) => x.id === 'close').timeline.start || 0) > 0.1);
   ok(true, `dragging a shot's row sets where it picks up the action`);
   await page.waitForTimeout(200);
