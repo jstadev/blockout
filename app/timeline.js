@@ -79,6 +79,23 @@ export function mountTimeline(root, { viewport, exporter }) {
     {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, lensField, keyGroup, objKeyBtn,
     h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
 
+  // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
+  // up while it overflows, and one level back whenever it would fit again. Runs on resize and when the bar's
+  // contents change (a key selected, an object keyed, audio loaded), at most once a frame.
+  let fitLevel = 0, fitQueued = false;
+  const setFit = (n) => { fitLevel = n; for (let i = 1; i <= 3; i++) bar.classList.toggle(`is-fit${i}`, i <= n); };
+  const over = () => bar.scrollWidth > bar.clientWidth + 0.5;
+  function fit() {
+    fitQueued = false;
+    if (!bar.clientWidth) return;
+    while (fitLevel > 0) { setFit(fitLevel - 1); if (over()) { setFit(fitLevel + 1); break; } }
+    while (fitLevel < 3 && over()) setFit(fitLevel + 1);
+  }
+  const queueFit = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(fit); } };
+  new ResizeObserver(queueFit).observe(bar);
+  new MutationObserver(queueFit).observe(bar, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'hidden', 'disabled'] });
+  document.fonts?.ready.then(queueFit);
+
   // ---------- track ----------
   const track = h('canvas.tl-track');
   root.append(bar, track, audioTrack.lane);

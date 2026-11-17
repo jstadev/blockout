@@ -158,10 +158,9 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 
 /* bottom: timeline */
 #timeline { position: fixed; left: 12px; right: 12px; bottom: 12px; height: calc(104px + var(--stack-h, 0px)); z-index: 10; display: flex; flex-direction: column; padding: 8px; gap: 6px; }
-/* The bar never squeezes its controls into each other: as the timeline narrows it drops labels in steps
-   (container queries at the end of this file), and below the last step it scrolls sideways. The 3px
+/* The bar never squeezes its controls into each other: when they don't fit, timeline.js steps it down
+   (.is-fit1..3 below) only as far as it needs to, and below the last step it scrolls sideways. The 3px
    padding, cancelled by the negative margin, keeps focus rings inside the scroll box. */
-#timeline { container: tl / inline-size; }
 .tl-bar { display: flex; align-items: center; gap: 4px; height: 32px; flex: none; margin: -3px; padding: 0 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tl-bar::-webkit-scrollbar { display: none; }
 .tl-bar > *, .tl-key > * { flex-shrink: 0; }
@@ -186,22 +185,15 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-shot svg:last-child { width: 10px; height: 10px; color: var(--cc-text-dim); }
 .tl-shot.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar > .cc-btn--primary { margin-left: 2px; }
-/* timeline bar, narrow: icon-only buttons first, then shorter readouts (full text stays in the tooltips) */
-@container tl (max-width: 1180px) {
-  .tl-frame, .tl-bar .cc-seg__label, .tl-bar > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
-  .tl-bar > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
-  .tl-bar .cc-seg > button { padding: 0 6px; }
-}
-@container tl (max-width: 960px) {
-  .tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .tl-bar .cc-btn__label { display: none; }
-  .tl-bar > .cc-btn--primary { padding: 0; width: var(--cc-h); }
-  .tl-audiobtn, .tl-objkey { padding: 0; width: var(--cc-h); justify-content: center; }
-  .tl-ease { padding: 0 4px; }
-}
-@container tl (max-width: 760px) {
-  .tl-time > .tl-faint, .tl-keytime { display: none; }
-  .tl-key .tl-diamond { margin-right: 4px; }
-}
+/* bar too narrow: 1 icon-only buttons, 2 every label off, 3 shorter readouts (full text stays in the tooltips) */
+.tl-bar.is-fit1 :is(.tl-frame, .cc-seg__label), .tl-bar.is-fit1 > .cc-btn:not(.cc-btn--primary) > .cc-btn__label { display: none; }
+.tl-bar.is-fit1 > .cc-btn:not(.cc-btn--primary):has(> .cc-btn__label) { padding: 0; width: var(--cc-h); }
+.tl-bar.is-fit1 .cc-seg > button { padding: 0 6px; }
+.tl-bar.is-fit2 :is(.tl-audio-name, .tl-objkey > span:last-child, .tl-shot-fps, .tl-ease-name, .cc-btn__label) { display: none; }
+.tl-bar.is-fit2 > .cc-btn--primary, .tl-bar.is-fit2 :is(.tl-audiobtn, .tl-objkey) { padding: 0; width: var(--cc-h); justify-content: center; }
+.tl-bar.is-fit2 .tl-ease { padding: 0 4px; }
+.tl-bar.is-fit3 :is(.tl-time > .tl-faint, .tl-keytime) { display: none; }
+.tl-bar.is-fit3 .tl-diamond { margin-right: 4px; }
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }
