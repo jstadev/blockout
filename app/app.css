@@ -194,6 +194,7 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-bar.is-fit2 .tl-ease { padding: 0 4px; }
 .tl-bar.is-fit3 :is(.tl-time > .tl-faint, .tl-keytime) { display: none; }
 .tl-bar.is-fit3 .tl-diamond { margin-right: 4px; }
+.tl-bar.is-fit3 .tl-key .cc-select { max-width: 76px; }
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }
