@@ -663,7 +663,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   const cv = h('canvas.curve-canvas', { width: W * 2, height: H * 2, style: { width: `${W}px`, height: `${H}px` } });
   const ctx = cv.getContext('2d');
   let mode = 'segment';
-  const tabs = segmented({ options: [{ value: 'segment', label: 'Segment', title: 'Ease between two keys' }, { value: 'speed', label: 'Shot speed', title: 'Time remap across the whole shot' }], value: mode, onChange: (v) => { mode = v; onToggle?.(api.open, mode); refresh(); } });
+  const tabs = segmented({ options: [{ value: 'segment', label: 'Camera', title: 'How the camera moves from this key to the next' }, { value: 'speed', label: 'Playback', title: 'Playback speed of the whole shot: slow motion and fast forward for the camera and everything in it' }], value: mode, onChange: (v) => { mode = v; onToggle?.(api.open, mode); refresh(); } });
   const title = h('span.cc-label.cc-mono');
   const nameEl = h('span.curve-name');
   const presets = h('div.curve-presets');
@@ -872,7 +872,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     allBtn.hidden = !others.length || isCut(tg.key);
     allBtn.disabled = others.every((k) => JSON.stringify(k.ease) === JSON.stringify(cur));
     help.textContent = mode === 'speed'
-      ? 'Remaps time across the whole shot, on top of each segment ease.'
+      ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
       : 'Drag the orange handles. The strip shows how fast the camera moves.';
     draw();
   }
@@ -909,7 +909,7 @@ function mountShotSettings(root, { anchor, keys, openSpeed }) {
   const fpsNum = number({ step: 1, min: 1, max: 120, precision: 3, width: 48, title: 'Frames per second. Any value, e.g. 23.976.', onChange: (v) => tlOp({ fps: v }, 'frame rate') });
 
   const sizeSel = select({ options: [], title: 'Export size', onChange: (v) => { const [width, height] = v.split('x').map(Number); store.op({ op: 'meta', width, height }, 'export size').catch(() => {}); } });
-  const speedBtn = h('button.cc-field.tl-ease', { type: 'button', title: 'Shot speed: remaps time across the whole shot', onClick: () => openSpeed() });
+  const speedBtn = h('button.cc-field.tl-ease', { type: 'button', title: 'Playback speed: slow motion and fast forward for the whole shot', onClick: () => openSpeed() });
   const foot = h('div.cc-label.cc-mono.shot-foot');
 
   const p = panel({ title: 'Shot', collapsible: false, actions: [button({ icon: 'close', kind: 'ghost', title: 'Close (Esc)', onClick: () => toggle(false) })] });
@@ -921,7 +921,7 @@ function mountShotSettings(root, { anchor, keys, openSpeed }) {
     h('div.cc-row.shot-sub', {}, retimeSw, h('span.shot-sub-text', { onClick: () => retimeSw.click() }, 'Stretch keys to fit')),
     rowEl('Frame rate', affix(fpsNum, 'fps')),
     rowEl('Size', sizeSel),
-    rowEl('Speed', speedBtn),
+    rowEl('Playback', speedBtn),
     h('div.cc-divider.cc-divider--h'),
     foot,
   );
