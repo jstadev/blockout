@@ -280,6 +280,27 @@ test('key.easeAll gives every segment one ease, keeps cuts, and can copy a key',
   assert.deepEqual(ids().slice(0, 3).map((k) => k.ease), ['easeIn', 'easeIn', 'easeIn']);
 });
 
+test('key.easeAll with allShots reaches every shot, active or not', () => {
+  let { doc } = applyOps(createDoc(), [{ op: 'key.clear' },
+    { op: 'key.add', t: 0, position: [0, 1, 5], target: [0, 1, 0] },
+    { op: 'key.add', t: 2, position: [1, 1, 5], target: [0, 1, 0] }]);
+  ({ doc } = applyOps(doc, { op: 'shot.add', blank: true }));
+  const [s1, s2] = doc.shots.map((s) => s.id);
+  ({ doc } = applyOps(doc, [{ op: 'key.clear', shot: s2 }, { op: 'key.add', shot: s2, t: 0, position: [5, 1, 5], target: [0, 1, 0] },
+    { op: 'key.add', shot: s2, t: 1, position: [6, 1, 5], target: [0, 1, 0], ease: 'hold' },
+    { op: 'key.add', shot: s2, t: 1.1, position: [6, 1, 4], target: [0, 1, 0] },
+    { op: 'key.add', shot: s2, t: 3, position: [7, 1, 5], target: [0, 1, 0] }]));
+  const eases = (id) => [...shotTimeline(doc, id).keys].sort((a, b) => a.t - b.t).slice(0, -1).map((k) => k.ease);
+  // without allShots only the targeted shot changes
+  const one = applyOps(doc, { op: 'key.easeAll', shot: s1, ease: 'easeIn' }).doc;
+  assert.ok(!shotTimeline(one, s2).keys.some((k) => k.ease === 'easeIn'));
+  const r = applyOps(doc, { op: 'key.easeAll', ease: [0.1, 0, 0.4, 1], allShots: true });
+  doc = r.doc;
+  assert.equal(r.results[0].shots, 2);
+  assert.deepEqual(eases(s1), [[0.1, 0, 0.4, 1]]);
+  assert.deepEqual(eases(s2), [[0.1, 0, 0.4, 1], 'hold', [0.1, 0, 0.4, 1]]);
+});
+
 test('new chat archives the conversation; past chats list and read back', async () => {
   const os = await import('node:os');
   const { spawn } = await import('node:child_process');

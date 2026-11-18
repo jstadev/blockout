@@ -57,6 +57,7 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `anim.remove` | `id`, `t?` (omit to remove all of its animation) | `{ id, keys }` |
 | `key.add` | `t`, `position`, `target`, `fov?`, `roll?`, `ease?`. A key already at `t` is updated instead | `{ id, replaced? }` |
 | `key.update` | `id` or `index` (by time order), any key field. `path`: a type name, an object, or `"smooth"` to clear | `{ id }` |
+| `key.easeAll` | `ease` or `from` (a key id), `cuts?` (also overwrite holds), `allShots?` (every shot, not just the active one) | `{ updated, shots, ease }` |
 | `cam.move` | `move` (`pan` `tilt` `orbit` `push` `pull-out` `truck` `pedestal` `crane` `zoom` `dollyZoom` `roll`; aliases `push-in` `dolly` `dolly-zoom` `vertigo` `dutch` `arc` `boom`), `t?` (default 0), `over?` (s, default 3), `ease?`, `from?` ({ position, target, fov?, roll? }; default the camera at `t`), and the move's own: `angle` (pan + right, tilt + up, orbit + right, roll), `by` (m: push/dollyZoom + in, truck + right, crane/pedestal + up), `around` (orbit: object id or [x,y,z]; default the aim), `rise` (orbit, m), `lens` or `fov` (zoom). Keys a path + ease at `t` and the end framing at `t + over`, replacing keys in between. The path keeps `move` and `params`. `edit: <keyId|index>` redoes the move starting at that key from its framing, replacing its end key; settings left out keep their values | `{ move, keys: [start, end], from, to, path }` |
 | `key.remove` | `id` or `index` | `{ removed }` |
 | `key.clear` | | `{ removed }` |
