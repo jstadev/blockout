@@ -51,6 +51,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
   // preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
   const movesBtn = button({ icon: 'orbit', label: 'Moves', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
+  movesBtn.dataset.overflow = ''; // goes into the ⋯ menu on a narrow timeline
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
