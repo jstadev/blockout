@@ -547,8 +547,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     ctx.font = `10px ${mono}`;
   }
 
-  /** The "+ New shot" row: its name in the header column and, while hovered or drawn, a dashed preview of
-   *  the shot a click (the next one) or the drag (any span) would add, labelled with where it starts. */
+  /** The "+ New shot" row: its name in the header column and, while hovered or drawn, a dashed outline of
+   *  the shot a click (the next one) or the drag (any span) would add, with a guide where it starts. */
   function drawNewRow(W, { text, dim, line, accent, font, mono }) {
     const r = L.add, my = r.top + r.h / 2 + 1, live = drag?.kind === 'new';
     const span = live && drag.moved ? { a0: Math.min(drag.a0, drag.a1), a1: Math.max(drag.a0, drag.a1) } : hoverNew || live ? nextSpan() : null;
@@ -565,13 +565,6 @@ export function mountTimeline(root, { viewport, exporter }) {
     ctx.beginPath(); ctx.roundRect(x0 + 0.75, by + 0.75, Math.max(2, x1 - x0 - 1.5), bh - 1.5, 3);
     ctx.fillStyle = accent; ctx.globalAlpha = 0.08; ctx.fill(); ctx.globalAlpha = 1;
     ctx.setLineDash([4, 3]); ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
-    // what it is: next shot, the same moment again, or from the playhead (else just its times)
-    const n = store.doc.shots.length + 1, ph = L.start + store.state.time, near = (a, b) => Math.abs(a - b) < 1e-3;
-    const tl = store.doc.timeline, endA = (tl.start || 0) + tl.duration;
-    const what = near(span.a0, endA) ? 'next shot' : near(span.a0, tl.start || 0) ? 'same moment, new angle' : near(span.a0, ph) ? 'from the playhead' : 'new angle';
-    const label = `Shot ${n} · ${what}, ${span.a0.toFixed(2)} → ${span.a1.toFixed(2)} s`;
-    ctx.font = `500 10.5px ${font}`; ctx.fillStyle = text;
-    ctx.fillText(label, x0 + 8, my);
     ctx.restore();
     // a guide down through the lanes where it starts
     ctx.strokeStyle = accent; ctx.globalAlpha = 0.7; ctx.setLineDash([2, 3]);
