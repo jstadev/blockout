@@ -87,11 +87,11 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | Click | aim the camera at the clicked point (object surface or ground). In Shot view, press `K` to key the new aim. |
 | Ctrl-click (or ⌘-click) | select an object; on empty space, deselect |
 | Drag | orbit · right-drag pan · scroll zoom · double-click frames the selection |
-| Hold right mouse + `W` `A` `S` `D` | fly: `W` `A` `S` `D` (or arrows) move, `Q` `E` down / up, `Z` `X` roll (Dutch tilt), the mouse looks around, `Shift` faster, `Alt` slower, scroll sets the fly speed. In Shot view it reframes the shot camera (press `K` to key it). Let go and the keys are shortcuts again. |
+| `W` `A` `S` `D` · `Q` `E` · `Z` `X` | fly the camera: move, down / up, roll (Dutch tilt). `Shift` faster, `Alt` slower. Works on a trackpad; drag still orbits around the aim point ahead. Hold the right mouse button as well to look around with the mouse, fly with the arrows too, and scroll to set the fly speed. In Shot view it reframes the shot camera (press `K` to key it). |
 | Roll field (°, next to Lens) | the roll (Dutch tilt) of the selected key and the free view, like Lens. New keys take the view's roll. |
 | Ctrl-scroll (or ⌘-scroll, or pinch) | change the lens (focal length): the free view and selected key, or the shot camera in shot view (press K to key it) |
-| `W` `E` `R` | move / rotate / scale gizmo |
-| `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
+| `1` `2` `3` | move / rotate / scale gizmo |
+| `F` · `Shift D` (or `⌘D`) · `⌫` · `Esc` | frame · duplicate · delete · deselect |
 | `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
 | `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · next shot |
