@@ -423,6 +423,50 @@ try {
     cli('undo');
     ok(JSON.parse(cli('doc')).timeline.duration === D, 'undo restores the shot length');
   }
+  // pick several shots (Shift/Cmd-click their bars, or a Shift-drag box), drag them together, Delete removes them
+  {
+    const D = tlBefore.duration;
+    cli('shot-add', '--name', 'msA', '--start', String(D + 1), '--length', '1', '--stay');
+    cli('shot-add', '--name', 'msB', '--start', String(D + 3), '--length', '1', '--stay');
+    await page.waitForFunction(() => window.canvas.store.doc.shots.length === 3);
+    await page.waitForTimeout(150);
+    const byName = Object.fromEntries(JSON.parse(cli('doc')).shots.map((s) => [s.name, s.id])), A = byName.msA, B = byName.msB;
+    const tb = await page.locator('.tl-track').boundingBox(); // the track grew a row for each new shot
+    const rY = async (id) => tb.y + await page.evaluate((id) => window.canvas.timeline.rowY(id), id);
+    const nX = async (a) => tb.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
+    const yA = await rY(A), yB = await rY(B);
+    await page.keyboard.down('Shift');
+    await page.mouse.click(await nX(D + 1.5), yA); await page.mouse.click(await nX(D + 3.5), yB);
+    await page.keyboard.up('Shift');
+    let pk = await page.evaluate(() => window.canvas.timeline.pickedShots());
+    ok(pk.length === 2 && pk.includes(A) && pk.includes(B), `Shift-click picks several shots (${pk})`);
+    await page.mouse.move(await nX(D + 1.5), yA); await page.mouse.down();
+    await page.mouse.move(await nX(D + 2), yA, { steps: 4 }); await page.mouse.move(await nX(D + 2.5), yA, { steps: 4 }); await page.mouse.up();
+    const starts = () => Object.fromEntries(JSON.parse(cli('doc')).shots.map((s) => [s.id, s.timeline?.start ?? 0]));
+    await page.waitForFunction(([A, a]) => Math.abs((window.canvas.store.doc.shots.find((s) => s.id === A).timeline?.start ?? 0) - a) < 0.1, [A, tlBefore.duration + 2], { timeout: 3000 }).catch(() => {});
+    const s1 = starts();
+    ok(Math.abs(s1[A] - (D + 2)) < 0.1 && Math.abs(s1[B] - (D + 4)) < 0.1, `dragging one picked bar moves them all (${s1[A]}, ${s1[B]})`);
+    cli('undo');
+    const s2 = starts();
+    ok(Math.abs(s2[A] - (D + 1)) < 1e-3 && Math.abs(s2[B] - (D + 3)) < 1e-3, 'one undo puts them all back');
+    await page.keyboard.press('Escape');
+    ok((await page.evaluate(() => window.canvas.timeline.pickedShots())).length === 0, 'Esc lets go of the picked shots');
+    await page.waitForTimeout(100);
+    await page.keyboard.down('Shift');
+    await page.mouse.move(await nX(D + 0.4), yA - 4); await page.mouse.down();
+    await page.mouse.move(await nX(D + 2.5), (yA + yB) / 2, { steps: 4 }); await page.mouse.move(await nX(D + 4.5), yB + 4, { steps: 4 }); await page.mouse.up();
+    await page.keyboard.up('Shift');
+    pk = await page.evaluate(() => window.canvas.timeline.pickedShots());
+    ok(pk.length === 2 && pk.includes(A) && pk.includes(B), `a Shift-drag box picks the shots it touches (${pk})`);
+    await page.keyboard.press('Delete');
+    await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+    ok(true, 'Delete removes every picked shot');
+    cli('undo');
+    await page.waitForFunction(() => window.canvas.store.doc.shots.length === 3);
+    cli('undo'); cli('undo'); cli('shot', '1');
+    await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+    ok(true, 'undo brings them back');
+  }
   // a hold key inside a shot still cuts within the clip; the pair is drawn as one split key either side
   // of the cut line and each half selects its own key
   cli('key', '--t', String(tc), '--pos', '5,2,5', '--target', '0,1,0', '--ease', 'hold');

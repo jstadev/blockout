@@ -166,7 +166,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   const track = h('canvas.tl-track');
   root.append(bar, track, audioTrack.lane);
   const ctx = track.getContext('2d');
-  let picked = null; // a shot picked by clicking its bar: Delete removes it
+  // Shots picked by clicking their bars: Shift or Cmd/Ctrl-click adds or removes one, Shift or Cmd/Ctrl-drag
+  // on an empty part of the lanes draws a box around several. Dragging any picked bar sideways moves them all,
+  // and Delete removes them.
+  let picked = new Set();
   let drag = null; // { kind: 'key'|'okey'|'scrub', id, t, moved }; a key drag moves every selected key
   // Selected camera keys. store.state.key is the primary one (its ease, lens, time show in the bar);
   // shift-click adds the range from it, ctrl/cmd-click toggles one, and dragging any of them moves them all.
@@ -316,11 +319,18 @@ export function mountTimeline(root, { viewport, exporter }) {
     // a shot's bar: click to pick it (and put the playhead there), drag sideways to change where it picks
     // up the action, drag up or down to reorder the sequence
     if (row && e.button === 0 && onHandle(row, x, e.offsetY)) {
-      drag = { kind: 'shot', gut: inGutter(x), s: row.s, x0: x, y0: e.offsetY, from: L.rows.indexOf(row), to: L.rows.indexOf(row), start0: row.s.timeline.start || 0, moved: false, axis: null };
+      drag = { kind: 'shot', gut: inGutter(x), s: row.s, x0: x, y0: e.offsetY, from: L.rows.indexOf(row), to: L.rows.indexOf(row), start0: row.s.timeline.start || 0, moved: false, axis: null,
+        add: e.shiftKey || e.metaKey || e.ctrlKey };
       store.set({ playing: false });
       return;
     }
-    if (!ok && !k) picked = null;
+    // Shift or Cmd/Ctrl-drag on an empty part of the lanes: box-select shots
+    if (!ok && !k && L && e.button === 0 && (e.shiftKey || e.metaKey || e.ctrlKey) && e.offsetY > RULER && e.offsetY < L.add.top && !inGutter(x)) {
+      drag = { kind: 'box', x0: x, y0: e.offsetY, x1: x, y1: e.offsetY, base: new Set(picked), moved: false };
+      store.set({ playing: false });
+      return;
+    }
+    if (!ok && !k) picked = new Set();
     if (!ok && !k && inGutter(x)) return; // the header column is not time
     if (ok && e.button === 0) {
       drag = { kind: 'okey', id: selObj().id, t: ok.t, t0: ok.t, moved: false };
@@ -348,7 +358,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       const ts = [...moving.values()];
       drag = { kind: 'key', id: k.id, t: k.t, t0: k.t, dt: 0, moved: false, moving, collapse, shift0: e.shiftKey, lo: -Math.min(...ts), hi: dur() - Math.max(...ts) };
       store.set({ key: k.id });
-      picked = null;
+      picked = new Set();
       if (!e.shiftKey && !e.ctrlKey && !e.metaKey) seek(k.t);
     } else if (e.button === 0) {
       drag = { kind: 'scrub', moved: false };
@@ -396,10 +406,29 @@ export function mountTimeline(root, { viewport, exporter }) {
         drag.to = to;
         return draw();
       }
+      if (!drag.starts) { // the picked shots move together when the grabbed one is among them (or added now)
+        if (drag.add) picked.add(drag.s.id);
+        const ids = picked.has(drag.s.id) ? [...picked] : [drag.s.id];
+        drag.starts = new Map(ids.map((id) => [id, L.rows.find((r) => r.s.id === id)?.s.timeline.start || 0]).filter(([id]) => L.rows.some((r) => r.s.id === id)));
+        drag.min0 = Math.min(...drag.starts.values());
+      }
       const F = drag.s.timeline.fps;
-      let st = Math.max(0, drag.start0 + ((e.offsetX - drag.x0) / span()) * axisT());
-      if (!e.shiftKey) st = Math.round(st * F) / F;
-      drag.start = +st.toFixed(3);
+      // none of them can start before 0; the grabbed one snaps to a frame (Shift: free)
+      let st = Math.max(drag.start0 - drag.min0, drag.start0 + ((e.offsetX - drag.x0) / span()) * axisT());
+      if (!e.shiftKey) st = Math.max(drag.start0 - drag.min0, Math.round(st * F) / F);
+      drag.start = +st.toFixed(3); drag.dA = drag.start - drag.start0;
+      return draw();
+    }
+    if (drag.kind === 'box') {
+      drag.x1 = e.offsetX; drag.y1 = e.offsetY;
+      if (!drag.moved && Math.hypot(drag.x1 - drag.x0, drag.y1 - drag.y0) < 4) return;
+      drag.moved = true;
+      const [xa, xb] = [Math.min(drag.x0, drag.x1), Math.max(drag.x0, drag.x1)], [ya, yb] = [Math.min(drag.y0, drag.y1), Math.max(drag.y0, drag.y1)];
+      picked = new Set(drag.base);
+      for (const r of L.rows) {
+        const st = r.s.timeline.start || 0, bx0 = xAction(st), bx1 = Math.max(bx0 + 3, xAction(st + r.s.timeline.duration));
+        if (yb >= r.top && ya < r.top + r.h && xb >= bx0 && xa <= bx1) picked.add(r.s.id);
+      }
       return draw();
     }
     drag.moved = true;
@@ -435,9 +464,20 @@ export function mountTimeline(root, { viewport, exporter }) {
     }
     if (d.kind === 'shot') {
       if (d.moved && d.axis === 'y') { if (d.to !== d.from) store.op({ op: 'shot.move', id: d.s.id, to: d.to + 1 }, 'reorder shots').catch(() => {}); draw(); return; }
-      if (d.moved) { if (Math.abs(d.start - d.start0) > 1e-4) store.op({ op: 'timeline', start: d.start, shot: d.s.id }, 'shot action start').catch(() => {}); draw(); return; }
+      if (d.moved) {
+        if (d.starts && Math.abs(d.dA) > 1e-4) {
+          const ops = [...d.starts].map(([id, st]) => ({ op: 'timeline', start: +Math.max(0, st + d.dA).toFixed(3), shot: id }));
+          store.op(ops, ops.length > 1 ? `move ${ops.length} shots` : 'shot action start').catch(() => {});
+        }
+        draw(); return;
+      }
+      selKeys.clear(); store.set({ key: null });
+      if (d.add) { // Shift or Cmd/Ctrl-click: add the shot to the picked ones, or take it out
+        if (picked.has(d.s.id)) picked.delete(d.s.id); else picked.add(d.s.id);
+        return draw();
+      }
       // a click picks the shot (Delete removes it) and puts the playhead where it was clicked
-      picked = d.s.id; selKeys.clear(); store.set({ key: null });
+      picked = new Set([d.s.id]);
       playAt(d.s, d.gut ? L.start + store.state.time : aOf(e.offsetX), e); // from its name: stay at this moment
       return draw();
     }
@@ -450,10 +490,13 @@ export function mountTimeline(root, { viewport, exporter }) {
       const k = okeys().find((x) => Math.abs(x.t - d.t0) < 1e-3);
       if (k) store.op([{ op: 'anim.remove', id: d.id, t: d.t0 }, { op: 'anim.key', id: d.id, t: +d.t.toFixed(3), position: k.position, rotation: k.rotation, scale: k.scale, ease: k.ease }], `retime ${d.id} key`).catch(() => {});
     }
+    if (d.kind === 'box' && !d.moved) { picked = d.base; return draw(); } // a modifier-click on nothing: keep the pick
     if (d.kind === 'scrub' && !d.moved && !keyAt(e.offsetX, e.offsetY)) { selKeys.clear(); store.set({ key: null }); }
     draw();
   });
   track.addEventListener('pointerleave', () => { if (hoverNew) { hoverNew = false; draw(); } });
+  // Esc lets go of the picked shots (the app's own Esc handler clears the key and object selection)
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && picked.size && !e.target.closest?.('input, textarea, [contenteditable]')) { picked = new Set(); draw(); } });
   track.addEventListener('dblclick', (e) => {
     if (!inActive(e.offsetY) || onHandle(rowAt(e.offsetY), e.offsetX, e.offsetY)) return; // keys go on the active shot's row
     if (!keyAt(e.offsetX, e.offsetY)) keyFromView(snap(tOf(e.offsetX), e));
@@ -461,7 +504,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   track.addEventListener('contextmenu', (e) => {
     if (e.ctrlKey && !e.button) { e.preventDefault(); return; } // macOS ctrl-click is a selection toggle, not a right-click
     const r = rowAt(e.offsetY);
-    if (onHandle(r, e.offsetX, e.offsetY)) { e.preventDefault(); removeShot(r.s.id); return; }
+    if (onHandle(r, e.offsetX, e.offsetY)) { e.preventDefault(); removeShots(picked.has(r.s.id) ? [...picked] : [r.s.id]); return; }
     const ok = okeyAt(e.offsetX, e.offsetY);
     if (ok) { e.preventDefault(); store.op({ op: 'anim.remove', id: selObj().id, t: ok.t }, 'remove object key').catch(() => {}); return; }
     const k = keyAt(e.offsetX, e.offsetY); if (k) { e.preventDefault(); if (!selKeys.has(k.id)) { selKeys = new Set([k.id]); store.set({ key: k.id }); } deleteKey(); } });
@@ -489,11 +532,14 @@ export function mountTimeline(root, { viewport, exporter }) {
     const s = covers(cur, a) ? cur : L.rows.map((r) => r.s).find((x) => covers(x, a)) || cur;
     playAt(s, a, e);
   }
-  function removeShot(id) {
-    if (store.doc.shots.length < 2) return toast('A scene needs at least one shot');
-    const s = store.doc.shots.find((x) => x.id === id);
-    picked = null;
-    store.op({ op: 'shot.remove', id }, 'delete shot').then(() => toast(`Deleted ${s?.name || id}. Undo brings it back`)).catch(() => {});
+  function removeShots(ids) {
+    ids = ids.filter((id) => store.doc.shots.some((x) => x.id === id));
+    if (!ids.length) return;
+    if (store.doc.shots.length - ids.length < 1) return toast(store.doc.shots.length < 2 ? 'A scene needs at least one shot' : 'A scene needs at least one shot. Leave one out of the selection');
+    const s = store.doc.shots.find((x) => x.id === ids[0]);
+    picked = new Set();
+    store.op(ids.map((id) => ({ op: 'shot.remove', id })), ids.length > 1 ? `delete ${ids.length} shots` : 'delete shot')
+      .then(() => toast(`Deleted ${ids.length > 1 ? `${ids.length} shots` : s?.name || ids[0]}. Undo brings ${ids.length > 1 ? 'them' : 'it'} back`)).catch(() => {});
   }
   async function keyObject(t = store.state.time) {
     const o = selObj();
@@ -515,7 +561,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   }
   function deleteKey() {
     const id = store.state.key;
-    if (!id) { if (picked) removeShot(picked); return; }
+    if (!id) { if (picked.size) removeShots([...picked]); return; }
     syncSel();
     const ids = [...selKeys];
     store.op(ids.map((id) => ({ op: 'key.remove', id })), ids.length > 1 ? `delete ${ids.length} keys` : 'delete key')
@@ -568,7 +614,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     for (const [i, r] of L.rows.entries()) {
       const tl = r.s.timeline, my = r.top + r.h / 2 + 1;
       const ed = drag?.kind === 'edge' && drag.moved && drag.s.id === r.s.id;
-      const st = drag?.kind === 'shot' && drag.moved && drag.axis === 'x' && drag.s.id === r.s.id ? drag.start : ed ? drag.st : tl.start || 0;
+      const st = drag?.kind === 'shot' && drag.moved && drag.axis === 'x' && drag.starts?.has(r.s.id) ? +(drag.starts.get(r.s.id) + drag.dA).toFixed(3) : ed ? drag.st : tl.start || 0;
       const x0 = xAction(st), bw = Math.max(3, xAction(st + (ed ? drag.dur : tl.duration)) - x0), by = r.top + 1 + INSET, bh = r.h - 1 - INSET * 2;
       const lifted = reorder && drag.s.id === r.s.id;
       // header: position in the sequence, then the name
@@ -582,7 +628,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       ctx.beginPath(); ctx.roundRect(x0, by, bw, bh, 3);
       if (r.s.active) { ctx.fillStyle = soft; ctx.fill(); }
       else { ctx.save(); ctx.fillStyle = text; ctx.globalAlpha *= 0.08; ctx.fill(); ctx.restore(); }
-      if (r.s.id === picked) { ctx.strokeStyle = r.s.active ? accent : dim; ctx.lineWidth = 1; ctx.stroke(); }
+      if (picked.has(r.s.id)) { ctx.strokeStyle = accent; ctx.lineWidth = r.s.active ? 1 : 1.5; ctx.stroke(); } // picked: outlined in accent
       if (!r.s.active) { // its camera keys, as ticks
         ctx.fillStyle = text; ctx.globalAlpha *= 0.3;
         for (const k of tl.keys) if (k.t > 1e-6 && k.t < tl.duration - 1e-6) ctx.fillRect(Math.round(xAction(edgeKeyA(r.s, k.t) ?? st + k.t)), by + 4, 1, bh - 8);
@@ -604,6 +650,13 @@ export function mountTimeline(root, { viewport, exporter }) {
       ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
       ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
       ctx.restore();
+    }
+    // box select
+    if (drag?.kind === 'box' && drag.moved) {
+      const bx = Math.max(GUT, Math.min(drag.x0, drag.x1)), by = Math.max(RULER, Math.min(drag.y0, drag.y1));
+      const bw = Math.min(W, Math.max(drag.x0, drag.x1)) - bx, bh = Math.max(drag.y0, drag.y1) - by;
+      ctx.fillStyle = soft; ctx.globalAlpha = 0.5; ctx.fillRect(bx, by, bw, bh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.strokeRect(Math.round(bx) + 0.5, Math.round(by) + 0.5, Math.round(bw), Math.round(bh));
     }
     // reordering: where the dragged shot will land
     if (reorder && drag.to !== drag.from) {
@@ -881,7 +934,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   store.on('doc', refresh);
   store.on('state', refresh);
   new ResizeObserver(draw).observe(track);
-  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
+  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
 }
 
 /** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */

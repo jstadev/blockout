@@ -216,7 +216,9 @@ canvas export --sequence                      # every shot in order, cut togethe
 - The user's key track stacks the shots, one row per shot on the action-time axis
   (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
   `--start`, up or down reorders; dragging a bar's left or right end retimes the shot, stretching its camera
-  keys, same as `timeline --duration s --retime [--start s]`, and Alt-drag trims it instead; Delete on a clicked bar removes it; Play all plays through the cuts).
+  keys, same as `timeline --duration s --retime [--start s]`, and Alt-drag trims it instead; Delete on a clicked bar removes it; Shift or Cmd/Ctrl-click or a Shift-drag box picks
+  several bars, which then move sideways together (one `timeline --start` per shot, one undo step) or delete together;
+  Play all plays through the cuts).
   They add a shot from the "+ New shot" row under the shots (click = next shot, drag = any span; same as
   `shot-add --frame [--start s] [--length s]`) or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
   Shift-click Export for the whole sequence.
