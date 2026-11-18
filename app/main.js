@@ -23,9 +23,9 @@ window.canvas = { store, viewport, renderer, timeline, audio }; // handy in the 
 const selName = h('span.cc-mono.sel-name');
 const gizmoSeg = segmented({
   options: [
-    { value: 'translate', icon: 'move', title: 'Move (W)' },
-    { value: 'rotate', icon: 'rotate', title: 'Rotate (E)' },
-    { value: 'scale', icon: 'scale', title: 'Scale (R)' },
+    { value: 'translate', icon: 'move', title: 'Move (1)' },
+    { value: 'rotate', icon: 'rotate', title: 'Rotate (2)' },
+    { value: 'scale', icon: 'scale', title: 'Scale (3)' },
   ],
   value: store.state.gizmo, onChange: (v) => store.set({ gizmo: v }),
 });
@@ -44,9 +44,9 @@ function refreshSel() {
 
 // ---------- help (top right) ----------
 const SHORTCUTS = [
-  ['WASD', 'fly while you hold the right mouse button (arrows too)'], ['Q E', 'fly down / up · Shift faster · scroll: speed'], ['Z X', 'roll (Dutch tilt) while flying'],
-  ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['W E R', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
-  ['Shift D', 'duplicate'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
+  ['WASD', 'fly · drag to look around the aim point'], ['Q E', 'fly down / up · Shift faster · Alt slower'], ['Z X', 'roll (Dutch tilt)'], ['Right-drag', 'with W A S D or arrows: fly and look with the mouse, scroll sets the speed'],
+  ['Click', 'aim the camera at that point'], ['Ctrl Click', 'select an object (⌘ works too)'], ['1 2 3', 'move / rotate / scale'], ['F', 'frame selection (or all)'],
+  ['Shift D', 'duplicate (⌘D too)'], ['⌫', 'delete object or key'], ['Esc', 'deselect'],
   ['Space', 'play / pause'], ['K', 'key the current view at the playhead'], ['C', 'Free ↔ Shot camera'],
   ['[ ]', 'previous / next shot'], ['Shift [ ]', 'move the shot earlier / later'], ['Shift N', 'next shot (or drag across the + New shot row)'],
   ['← →', 'step a frame (Shift: 1 s)'], ['Home', 'go to start'], ['/', 'prompt your agent'], ['⌘Z ⇧⌘Z', 'undo / redo'], ['⌘S', 'save / load scenes'],
@@ -108,11 +108,12 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
   if (mod && k === 'y') { e.preventDefault(); return redo(); }
+  if (mod && k === 'd') { e.preventDefault(); return duplicate(); }
   if (mod) return;
   const f = store.doc?.timeline.fps || 24;
   const map = {
     ' ': () => store.set({ playing: !store.state.playing }),
-    w: () => store.set({ gizmo: 'translate' }), e: () => store.set({ gizmo: 'rotate' }), r: () => store.set({ gizmo: 'scale' }),
+    1: () => store.set({ gizmo: 'translate' }), 2: () => store.set({ gizmo: 'rotate' }), 3: () => store.set({ gizmo: 'scale' }),
     f: () => viewport.frame(store.state.selection),
     k: () => timeline.keyFromView(),
     c: () => store.set({ view: store.state.view === 'shot' ? 'free' : 'shot' }),
@@ -124,8 +125,8 @@ addEventListener('keydown', (e) => {
     '[': () => timeline.shots.next(-1), ']': () => timeline.shots.next(1),
     '/': () => prompt.focus(), '?': () => { helpPanel.hidden = !helpPanel.hidden; helpBtn.setActive(!helpPanel.hidden); },
   };
-  if (e.shiftKey && k === 'd') { e.preventDefault(); return duplicate(); }
   if (e.shiftKey && k === 'n') { e.preventDefault(); return timeline.shots.add(); }
+  if (e.shiftKey && k === 'd') { e.preventDefault(); return duplicate(); }
   if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) { e.preventDefault(); return timeline.shots.move(e.code === 'BracketLeft' ? -1 : 1); }
   const fn = map[k];
   if (fn) { e.preventDefault(); fn(); }

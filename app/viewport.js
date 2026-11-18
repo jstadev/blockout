@@ -226,11 +226,11 @@ export class Viewport {
     }, { capture: true, passive: false });
   }
 
-  // Fly with the keyboard, the way 3D tools do: hold the right mouse button, then W A S D (or the arrow
-  // keys) move, Q / E go down / up, Shift is faster, Alt slower, and the mouse looks around. Scrolling
-  // while held changes the fly speed. Right-drag without a fly key still pans, and outside a right-drag
-  // the keys keep their usual shortcuts (W E R gizmo, arrows step frames). In shot view it hand-frames
-  // the shot camera like orbit does, so press K to key it.
+  // Fly with the keyboard: W A S D move, Q / E go down / up, Z / X roll, Shift is faster, Alt slower.
+  // It works on its own (good on a trackpad: drag still orbits around the aim point ahead), and while
+  // the right mouse button is held the mouse looks around too, the arrow keys fly as well, and scroll
+  // sets the fly speed. Right-drag without a fly key still pans. In shot view it hand-frames the shot
+  // camera like orbit does, so press K to key it.
   _bindFly() {
     const MOVE = {
       KeyW: [0, 0, 1], ArrowUp: [0, 0, 1], KeyS: [0, 0, -1], ArrowDown: [0, 0, -1],
@@ -239,42 +239,51 @@ export class Viewport {
       KeyZ: [0, 0, 0], KeyX: [0, 0, 0], // roll left / right, see _stepFly
     };
     let speed = 4; try { speed = +localStorage.getItem('cc-flyspeed') || 4; } catch {}
-    const fly = this.fly = { held: false, active: false, keys: new Set(), speed, last: 0, MOVE };
-    const start = () => {
-      if (fly.active) return;
-      fly.active = true; fly.last = performance.now();
-      this.aim = null;
-      // the orbit stops panning; it is turned back on before its own pointerup runs (on the document)
-      this.activeOrbit.enabled = false;
-      if (store.state.view === 'shot') { if (store.state.playing) store.set({ playing: false }); store.set({ camDirty: true }); }
-      this.canvas.style.cursor = 'none';
-    };
-    const stop = () => {
-      fly.held = false; fly.keys.clear();
-      if (!fly.active) return;
-      fly.active = false;
+    const fly = this.fly = { held: false, active: false, look: false, keys: new Set(), speed, last: 0, MOVE };
+    const orbitsOn = () => {
       this.freeOrbit.enabled = store.state.view === 'free' && !this.dragging;
       this.shotOrbit.enabled = store.state.view === 'shot' && !this.dragging;
-      this.canvas.style.cursor = '';
     };
+    const start = () => {
+      if (!fly.active) {
+        fly.active = true; fly.last = performance.now();
+        this.aim = null;
+        if (store.state.view === 'shot') { if (store.state.playing) store.set({ playing: false }); store.set({ camDirty: true }); }
+      }
+      // right button held: the mouse looks instead of panning. The orbit is turned back on before its
+      // own pointerup runs (on the document).
+      if (fly.held && !fly.look) { fly.look = true; this.activeOrbit.enabled = false; this.canvas.style.cursor = 'none'; }
+    };
+    const endLook = () => {
+      fly.held = false;
+      if (fly.look) { fly.look = false; orbitsOn(); this.canvas.style.cursor = ''; }
+      if (!fly.keys.size) fly.active = false;
+    };
+    const stop = () => { fly.keys.clear(); endLook(); };
     this.canvas.addEventListener('pointerdown', (e) => { if (e.button === 2) fly.held = true; });
-    this.canvas.addEventListener('pointerup', (e) => { if (e.button === 2) stop(); });
+    this.canvas.addEventListener('pointerup', (e) => { if (e.button === 2) endLook(); });
     this.canvas.addEventListener('pointercancel', stop);
     addEventListener('blur', stop);
-    // capture on window, so a fly key held with the right button never reaches the scene shortcuts
+    // capture on window, so fly keys never reach the scene shortcuts
     const mods = (e) => { fly.shift = e.shiftKey; fly.alt = e.altKey; };
     addEventListener('keydown', mods, true);
     addEventListener('keyup', mods, true);
     addEventListener('keydown', (e) => {
-      if (!fly.held || !MOVE[e.code] || e.metaKey || e.ctrlKey || e.target.closest?.('input, select, textarea')) return;
+      if (!MOVE[e.code] || e.metaKey || e.ctrlKey || e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+      if (e.code.startsWith('Arrow') && !fly.held) return; // arrows step frames unless the right button is held
+      if (e.shiftKey && e.code === 'KeyD' && !fly.active) return; // Shift D duplicates; Shift only speeds up a flight already going
       e.preventDefault(); e.stopImmediatePropagation();
       fly.keys.add(e.code); start();
     }, true);
-    addEventListener('keyup', (e) => { if (fly.keys.delete(e.code)) e.preventDefault(); }, true);
+    addEventListener('keyup', (e) => {
+      if (!fly.keys.delete(e.code)) return;
+      e.preventDefault();
+      if (!fly.keys.size && !fly.held) fly.active = false;
+    }, true);
     // mouse look while flying: turn the aim point around the camera
     addEventListener('pointermove', (e) => {
       mods(e);
-      if (!fly.active) return;
+      if (!fly.look) return;
       const cam = this.activeCam, orbit = this.activeOrbit;
       const off = orbit.target.clone().sub(cam.position);
       const dist = Math.max(0.5, off.length());

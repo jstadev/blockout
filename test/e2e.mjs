@@ -275,13 +275,39 @@ try {
     const along = d.reduce((s, v, i) => s + v * fwd[i] / fl, 0);
     ok(along > 0.5 && d[1] > 0.3, `right button + W flies forward and E rises (forward ${along.toFixed(2)} m, up ${d[1].toFixed(2)} m)`);
     ok(b.g === 'translate', 'fly keys do not switch the gizmo mode');
-    await page.keyboard.press('e'); await page.waitForTimeout(50);
-    ok((await vp()).g === 'rotate', 'after letting go of the right button, E is the rotate shortcut again');
-    await page.keyboard.press('w');
+    // no mouse button (trackpad): W still flies forward; 1 2 3 are the gizmo keys
+    const fwd2 = b.t.map((v, i) => v - b.p[i]); const fl2 = Math.hypot(...fwd2);
+    await page.keyboard.down('w'); await page.waitForTimeout(400); await page.keyboard.up('w');
+    await page.waitForTimeout(100);
+    const b2 = await vp();
+    const along2 = b2.p.reduce((s, v, i) => s + (v - b.p[i]) * fwd2[i] / fl2, 0);
+    ok(along2 > 0.5 && b2.g === 'translate', `W alone flies forward too (${along2.toFixed(2)} m)`);
+    await page.keyboard.press('2'); await page.waitForTimeout(50);
+    ok((await vp()).g === 'rotate', '2 is the rotate shortcut');
+    await page.keyboard.press('3'); await page.waitForTimeout(50);
+    ok((await vp()).g === 'scale', '3 is the scale shortcut');
+    await page.keyboard.press('1'); await page.waitForTimeout(50);
+    ok((await vp()).g === 'translate', '1 is the move shortcut');
+    {
+      const first = await page.evaluate(() => window.canvas.store.doc.objects[0]?.id);
+      if (first) {
+        await page.evaluate((id) => window.canvas.store.set({ selection: id }), first);
+        const n0 = await page.evaluate(() => window.canvas.store.doc.objects.length);
+        const p0 = (await vp()).p;
+        await page.keyboard.press('Shift+D'); await page.waitForTimeout(400);
+        const n1 = await page.evaluate(() => window.canvas.store.doc.objects.length);
+        ok(n1 === n0 + 1 && (await vp()).p.every((v, i) => Math.abs(v - p0[i]) < 1e-6), 'Shift D duplicates and does not fly');
+        const dup = await page.evaluate(() => window.canvas.store.state.selection);
+        if (dup && dup !== first) cli('rm', dup);
+        await page.evaluate(() => window.canvas.store.set({ selection: null }));
+      }
+    }
+    await page.evaluate(() => { const o = window.canvas.viewport.freeOrbit; o.enableDamping = false; o.update(); o.enableDamping = true; });
+    const b3 = await vp();
     await page.mouse.down({ button: 'right' }); await page.mouse.move(mid.x + 60, mid.y + 30, { steps: 4 }); await page.mouse.up({ button: 'right' });
     await page.waitForTimeout(300);
     const c = await vp();
-    ok(c.p.some((v, i) => Math.abs(v - b.p[i]) > 0.05), 'right-drag without a fly key still pans');
+    ok(c.p.some((v, i) => Math.abs(v - b3.p[i]) > 0.05), 'right-drag without a fly key still pans');
     // stop the pan's damping glide so later checks see a still camera
     await page.evaluate(() => { const o = window.canvas.viewport.freeOrbit; o.enableDamping = false; o.update(); o.enableDamping = true; });
 
