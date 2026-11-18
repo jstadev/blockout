@@ -203,12 +203,19 @@ body.chat-open #corner, body.chat-open #dock, body.chat-open .help-panel, body.c
 .tl-more-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 25; }
 .tl-more-pop[hidden] { display: none; }
 body.has-audio .tl-more-pop { bottom: calc(156px + var(--stack-h, 0px)); }
-.tl-more-pop > .cc-btn { justify-content: flex-start; width: 100%; max-width: none; background: transparent; border-color: transparent; }
+/* rows: a 14px icon column, the label, then any value (dim) and chevron on the right */
+.tl-more-pop > .cc-btn { justify-content: flex-start; gap: 8px; width: 100%; max-width: none; height: 28px; padding: 0 8px; background: transparent; border-color: transparent; }
 .tl-more-pop > .cc-btn:hover { background: var(--cc-surface-sunk); }
-.tl-more-pop > .cc-btn.is-active { background: var(--cc-accent-soft); }
-.tl-more-pop > .cc-btn[data-menu-label]::after { content: attr(data-menu-label); }
-.tl-more-pop > .tl-shot > svg:last-child { margin-left: auto; }
-.tl-more-pop > .tl-shot::before { content: 'Shot'; margin-right: 4px; }
+.tl-more-pop > .cc-btn.is-active { background: transparent; }
+.tl-more-pop > .cc-btn.is-active::before { content: ''; order: 9; margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--cc-accent); }
+.tl-more-pop > .cc-btn[data-menu-label]::after { content: attr(data-menu-label); color: var(--cc-text); }
+.tl-more-pop .tl-odot { margin: 0 3.5px; }
+.tl-more-pop > .tl-objkey { order: 1; margin-top: 3px; position: relative; }
+.tl-more-pop > .tl-objkey::before { content: ""; position: absolute; left: 4px; right: 4px; top: -3px; height: 1px; background: var(--cc-line); }
+.tl-more-pop > .tl-shot > .tl-shot-name { margin-right: auto; }
+.tl-more-pop > .tl-shot > :is(.cc-mono, .tl-faint) { color: var(--cc-text-dim); }
+.tl-shot > :is(.tl-shot-icon, .tl-shot-name), .tl-shot > svg:first-child { display: none; }
+.tl-more-pop > .tl-shot > :is(.tl-shot-name), .tl-more-pop > .tl-shot > svg:first-child { display: inline-flex; }
 :is(.shot-pop, .audio-pop) { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); width: 240px; z-index: 25; }
 :is(.shot-pop, .audio-pop)[hidden] { display: none; }
 :is(.shot-pop, .audio-pop) .cc-row > .cc-label { width: 72px; }
