@@ -411,6 +411,18 @@ try {
   cli('undo'); cli('undo'); cli('shot', '1');
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
   ok(JSON.parse(cli('doc')).timeline.duration === tlBefore.duration, 'undo removes the trim and the new shot');
+  // drag the shot's right end (just past the last key) to retime it: every key stretches with it
+  {
+    const D = tlBefore.duration, ey = nb.y + await page.evaluate(() => window.canvas.timeline.yAt());
+    await page.mouse.move(await nX(D) + 4, ey); await page.mouse.down();
+    await page.mouse.move(await nX(D * 1.25) + 4, ey, { steps: 4 }); await page.mouse.move(await nX(D * 1.5) + 4, ey, { steps: 4 }); await page.mouse.up();
+    await page.waitForFunction((D) => Math.abs(window.canvas.store.doc.timeline.duration - D * 1.5) < 0.15, D, { timeout: 3000 }).catch(() => {});
+    const r = JSON.parse(cli('doc')).timeline, f = r.duration / D;
+    const ts0 = tlBefore.keys.map((k) => k.t).sort((a, b) => a - b), ts1 = r.keys.map((k) => k.t).sort((a, b) => a - b);
+    ok(Math.abs(f - 1.5) < 0.1 && ts1.every((t, i) => Math.abs(t - ts0[i] * f) < 0.01), `dragging a shot's end retimes it, keys stretch (${D} → ${r.duration}s)`);
+    cli('undo');
+    ok(JSON.parse(cli('doc')).timeline.duration === D, 'undo restores the shot length');
+  }
   // a hold key inside a shot still cuts within the clip; the pair is drawn as one split key either side
   // of the cut line and each half selects its own key
   cli('key', '--t', String(tc), '--pos', '5,2,5', '--target', '0,1,0', '--ease', 'hold');

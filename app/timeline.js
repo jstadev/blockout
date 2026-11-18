@@ -226,12 +226,34 @@ export function mountTimeline(root, { viewport, exporter }) {
   // (its top strip keeps the rest free for keys), or its name in the header column
   const onHandle = (r, x, y) => !!r && y < r.top + r.h && (inGutter(x) || (covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 12)));
   const rowAt = (y) => (L ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
+  /** A shot bar's left or right end, to drag for retiming. Another shot's bar: either side of its end. The
+   *  active one: just outside its ends (the first and last keys sit right on them), or anywhere along the
+   *  end above or below the keys. */
+  function edgeAt(x, y) {
+    const r = rowAt(y);
+    if (!r || y >= r.top + r.h || inGutter(x)) return null;
+    const st = r.s.timeline.start || 0, xs = [xAction(st), xAction(st + r.s.timeline.duration)];
+    const mid = r.top + r.h / 2 + 2, offKeys = Math.abs(y - mid) > 7;
+    for (const [i, side] of [[1, 'right'], [0, 'left']]) {
+      const d = (x - xs[i]) * (side === 'right' ? 1 : -1); // + is outside the bar
+      if (r.s.active ? (d >= 1 && d <= 8) || (offKeys && Math.abs(d) <= 4) : d >= -4 && d <= 6) return { r, side };
+    }
+    return null;
+  }
+  /** Where shot `tl`'s camera key at shot time `t` sits in action time while its edge is dragged (else null). */
+  const edgeKeyA = (s, t) => {
+    if (drag?.kind !== 'edge' || !drag.moved || drag.s.id !== s.id) return null;
+    return drag.trim ? drag.st0 + t : drag.st + t * (drag.dur / drag.dur0);
+  };
   const inActive = (y) => !L || (y >= L.active.top && y < L.active.top + L.active.h);
   const snap = (t, e) => (e?.shiftKey ? t : Math.round(t * fps()) / fps());
   const keys = () => [...store.doc.timeline.keys].sort((a, b) => a.t - b.t);
   // While keys are dragged, they (and the other halves of their cuts) are drawn shifted by the drag.
-  const liveKeys = () => keys().map((k) => (drag?.kind === 'key' && drag.moving.has(k.id) ? { ...k, t: drag.moving.get(k.id) + drag.dt } : k))
-    .sort((a, b) => a.t - b.t);
+  const liveKeys = () => keys().map((k) => {
+    if (drag?.kind === 'key' && drag.moving.has(k.id)) return { ...k, t: drag.moving.get(k.id) + drag.dt };
+    const a = L && edgeKeyA(L.active.s, k.t); // the active shot's edge is dragged: keys stretch (or stay) with it
+    return a != null ? { ...k, t: a - L.start } : k;
+  }).sort((a, b) => a.t - b.t);
   /** Cuts: every hold key (except the last) ends a shot, and the camera cuts to the next key. A hold key and
    *  the next key within a frame or so of each other are one "split" key either side of the cut line. */
   const cutsOf = (ks) => {
@@ -277,6 +299,15 @@ export function mountTimeline(root, { viewport, exporter }) {
       drag = { kind: 'new', x0: x, a0: a, a1: a, moved: false };
       store.set({ playing: false });
       return draw();
+    }
+    const ed = e.button === 0 && edgeAt(x, e.offsetY);
+    if (ed) { // a shot's end: drag to retime the shot (Alt/Option: trim it, keys stay where they are)
+      track.setPointerCapture(e.pointerId);
+      const tl = ed.r.s.timeline, ts = tl.keys.map((k) => k.t);
+      drag = { kind: 'edge', side: ed.side, s: ed.r.s, x0: x, st0: tl.start || 0, dur0: tl.duration, st: tl.start || 0, dur: tl.duration,
+        first: ts.length ? Math.min(...ts) : 0, last: ts.length ? Math.max(...ts) : 0, trim: e.altKey, moved: false };
+      store.set({ playing: false });
+      return;
     }
     const ok = okeyAt(x, e.offsetY);
     const k = ok ? null : keyAt(x, e.offsetY);
@@ -328,7 +359,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   track.addEventListener('pointermove', (e) => {
     if (!drag) {
       const r = rowAt(e.offsetY), hn = inNewRow(e.offsetY);
-      track.style.cursor = hn ? 'pointer' : okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) || onHandle(r, e.offsetX, e.offsetY) ? 'grab' : 'default';
+      track.style.cursor = hn ? 'pointer' : edgeAt(e.offsetX, e.offsetY) ? 'ew-resize' : okeyAt(e.offsetX, e.offsetY) || keyAt(e.offsetX, e.offsetY) || onHandle(r, e.offsetX, e.offsetY) ? 'grab' : 'default';
       if (hn !== hoverNew) { hoverNew = hn; draw(); }
       return;
     }
@@ -337,6 +368,20 @@ export function mountTimeline(root, { viewport, exporter }) {
       if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return;
       drag.moved = true;
       drag.a1 = Math.min(L.T, snapAction(aOf(e.offsetX), e));
+      return draw();
+    }
+    if (drag.kind === 'edge') {
+      if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 3) return;
+      drag.moved = true; drag.trim = e.altKey;
+      const F = drag.s.timeline.fps, min = 1 / F, end0 = drag.st0 + drag.dur0;
+      const a = Math.min(L.T, snapAction(aOf(e.offsetX), e)); // the axis grows after the drop: drag again for more
+      if (drag.side === 'right') { // the start stays; trimming can't cut off camera keys
+        const end = Math.max(drag.st0 + (drag.trim ? Math.max(min, drag.last) : min), Math.min(drag.st0 + 600, a));
+        drag.st = drag.st0; drag.dur = +(end - drag.st0).toFixed(3);
+      } else { // the end stays; trimming can't push the first key before the shot
+        const st = Math.max(0, end0 - 600, Math.min(a, end0 - min, drag.trim ? drag.st0 + drag.first : Infinity));
+        drag.st = +st.toFixed(3); drag.dur = +(end0 - st).toFixed(3);
+      }
       return draw();
     }
     if (drag.kind === 'shot') {
@@ -373,6 +418,19 @@ export function mountTimeline(root, { viewport, exporter }) {
       const lo = Math.min(d.a0 ?? 0, d.a1 ?? 0), hi = Math.max(d.a0 ?? 0, d.a1 ?? 0);
       if (d.moved && hi - lo >= 1 / fps() - 1e-6) shots.add({ start: lo, duration: +(hi - lo).toFixed(3) });
       else shots.add();
+      return draw();
+    }
+    if (d.kind === 'edge') {
+      const ds = d.st - d.st0;
+      if (!d.moved || (Math.abs(ds) < 1e-4 && Math.abs(d.dur - d.dur0) < 1e-4)) return draw();
+      const op = { op: 'timeline', duration: d.dur, shot: d.s.id };
+      if (d.side === 'left') op.start = d.st;
+      if (!d.trim) op.retime = true;
+      // trimming the start: the keys keep their moment in the action, so they shift in shot time
+      const shift = d.trim && d.side === 'left' && Math.abs(ds) > 1e-4
+        ? d.s.timeline.keys.map((k) => ({ op: 'key.update', id: k.id, t: +(k.t - ds).toFixed(3), shot: d.s.id })) : [];
+      if (ds < 0) shift.reverse(); // moving later: the last key first, so none passes another
+      store.op([op, ...shift], d.trim ? 'trim shot' : 'retime shot').catch(() => {});
       return draw();
     }
     if (d.kind === 'shot') {
@@ -509,8 +567,9 @@ export function mountTimeline(root, { viewport, exporter }) {
     ctx.textBaseline = 'middle';
     for (const [i, r] of L.rows.entries()) {
       const tl = r.s.timeline, my = r.top + r.h / 2 + 1;
-      const st = drag?.kind === 'shot' && drag.moved && drag.axis === 'x' && drag.s.id === r.s.id ? drag.start : tl.start || 0;
-      const x0 = xAction(st), bw = Math.max(3, xAction(st + tl.duration) - x0), by = r.top + 1 + INSET, bh = r.h - 1 - INSET * 2;
+      const ed = drag?.kind === 'edge' && drag.moved && drag.s.id === r.s.id;
+      const st = drag?.kind === 'shot' && drag.moved && drag.axis === 'x' && drag.s.id === r.s.id ? drag.start : ed ? drag.st : tl.start || 0;
+      const x0 = xAction(st), bw = Math.max(3, xAction(st + (ed ? drag.dur : tl.duration)) - x0), by = r.top + 1 + INSET, bh = r.h - 1 - INSET * 2;
       const lifted = reorder && drag.s.id === r.s.id;
       // header: position in the sequence, then the name
       ctx.save(); ctx.beginPath(); ctx.rect(0, r.top, GUT - 8, r.h); ctx.clip();
@@ -526,9 +585,17 @@ export function mountTimeline(root, { viewport, exporter }) {
       if (r.s.id === picked) { ctx.strokeStyle = r.s.active ? accent : dim; ctx.lineWidth = 1; ctx.stroke(); }
       if (!r.s.active) { // its camera keys, as ticks
         ctx.fillStyle = text; ctx.globalAlpha *= 0.3;
-        for (const k of tl.keys) if (k.t > 1e-6 && k.t < tl.duration - 1e-6) ctx.fillRect(Math.round(xAction(st + k.t)), by + 4, 1, bh - 8);
+        for (const k of tl.keys) if (k.t > 1e-6 && k.t < tl.duration - 1e-6) ctx.fillRect(Math.round(xAction(edgeKeyA(r.s, k.t) ?? st + k.t)), by + 4, 1, bh - 8);
       }
       ctx.globalAlpha = 1;
+      if (ed) { // retiming: the dragged end in accent, and the new length beside it
+        const ex = Math.min(W - 1, drag.side === 'right' ? x0 + bw : x0);
+        ctx.fillStyle = accent; ctx.fillRect(Math.round(ex) - 1, by, 2, bh);
+        const f = drag.dur / drag.dur0, label = `${drag.dur.toFixed(2)} s${drag.trim ? ' · trim' : Math.abs(f - 1) > 0.005 ? ` · ${f.toFixed(2)}×` : ''}`;
+        ctx.font = `500 10px ${mono}`;
+        const w = ctx.measureText(label).width, lx = drag.side === 'right' ? (ex + 6 + w < W - 2 ? ex + 6 : ex - 6 - w) : (ex - 6 - w > GUT + 2 ? ex - 6 - w : ex + 6);
+        ctx.fillStyle = text; ctx.fillText(label, lx, r.top + 1 + INSET + 6);
+      }
     }
     drawNewRow(W, { text, dim, line, accent, font, mono });
     // the selected object's key lane is named after it
@@ -600,7 +667,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (!L) drawRuler(W, D, xOf, F, { dim, line }, cuts);
     // shots and cuts: every hold key (but the last) ends a shot and the camera cuts to the next key.
     // With at least one cut, shots get a faint alternating band and a name; the baseline breaks at each cut.
-    const edges = [xOf(0), ...cuts.map((c) => c.x), xOf(D)];
+    const eA = L && drag?.kind === 'edge' && drag.moved && drag.s.id === L.active.s.id; // the active shot's end is dragged
+    const edges = [xOf(eA ? drag.st - L.start : 0), ...cuts.map((c) => c.x), xOf(eA ? drag.st - L.start + drag.dur : D)];
     ctx.fillStyle = text; ctx.globalAlpha = 0.045;
     for (let i = 1; i < edges.length - 1; i += 2) ctx.fillRect(edges[i], ct, edges[i + 1] - edges[i], cb - ct);
     ctx.globalAlpha = 1;
