@@ -540,26 +540,52 @@ try {
     fs.writeFileSync(wav, b);
   }
   const loaded = cli('audio', wav);
-  ok(/audio: Click Track\.wav \(click-track-[0-9a-f]{8}\.wav\)/.test(loaded), `canvas audio loads a file (${loaded.split('\n')[0]})`);
+  ok(/audio \(all shots\): Click Track\.wav at 0s.*\(file click-track-[0-9a-f]{8}\.wav/.test(loaded), `canvas audio loads a file (${loaded.split('\n')[0]})`);
   await page.waitForFunction(() => window.canvas.audio.peaks && !document.querySelector('.tl-audio').hidden && document.body.classList.contains('has-audio'));
   ok(true, 'the timeline shows the waveform lane');
-  await page.waitForFunction(() => window.canvas.store.doc.timeline.audio.length === 6);
+  await page.waitForFunction(() => window.canvas.store.doc.audio.length === 6);
   ok(true, 'the tab records the audio length (not as an undo step)');
   const beats = JSON.parse(cli('audio', '--beats', '--json'));
   ok(Math.abs(beats.tempo - 120) < 3 && beats.beats.length >= 7, `beat finder: ${beats.tempo} bpm, beats ${beats.beats.slice(0, 4).join(' ')}…`);
   cli('audio', '--offset', '-0.25');
-  ok(cli('ls').includes('audio: Click Track.wav at -0.25s, 6s long'), 'ls shows the audio track');
+  ok(cli('ls').includes('audio (all shots): Click Track.wav at -0.25s, 6s long'), 'ls shows the audio track');
   await page.locator('.tl-audiobtn').click();
-  ok(await page.locator('.audio-pop').isVisible() && /0\.25–4\.25/.test(await page.locator('.audio-pop .audio-foot').textContent()), 'Audio menu shows the part of the file the shot plays');
+  ok(await page.locator('.audio-pop').isVisible() && /−0\.25–5\.75 s of the action/.test(await page.locator('.audio-pop .audio-foot').textContent()), 'Audio menu shows where the clip plays in the action');
   await page.screenshot({ path: path.join(dir, 'audio.png') });
   await page.keyboard.press('Escape');
   // slide the audio by dragging the waveform
   const lb = await page.locator('.tl-audio').boundingBox();
   await page.mouse.move(lb.x + lb.width * 0.5, lb.y + lb.height / 2); await page.mouse.down();
   await page.mouse.move(lb.x + lb.width * 0.6, lb.y + lb.height / 2, { steps: 4 }); await page.mouse.up();
-  await page.waitForFunction(() => window.canvas.store.doc.timeline.audio.offset > 0);
-  ok(true, `dragging the waveform slides the audio (offset ${await page.evaluate(() => window.canvas.store.doc.timeline.audio.offset)}s)`);
+  await page.waitForFunction(() => window.canvas.store.doc.audio.offset > -0.25);
+  ok(true, `dragging the clip slides the audio (offset ${await page.evaluate(() => window.canvas.store.doc.audio.offset)}s)`);
   cli('undo');
+  // trim by dragging the clip's ends
+  cli('audio', '--offset', '0.5', '--out', '4');
+  await page.waitForFunction(() => window.canvas.store.doc.audio.offset === 0.5 && window.canvas.store.doc.audio.out === 4);
+  const laX = async (a) => lb.x + await page.evaluate((a) => window.canvas.timeline.xAction(a), a);
+  let hx = await laX(0.5);
+  await page.mouse.move(hx, lb.y + lb.height / 2); await page.mouse.down();
+  await page.mouse.move(await laX(1.5), lb.y + lb.height / 2, { steps: 5 }); await page.mouse.up();
+  await page.waitForFunction(() => window.canvas.store.doc.audio.in > 0.5);
+  const tin = await page.evaluate(() => window.canvas.store.doc.audio);
+  ok(Math.abs(tin.in - 1) < 0.05 && tin.offset === 0.5, `dragging the clip's start trims it (in ${tin.in}s, offset stays ${tin.offset})`);
+  hx = await laX(4.5);
+  await page.mouse.move(hx, lb.y + lb.height / 2); await page.mouse.down();
+  await page.mouse.move(await laX(3.5), lb.y + lb.height / 2, { steps: 5 }); await page.mouse.up();
+  await page.waitForFunction(() => window.canvas.store.doc.audio.out < 4);
+  const tout = await page.evaluate(() => window.canvas.store.doc.audio.out);
+  ok(Math.abs(tout - 3) < 0.05, `dragging the clip's end trims it (out ${tout}s)`);
+  ok(/trimmed to 1–3s of the file, plays 1\.5s–3\.5s of the action/.test(cli('ls')), 'ls shows the trim');
+  await page.screenshot({ path: path.join(dir, 'audio-trim.png') });
+  // one track for every shot: a new shot plays on from where the first ends
+  cli('shot-add');
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2 && window.canvas.store.doc.shot !== 'shot-1');
+  ok(await page.evaluate(() => !!window.canvas.store.doc.audio && !document.querySelector('.tl-audio').hidden), 'the audio track stays on the timeline in the next shot');
+  await page.screenshot({ path: path.join(dir, 'audio-shots.png') });
+  cli('shot-rm', await page.evaluate(() => window.canvas.store.doc.shot));
+  await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
+  cli('audio', '--offset', '-0.25', '--in', 'none', '--out', 'none');
   cli('audio', '--fit');
   ok(JSON.parse(cli('doc')).timeline.duration === 5.75, 'audio --fit makes the shot end with the audio');
   cli('timeline', '--duration', '4');

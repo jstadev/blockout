@@ -69,7 +69,7 @@ export function createRenderer(viewport) {
 
   /**
    * Render the active shot (or { shot }) to mp4. With { sequence: true }, every shot in order, cut
-   * together into one video at one frame rate (fps, else the active shot's) with each shot's audio.
+   * together into one video at one frame rate (fps, else the active shot's) with the audio under each shot.
    */
   async function exportVideo({ fps, width, height, grid, name, shot, sequence } = {}) {
     if (store.state.exporting) throw new Error('an export is already running');
@@ -135,11 +135,12 @@ export function createRenderer(viewport) {
     }
   }
 
-  // The audio of each part, back to back (silence where a shot has none). Null when no shot has audio.
+  // The scene's audio under each part's span of the action, back to back. Null when there is no audio.
   async function mixParts(parts, rate) {
-    if (parts.length === 1) return audio.mixdown(parts[0].frames / rate, parts[0].s.timeline.audio);
+    const st = (p) => p.s.timeline.start || 0;
+    if (parts.length === 1) return audio.mixdown(st(parts[0]), parts[0].frames / rate);
     const mixes = [];
-    for (const p of parts) mixes.push(await audio.mixdown(p.frames / rate, p.s.timeline.audio, { channels: 2 }));
+    for (const p of parts) mixes.push(await audio.mixdown(st(p), p.frames / rate, { channels: 2 }));
     if (!mixes.some(Boolean)) return null;
     const len = (p) => Math.round((p.frames / rate) * audio.RATE);
     const out = new AudioBuffer({ numberOfChannels: 2, length: Math.max(1, parts.reduce((n, p) => n + len(p), 0)), sampleRate: audio.RATE });
@@ -159,7 +160,7 @@ export function createRenderer(viewport) {
     const [w, hh] = size({ width, height });
     const canvas = viewport.renderShot(0, w, hh, { grid, timeline: tl });
     const stream = canvas.captureStream(rate);
-    const mix = await audio.mixdown(tl.duration, tl.audio);
+    const mix = await audio.mixdown(tl.start || 0, tl.duration);
     let mixCtx = null, mixSrc = null;
     if (mix) { // play the mixdown into the recording, in real time alongside the frames
       mixCtx = new AudioContext({ sampleRate: mix.sampleRate });

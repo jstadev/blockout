@@ -165,13 +165,16 @@ canvas storyboard --frames 6                # check it, then reply
 
 ## 4c. Audio: pace the shot to music or dialogue
 
-The timeline can hold one audio track. It shows as a waveform under the camera keys, plays with the
-playhead and is mixed into the export (AAC).
+The scene can hold one audio track, shared by every shot. It sits on the action-time axis the shots
+share, so each shot plays the part under its span of the action (shots that follow on play it straight
+through). It shows as a waveform under the shots, plays with the playhead and is mixed into the export
+(AAC). The user trims it by dragging the clip's ends and slides it by dragging the middle.
 
 ```bash
 canvas audio ~/Music/track.mp3            # load it (or the user drops a file on the timeline)
 canvas audio --offset -1.5                # start 1.5 s into the file (positive: audio starts later)
-canvas audio --fit                        # make the shot end where the audio ends
+canvas audio --in 4 --out 20              # trim: play only 4–20 s of the file (--in none clears it)
+canvas audio --fit                        # make the active shot end where the audio ends
 canvas audio --beats                      # tempo, beat times and strong onsets inside the shot
 canvas audio --mute on | --volume 0.5 | --clear
 ```
@@ -182,7 +185,7 @@ the frame grid). `canvas ls` shows the audio line.
 ## 4d. Shots: several cameras on one set
 
 A scene has one or more **shots**. The set, the people and their moves are shared; each shot has its
-own camera keys, length, fps, speed curve and audio, and exports on its own or as part of the sequence.
+own camera keys, length, fps and speed curve (the audio track is shared), and exports on its own or as part of the sequence.
 Move a prop once and every shot sees it. Camera, timeline, audio and render commands work on the
 **active** shot (the one on the user's timeline); `canvas ls` lists the shots and marks the active one.
 
@@ -212,7 +215,7 @@ canvas export --sequence                      # every shot in order, cut togethe
 - Stretching a shot with `timeline --duration --retime` only stretches that shot's camera keys when there
   are several shots (the shared action keeps its timing).
 - Exports are named `<scene>-<shot>-<time>.mp4` once there are several shots; `export --sequence` uses
-  `--fps` or the active shot's fps for every shot and joins each shot's audio.
+  `--fps` or the active shot's fps for every shot, with the audio under each shot's span of the action.
 - The user's key track stacks the shots, one row per shot on the action-time axis
   (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
   `--start`, up or down reorders; dragging a bar's left or right end retimes the shot, stretching its camera
