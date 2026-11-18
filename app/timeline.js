@@ -70,7 +70,19 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (store.state.key) updateKey({ fov });
   } });
   const lensField = affix(lensNum, 'mm');
-  const toViewBtn = button({ icon: 'aim', title: 'Set this key to the current view', kind: 'ghost', onClick: () => { const p = viewport.getPose(); updateKey({ position: p.position, target: p.target, fov: p.fov }); } });
+  // Roll (Dutch tilt): like Lens, the selected key's and the free view's. In shot view it hand-frames the
+  // shot camera, so K keys it. Hold the right mouse button and press Z / X to roll by hand.
+  // the view takes the roll unless a key drives the shot camera, which then follows the key
+  const rollLive = () => store.state.view === 'free' || store.state.camDirty || !store.state.key;
+  const rollNum = number({ step: 1, min: -180, max: 180, precision: 0, title: 'Roll (degrees): the selected key and the free view', width: 30,
+    onInput: (v) => { if (rollLive()) viewport.setRoll(v); },
+    onChange: (v) => {
+      const live = rollLive();
+      if (live) viewport.setRoll(v);
+      if (store.state.key && (store.state.view === 'free' || !live)) updateKey({ roll: v });
+    } });
+  const rollField = affix(rollNum, '°');
+  const toViewBtn = button({ icon: 'aim', title: 'Set this key to the current view', kind: 'ghost', onClick: () => { const p = viewport.getPose(); updateKey({ position: p.position, target: p.target, fov: p.fov, roll: p.roll }); } });
   const delKeyBtn = button({ icon: 'trash', title: 'Delete key', kind: 'ghost', onClick: () => deleteKey() });
   // path: how the camera travels to the next key (a move's arc, a turn on the spot, a dolly zoom ...)
   const pathSel = select({ options: PATH_OPTIONS, value: 'smooth', title: 'How the camera travels to the next key', onChange: (v) => updateKey({ path: v }) });
@@ -92,7 +104,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   const shots = mountShots();
   const bar = h('div.tl-bar',
-    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, movesBtn, lensField, keyGroup, objKeyBtn,
+    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, movesBtn, lensField, rollField, keyGroup, objKeyBtn,
     h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
@@ -434,7 +446,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   async function keyFromView(t = store.state.time) {
     const p = viewport.getPose();
-    const [r] = await store.op({ op: 'key.add', t: +t.toFixed(3), position: p.position, target: p.target, fov: p.fov }, 'key camera');
+    const [r] = await store.op({ op: 'key.add', t: +t.toFixed(3), position: p.position, target: p.target, fov: p.fov, roll: p.roll }, 'key camera');
     store.set({ key: r.id, camDirty: false });
     toast(r.replaced ? `Updated key at ${t.toFixed(2)}s` : `Keyed camera at ${t.toFixed(2)}s`);
   }
@@ -761,6 +773,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       pathSel.title = k.path ? `To the next key: ${pathLabel(k.path)}` : 'How the camera travels to the next key';
       // selecting a key (or the agent changing its lens) puts the free view on that lens too
       changed(lensField, [k.id, k.fov], () => viewport.setFreeFov(k.fov));
+      changed(rollField, [k.id, k.roll], () => { viewport.freeRoll = k.roll || 0; });
     }
     const so = selObj();
     objKeyBtn.hidden = !so;
@@ -777,6 +790,11 @@ export function mountTimeline(root, { viewport, exporter }) {
     const lensOff = shotView && !k;
     lensField.classList.toggle('is-disabled', lensOff);
     lensNum.disabled = lensOff;
+    const roll = shotView ? (store.state.camDirty ? viewport.shotRoll : k ? k.roll : (sampleCamera(store.doc.timeline, store.state.time)?.roll ?? 0)) : viewport.freeRoll;
+    rollNum.set(Math.round(roll || 0));
+    rollField.classList.toggle('is-disabled', lensOff && !store.state.camDirty);
+    rollNum.disabled = lensOff && !store.state.camDirty;
+    rollField.title = rollNum.disabled ? 'Select a key to change its roll (or hold the right mouse button and press Z / X)' : k ? 'Roll (Dutch tilt) of the selected key; the free view uses it too' : 'Roll (Dutch tilt) of the view; new keys get it';
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
     exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Shift-click: every shot in order, cut together into one video' : 'Render the blockout video (mp4)';

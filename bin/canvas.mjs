@@ -458,7 +458,7 @@ const commands = {
     const k = keyFields(flags);
     if (flags['from-view']) {
       const cam = await rpc('camera');
-      k.position ??= cam.position; k.target ??= cam.target; k.fov ??= cam.fov;
+      k.position ??= cam.position; k.target ??= cam.target; k.fov ??= cam.fov; k.roll ??= cam.roll;
       if (k.t == null) k.t = cam.time;
     }
     const r = await op({ op: 'key.add', ...k });
@@ -467,7 +467,7 @@ const commands = {
   async 'key-set'({ pos, flags }) {
     if (!pos[0]) throw new Error('usage: canvas key-set <keyId|index> --ease snap');
     const k = keyFields(flags);
-    if (flags['from-view']) { const cam = await rpc('camera'); Object.assign(k, { position: cam.position, target: cam.target, fov: cam.fov }); }
+    if (flags['from-view']) { const cam = await rpc('camera'); Object.assign(k, { position: cam.position, target: cam.target, fov: cam.fov, ...(cam.roll != null && { roll: cam.roll }) }); }
     const r = await op({ op: 'key.update', ...keyRef(pos[0]), ...k });
     out(`updated key ${r.results[0].id}`);
   },
