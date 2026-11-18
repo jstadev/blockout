@@ -27,6 +27,12 @@ export class Viewport {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     stage.append(this.renderer.domElement);
     this.canvas = this.renderer.domElement;
+    // Shot view: the canvas fills the window and the scene carries on past the shot frame (overscan),
+    // dimmed by this outline's shadow, so you can see what's just out of shot while framing it.
+    this.frameEl = document.createElement('div');
+    this.frameEl.className = 'shot-frame';
+    this.frameEl.hidden = true;
+    stage.append(this.frameEl);
 
     this.scene = new THREE.Scene();
     this.objects = new THREE.Group(); this.objects.name = 'objects';
@@ -322,21 +328,33 @@ export class Viewport {
   // ---------- layout ----------
   layout() {
     const W = innerWidth, H = innerHeight;
-    let x = 0, y = 0, w = W, h = H;
-    if (store.state.view === 'shot' && store.doc) {
-      const A = store.doc.meta.width / store.doc.meta.height;
+    const shot = store.state.view === 'shot' && !!store.doc;
+    // The canvas always fills the window. In shot view the shot frame is a rect inside it, kept clear of
+    // the floating UI, and the shot camera's projection is widened past that rect (a view offset), so the
+    // frame shows exactly the shot and the rest of the window shows the overscan around it.
+    Object.assign(this.stage.style, { left: '0px', top: '0px', width: `${W}px`, height: `${H}px` });
+    this.stage.classList.toggle('is-shot', shot);
+    this.renderer.setSize(W, H, true);
+    this.freeCam.aspect = W / H; this.freeCam.updateProjectionMatrix();
+    this.shotCam.aspect = store.doc ? store.doc.meta.width / store.doc.meta.height : W / H;
+    this.frameEl.hidden = !shot;
+    if (shot) {
+      const A = this.shotCam.aspect;
       const right = store.state.chat ? SAFE.chat : SAFE.side;
       const tl = document.getElementById('timeline'); // the timeline grows with the audio lane
       const bottom = tl ? Math.max(SAFE.bottom, innerHeight - tl.getBoundingClientRect().top + 12) : SAFE.bottom;
       const aw = W - SAFE.side - right, ah = H - SAFE.top - bottom;
+      let w, h;
       if (aw / ah > A) { h = ah; w = ah * A; } else { w = aw; h = aw / A; }
-      x = SAFE.side + (aw - w) / 2; y = SAFE.top + (ah - h) / 2;
+      const x = SAFE.side + (aw - w) / 2, y = SAFE.top + (ah - h) / 2;
+      this.shotFrame = { x, y, w, h };
+      Object.assign(this.frameEl.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+      // the frame is the camera's full view; the window is that view extended on every side
+      this.shotCam.setViewOffset(w, h, -x, -y, W, H);
+    } else {
+      this.shotFrame = null;
+      this.shotCam.clearViewOffset();
     }
-    Object.assign(this.stage.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
-    this.stage.classList.toggle('is-shot', store.state.view === 'shot');
-    this.renderer.setSize(Math.round(w), Math.round(h), true);
-    this.freeCam.aspect = w / h; this.freeCam.updateProjectionMatrix();
-    this.shotCam.aspect = store.doc ? store.doc.meta.width / store.doc.meta.height : w / h;
     this.shotCam.updateProjectionMatrix();
   }
 

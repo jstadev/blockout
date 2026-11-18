@@ -124,4 +124,4 @@ any file in `app/` changes.
 - Helpers (camera frustum, path, key markers) are only drawn in **Free** view and are never rendered
   into snapshots or exports. Anything new you draw in the viewport for editing goes in
   `viewport.helpers` for the same reason.
-- Shot view letterboxes to the export aspect ratio and keeps clear of the top and bottom UI.
+- Shot view frames the export aspect ratio, keeps the frame clear of the top and bottom UI, and shows the scene dimmed past the frame edge (overscan).
