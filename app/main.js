@@ -153,7 +153,7 @@ const RPC = {
   export: (p) => renderer.exportVideo(p),
   // decode the audio track (recording its length); with beats, also find its tempo and onsets
   audio: async ({ beats } = {}) => {
-    if (!store.doc.timeline.audio) throw new Error('no audio on the timeline');
+    if (!store.doc.audio) throw new Error('no audio on the timeline');
     if (beats) return audio.analyze();
     await audio.load();
     if (!audio.buffer) throw new Error(audio.error || 'the audio could not be decoded');

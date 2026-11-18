@@ -52,7 +52,8 @@ export function createDoc() {
         { id: 'k2', t: 5, position: [-6, 2.5, 8], target: [0, 1, 0], fov: 40, roll: 0, ease: 'easeInOut' },
       ],
     },
-    // Shots share the set and its people; each has its own camera timeline (keys, length, fps, audio).
+    // Shots share the set, its people and the audio track (doc.audio, added when loaded); each has its own
+    // camera timeline (keys, length, fps).
     // The active shot's timeline is doc.timeline; the others keep theirs in their shots entry.
     shots: [{ id: 'shot-1', name: 'Shot 1' }],
     shot: 'shot-1',
@@ -615,20 +616,22 @@ export const OPS = {
   },
 
   /**
-   * The shot's audio track (music or dialogue to pace the camera to; it is mixed into the export).
-   * The file lives in the scene folder's audio/ (uploaded with "canvas audio <file>" or dropped on the
-   * timeline). offset: where the audio's first sample sits on the timeline, in seconds (negative skips
-   * into the file). length: the file's duration, filled in by the browser once decoded.
-   * fit: make the shot end where the audio ends (duration = length + offset). clear: remove the track.
+   * The scene's audio track (music or dialogue to pace the cameras to; it is mixed into the export). One
+   * track for the whole sequence: it sits on the action-time axis that every shot shares, so each shot plays
+   * the part of it under its span of the action, and shots that follow on from each other play it straight
+   * through. The file lives in the scene folder's audio/ (uploaded with "canvas audio <file>" or dropped on
+   * the timeline). offset: the action time where the file's first sample sits (negative skips into the file).
+   * in / out: trim, in seconds of the file: only that part is heard (null = from the start / to the end).
+   * length: the file's duration, filled in by the browser once decoded.
+   * fit: make the active shot end where the audio ends. clear: remove the track.
    */
   audio(doc, op) {
-    const tl = doc.timeline;
-    if (op.clear) { const had = !!tl.audio; delete tl.audio; return { audio: null, removed: had }; }
-    const a = { ...(tl.audio || {}) };
+    if (op.clear) { const had = !!doc.audio; delete doc.audio; return { audio: null, removed: had }; }
+    const a = { ...(doc.audio || {}) };
     if (op.file != null) {
       const f = String(op.file);
       if (!AUDIO_FILE.test(f) || f.includes('..')) throw new Error(`audio.file must be a file name in the scene's audio/ folder (mp3, wav, m4a, aac, ogg, opus, flac, webm), got ${JSON.stringify(op.file)}`);
-      if (f !== a.file) { delete a.length; a.offset = 0; }
+      if (f !== a.file) { delete a.length; delete a.in; delete a.out; a.offset = 0; }
       a.file = f;
       a.name = op.name != null ? String(op.name) : f;
     } else if (op.name != null) a.name = String(op.name);
@@ -637,14 +640,28 @@ export const OPS = {
     if (op.volume != null) { if (!(op.volume >= 0 && op.volume <= 4)) throw new Error('audio.volume must be 0–4 (1 = as recorded)'); a.volume = round(op.volume); }
     if (op.muted != null) a.muted = !!op.muted;
     if (op.length != null) { if (!(op.length > 0)) throw new Error('audio.length must be > 0 seconds'); a.length = round(op.length); }
+    for (const k of ['in', 'out']) {
+      if (op[k] === undefined) continue;
+      if (op[k] === null) { delete a[k]; continue; }
+      if (!(Number.isFinite(op[k]) && op[k] >= 0 && op[k] <= 7200)) throw new Error(`audio.${k} must be seconds into the file (0–7200), or null to clear the trim`);
+      a[k] = round(op[k]);
+    }
+    if (a.length) { // a trim past the end of the file is no trim
+      if (a.out != null && a.out >= a.length - 1e-3) delete a.out;
+      if (a.in != null && a.in >= a.length) throw new Error(`audio.in must be inside the file (it is ${a.length}s long)`);
+    }
+    if (!(a.in > 0)) delete a.in;
+    if (a.out != null && !(a.out > (a.in || 0))) throw new Error('audio.out must be after audio.in');
     a.offset ??= 0; a.volume ??= 1; a.muted ??= false;
+    const tl = doc.timeline;
     if (op.fit) {
-      if (!a.length) throw new Error('the audio length is not known yet: open the canvas tab so it can read the file, then try again');
-      const d = round(a.length + a.offset);
+      const end = a.out ?? a.length;
+      if (!end) throw new Error('the audio length is not known yet: open the canvas tab so it can read the file, then try again');
+      const d = round(a.offset + end - (tl.start || 0));
       if (!(d > 0)) throw new Error('the audio ends before the shot starts (check the offset)');
       tl.duration = Math.min(600, d);
     }
-    tl.audio = a;
+    doc.audio = a;
     return { audio: a, duration: tl.duration };
   },
 
@@ -690,7 +707,7 @@ export const OPS = {
   /**
    * Cut: split the active shot at shot time `t` into two shots. This one ends at t on the framing it has
    * there; the new one (inserted after it, made active unless switch: false) picks up the action at that
-   * moment with the same framing, the rest of the keys, the rest of the length and the audio carried on.
+   * moment with the same framing, the rest of the keys and the rest of the length.
    */
   'shot.split'(doc, op) {
     const tl = doc.timeline, F = tl.fps, f = 1 / F;
@@ -714,7 +731,6 @@ export const OPS = {
     }
     rest.duration = round(tl.duration - t);
     rest.start = round((tl.start || 0) + t);
-    if (rest.audio) rest.audio.offset = round((rest.audio.offset || 0) - t);
     // this shot: ends at t
     tl.keys = keys.filter((k) => k.t < t + 1e-3);
     if (!here && framing) tl.keys.push({ id: freeId(tl.keys), ...normKey({ t, ...framing, ease: 'easeInOut' }) });
@@ -878,6 +894,13 @@ export function migrate(input) {
   }
   doc.shots = shots;
   doc.shot = active.id;
+  // Scenes from before the audio track spanned the sequence kept it on a shot's timeline (offset in that
+  // shot's time): the active shot's (else the first shot's that has one) becomes the scene's, in action time.
+  if (!d.audio) {
+    const own = [{ id: active.id, timeline: d.timeline }, ...(Array.isArray(d.shots) ? d.shots : [])].find((s) => s?.timeline?.audio?.file);
+    if (own) { const a = { ...own.timeline.audio }; a.offset = round((a.offset || 0) + (own.timeline.start > 0 ? own.timeline.start : 0)); doc.audio = a; }
+  }
+  if (!doc.audio?.file) delete doc.audio;
   for (const o of d.objects || []) {
     let params = o.params;
     // People made before bodies existed were all stored at h 1.8; let them use their body's usual height.
@@ -895,6 +918,7 @@ function normTimeline(input) {
   if (!input?.keys) tl.keys = base.keys;
   tl.keys = tl.keys.map((k, i) => ({ id: k.id || `k${i + 1}`, ...normKey(k) })).sort((a, b) => a.t - b.t);
   if (!(tl.start > 0)) delete tl.start;
+  delete tl.audio; // the audio track is the scene's now (doc.audio)
   return tl;
 }
 

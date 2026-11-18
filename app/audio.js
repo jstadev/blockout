@@ -1,7 +1,8 @@
-// The shot's audio track in the browser: decoding, waveform peaks, playback in step with the playhead,
+// The scene's audio track in the browser: decoding, waveform peaks, playback in step with the playhead,
 // the mixdown that goes into the exported video, and a rough beat finder the agent can ask for.
-// The track itself lives in the doc (timeline.audio: file, offset, volume, muted, length); the file is
-// served from the scene folder's audio/.
+// The track itself lives in the doc (doc.audio: file, offset, in, out, volume, muted, length), shared by
+// every shot on the action-time axis: shot time t plays the audio at action time timeline.start + t.
+// The file is served from the scene folder's audio/.
 
 import { store } from './store.js';
 
@@ -14,8 +15,16 @@ let voice = null;        // what is playing: { src, gain, at (ctx time), t (time
 const listeners = new Set();
 const changed = () => listeners.forEach((fn) => fn());
 
-const track = () => store.doc?.timeline.audio || null;
+const track = () => store.doc?.audio || null;
 const playable = (a) => a && !a.muted && cur.buffer && cur.file === a.file;
+const shotStart = () => store.doc?.timeline.start || 0;
+
+/** The part of the file that is heard: [inT, outT] seconds into it (the trim), given its length. */
+export function trimOf(a, len = a?.length) {
+  const inT = Math.max(0, a?.in || 0);
+  const outT = Math.max(inT, Math.min(len ?? Infinity, a?.out ?? Infinity));
+  return { inT, outT };
+}
 
 /** Max |sample| per 1/PEAK_RATE s, all channels mixed. */
 function computePeaks(buf) {
@@ -66,25 +75,12 @@ async function load(a) {
   return cur.loading;
 }
 
-// Other shots' tracks, decoded on demand for a sequence export (the active one stays in `cur`).
-const others = new Map();
-function decodeOther(file) {
-  if (!others.has(file)) {
-    others.set(file, (async () => {
-      const res = await fetch(`/audio/${encodeURIComponent(file)}`);
-      if (!res.ok) throw new Error(`audio file ${file} not found in the scene's audio/ folder`);
-      return new OfflineAudioContext(1, 1, RATE).decodeAudioData(await res.arrayBuffer());
-    })().catch((e) => { others.delete(file); store.emit('error', `Could not read the audio: ${e.message || e}`); return null; }));
-  }
-  return others.get(file);
-}
-
 function stopVoice() {
   if (voice?.src) { try { voice.src.stop(); } catch {} voice.src.disconnect(); }
   voice = null;
 }
 
-/** Start the track so that timeline time t plays now. Keeps a clock even when nothing is audible. */
+/** Start the track so that shot time t plays now. Keeps a clock even when nothing is audible. */
 function play(t) {
   stopVoice();
   const a = track();
@@ -93,13 +89,15 @@ function play(t) {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const at = ctx.currentTime + 0.02;
   voice = { src: null, at, t };
-  const pos = t - a.offset;
-  if (pos >= cur.buffer.duration) return;
+  const pos = shotStart() + t - a.offset; // where in the file this moment of the action is
+  const { inT, outT } = trimOf(a, cur.buffer.duration);
+  if (pos >= outT - 1e-4) return;
   const src = ctx.createBufferSource();
   const gain = ctx.createGain();
   src.buffer = cur.buffer; gain.gain.value = a.volume ?? 1;
   src.connect(gain).connect(ctx.destination);
-  if (pos < 0) src.start(at - pos, 0); else src.start(at, pos);
+  const from = Math.max(pos, inT);
+  src.start(at + (from - pos), from, outT - from);
   voice.src = src; voice.gain = gain;
 }
 
@@ -130,33 +128,39 @@ export const audio = {
     store.on('doc', () => {
       const a = track();
       load(a);
-      const s = a ? JSON.stringify([a.file, a.offset, a.volume, a.muted]) : '';
+      const s = a ? JSON.stringify([a.file, a.offset, a.in, a.out, a.volume, a.muted, store.doc.shot, shotStart()]) : '';
       if (s !== sig) { sig = s; if (store.state.playing) play(store.state.time); changed(); }
     });
   },
 
   /**
-   * A track as it sounds over [0, duration] of its shot, at RATE, for the export. Null if there is none.
-   * Defaults to the active shot's track; pass another shot's (timeline.audio) for a sequence export.
+   * The track as it sounds over [start, start + duration] of the action, at RATE, for the export (a shot's
+   * part is its timeline.start and duration). Null if there is no track or it is muted.
    */
-  async mixdown(duration, a = track(), { channels } = {}) {
+  async mixdown(start, duration, { channels } = {}) {
+    const a = track();
     if (!a || a.muted) return null;
-    let buf;
-    if (a.file === track()?.file) { await load(a); buf = cur.buffer; }
-    else buf = await decodeOther(a.file);
+    await load(a);
+    const buf = cur.buffer;
     if (!buf) return null;
     const ch = channels || Math.min(2, buf.numberOfChannels) || 1;
     const off = new OfflineAudioContext(ch, Math.max(1, Math.ceil(duration * RATE)), RATE);
-    const src = off.createBufferSource(), gain = off.createGain();
-    src.buffer = buf; gain.gain.value = a.volume ?? 1;
-    src.connect(gain).connect(off.destination);
-    if (a.offset >= 0) src.start(a.offset, 0); else src.start(0, -a.offset);
+    const p0 = start - a.offset; // where in the file the part starts
+    const { inT, outT } = trimOf(a, buf.duration);
+    const from = Math.max(p0, inT);
+    if (from < outT - 1e-4 && from - p0 < duration) {
+      const src = off.createBufferSource(), gain = off.createGain();
+      src.buffer = buf; gain.gain.value = a.volume ?? 1;
+      src.connect(gain).connect(off.destination);
+      src.start(from - p0, from, outT - from);
+    }
     return off.startRendering();
   },
 
   /**
    * A rough beat finder: an energy-flux onset envelope, tempo from its autocorrelation (70–180 bpm),
-   * and the beat grid with the best phase. Times are on the timeline (offset applied) inside the shot.
+   * and the beat grid with the best phase. Times are in the active shot's time (offset and its start
+   * applied), inside the shot and the trimmed part of the file.
    */
   async analyze() {
     const a = track();
@@ -183,9 +187,10 @@ export const audio = {
       const bpm = 60 * fr / lag, w = Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2); // lean toward ~120
       if (s * w > best) { best = s * w; bestLag = lag; }
     }
-    const toT = (i) => Math.round((i / fr + a.offset) * 1000) / 1000;
+    const st = shotStart(), { inT, outT } = trimOf(a, buf.duration);
+    const toT = (i) => Math.round((i / fr + a.offset - st) * 1000) / 1000;
     const D = store.doc.timeline.duration;
-    const inShot = (t) => t >= 0 && t <= D + 1e-6;
+    const inShot = (t) => t >= 0 && t <= D + 1e-6 && t + st - a.offset >= inT - 1e-6 && t + st - a.offset <= outT + 1e-6;
     let beats = [], tempo = null, beat = null;
     if (bestLag && best > 0) {
       let phase = 0, ps = -1;
@@ -202,6 +207,6 @@ export const audio = {
       picks.push({ i, v: env[i] });
     }
     const onsets = picks.filter((p) => inShot(toT(p.i))).sort((x, y) => y.v - x.v).slice(0, 48).map((p) => toT(p.i)).sort((x, y) => x - y);
-    return { file: a.file, length: Math.round(buf.duration * 1000) / 1000, offset: a.offset, tempo, beat, beats, onsets };
+    return { file: a.file, length: Math.round(buf.duration * 1000) / 1000, offset: a.offset, in: a.in || 0, out: a.out ?? null, shotStart: st, tempo, beat, beats, onsets };
   },
 };

@@ -254,23 +254,61 @@ test('audio op: load, offset, volume, fit, replace, clear', () => {
   assert.throws(() => applyOps(createDoc(), { op: 'audio', file: '../x.mp3' }), /file name/);
   assert.throws(() => applyOps(createDoc(), { op: 'audio', file: 'song.txt' }), /file name/);
   let { doc } = applyOps(createDoc(), { op: 'audio', file: 'song-1.mp3', name: 'Song.mp3' });
-  assert.deepEqual(doc.timeline.audio, { file: 'song-1.mp3', name: 'Song.mp3', offset: 0, volume: 1, muted: false });
+  assert.deepEqual(doc.audio, { file: 'song-1.mp3', name: 'Song.mp3', offset: 0, volume: 1, muted: false });
+  assert.equal(doc.timeline.audio, undefined, 'the track is the scene\'s, not the shot\'s');
   assert.throws(() => applyOps(doc, { op: 'audio', fit: true }), /length is not known/);
   ({ doc } = applyOps(doc, { op: 'audio', length: 12.3456, offset: -2, volume: 0.5, muted: true }));
-  assert.equal(doc.timeline.audio.length, 12.346);
-  assert.equal(doc.timeline.audio.offset, -2);
-  assert.equal(doc.timeline.audio.muted, true);
+  assert.equal(doc.audio.length, 12.346);
+  assert.equal(doc.audio.offset, -2);
+  assert.equal(doc.audio.muted, true);
   ({ doc } = applyOps(doc, { op: 'audio', fit: true }));
   assert.equal(doc.timeline.duration, 10.346);
   assert.throws(() => applyOps(doc, { op: 'audio', volume: 9 }), /volume/);
-  // a new file resets the offset and the known length, keeps volume
+  // a new file resets the offset, trim and the known length, keeps volume
+  ({ doc } = applyOps(doc, { op: 'audio', in: 1, out: 5 }));
   ({ doc } = applyOps(doc, { op: 'audio', file: 'other.wav' }));
-  assert.equal(doc.timeline.audio.offset, 0);
-  assert.equal(doc.timeline.audio.length, undefined);
-  assert.equal(doc.timeline.audio.volume, 0.5);
-  assert.equal(migrate(doc).timeline.audio.file, 'other.wav');
+  assert.equal(doc.audio.offset, 0);
+  assert.equal(doc.audio.length, undefined);
+  assert.equal(doc.audio.in, undefined); assert.equal(doc.audio.out, undefined);
+  assert.equal(doc.audio.volume, 0.5);
+  assert.equal(migrate(doc).audio.file, 'other.wav');
   ({ doc } = applyOps(doc, { op: 'audio', clear: true }));
-  assert.equal(doc.timeline.audio, undefined);
+  assert.equal(doc.audio, undefined);
+});
+
+test('audio: one track spans every shot, trims, fits the active shot, migrates from a shot', () => {
+  let { doc } = applyOps(createDoc(), [{ op: 'timeline', duration: 4 }, { op: 'audio', file: 'song.mp3', length: 20 }, { op: 'shot.add' }]);
+  assert.equal(doc.shot, 'shot-2');
+  assert.equal(doc.audio.file, 'song.mp3', 'every shot has the same track');
+  for (const s of shotList(doc)) assert.equal(s.timeline.audio, undefined);
+  // trim: in / out are seconds into the file
+  ({ doc } = applyOps(doc, { op: 'audio', in: 2.5, out: 11 }));
+  assert.equal(doc.audio.in, 2.5); assert.equal(doc.audio.out, 11);
+  assert.throws(() => applyOps(doc, { op: 'audio', in: 12 }), /after audio.in/);
+  assert.throws(() => applyOps(doc, { op: 'audio', in: 25 }), /inside the file/);
+  assert.throws(() => applyOps(doc, { op: 'audio', out: -1 }), /seconds into the file/);
+  assert.equal(applyOps(doc, { op: 'audio', out: 30 }).doc.audio.out, undefined, 'out past the end is no trim');
+  assert.equal(applyOps(doc, { op: 'audio', in: 0 }).doc.audio.in, undefined);
+  assert.equal(applyOps(doc, { op: 'audio', in: null, out: null }).doc.audio.in, undefined);
+  // fit: the active shot (starting at 4 s of the action) ends where the trimmed clip ends (offset 1 + 11)
+  ({ doc } = applyOps(doc, { op: 'audio', offset: 1, fit: true }));
+  assert.equal(doc.timeline.start, 4); assert.equal(doc.timeline.duration, 8);
+  assert.equal(shotTimeline(doc, 'shot-1').duration, 4, 'the other shot keeps its length');
+  // splitting a shot leaves the track alone
+  const off = doc.audio.offset;
+  ({ doc } = applyOps(doc, { op: 'shot.split', t: 2 }));
+  assert.equal(doc.audio.offset, off);
+  // old scenes kept it on a shot's timeline in that shot's time: it moves to the scene, in action time
+  const old = createDoc();
+  old.shots = [{ id: 'shot-1', name: 'Shot 1', timeline: { ...old.timeline, audio: { file: 'x.wav', name: 'x.wav', offset: 0.5, volume: 1, muted: false } } }, { id: 'shot-2', name: 'Shot 2' }];
+  old.shot = 'shot-2';
+  old.timeline = { ...old.timeline, start: 3, audio: { file: 'y.wav', name: 'y.wav', offset: -1, volume: 1, muted: false } };
+  const m = migrate(old);
+  assert.equal(m.audio.file, 'y.wav', 'the active shot\'s track wins');
+  assert.equal(m.audio.offset, 2, 'its offset moves into action time');
+  for (const s of shotList(m)) assert.equal(s.timeline.audio, undefined);
+  delete old.timeline.audio;
+  assert.equal(migrate(old).audio.offset, 0.5, 'else the first shot that has one');
 });
 
 test('key.easeAll gives every segment one ease, keeps cuts, and can copy a key', () => {
@@ -385,7 +423,7 @@ test('shots: split cuts the active shot in two at a time, same framing either si
   let { doc } = applyOps(createDoc(), [{ op: 'key.clear' },
     { op: 'key.add', t: 0, position: [0, 1, 10], target: [0, 1, 0], ease: 'linear' },
     { op: 'key.add', t: 4, position: [8, 1, 10], target: [0, 1, 0] },
-    { op: 'timeline', duration: 5, interp: 'linear' }, { op: 'audio', file: 'a.wav', offset: 0.5 }]);
+    { op: 'timeline', duration: 5, interp: 'linear' }]);
   let results;
   ({ doc, results } = applyOps(doc, { op: 'shot.split', t: 2 }));
   assert.equal(results[0].id, 'shot-2');
@@ -397,7 +435,6 @@ test('shots: split cuts the active shot in two at a time, same framing either si
   assert.deepEqual(a.keys[1].position, [4, 1, 10]);
   assert.deepEqual(b.keys[0].position, [4, 1, 10], 'the new shot starts on the framing the first ends on');
   assert.equal(b.keys[0].ease, 'linear', 'the move carries on');
-  assert.equal(b.audio.offset, -1.5, 'the audio carries on');
   assert.throws(() => applyOps(doc, { op: 'shot.split', t: 0 }), /cut inside the shot/);
   // on an existing key: it ends this shot and starts the next
   ({ doc } = applyOps(doc, { op: 'shot.split', t: 2, switch: false, name: 'tail' }));

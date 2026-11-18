@@ -93,9 +93,11 @@ keys in between are replaced. Both stay ordinary keys you can drag, re-key and e
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
-  canvas audio [file] [--offset s] [--volume 1] [--mute on|off] [--fit]
-                  load a music / dialogue track onto the timeline (mixed into the export). --offset: where
-                  the audio starts on the timeline (negative skips into it); --fit: shot length = audio
+  canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--fit]
+                  load a music / dialogue track onto the timeline (mixed into the export). One track spans
+                  every shot, on the shared action time. --offset: action time where the file starts
+                  (negative skips into it); --in / --out: trim, seconds into the file (none = untrimmed);
+                  --fit: the active shot ends where the audio ends
   canvas audio --beats [--json]             tempo and onset times inside the shot (needs the tab), to key/cut on
   canvas audio --clear                      remove the audio track
   canvas seek <seconds> | play | pause | view shot|free | select <id|none> | frame [id]
@@ -188,7 +190,15 @@ async function api(method, route, body, { quietFail = false } = {}) {
 // --shot <id> on a camera/timeline/render command: aim it at that shot without switching the user's view.
 let SHOT = null;
 const op = (ops, label) => api('POST', '/api/op', { ops: SHOT ? [].concat(ops).map((o) => ({ ...o, shot: SHOT })) : ops, label, source: 'agent' });
-const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps, ${s.keys} camera key${s.keys === 1 ? '' : 's'}${s.start ? `, action from ${s.start}s` : ''}${s.audio ? `, audio ${s.audio}` : ''}`;
+const fmtS = (v) => `${v < 0 ? '-' : ''}${Math.abs(v)}s`;
+/** The scene's audio track in one line: where it sits in the action, its trim, volume. */
+const audioLine = (a) => {
+  const len = a.length, i = a.in || 0, o = a.out ?? len;
+  const trim = a.in || a.out != null ? `, trimmed to ${i}–${o ?? 'end'}s of the file` : '';
+  const span = o != null ? `, plays ${fmtS(+(a.offset + i).toFixed(3))}–${fmtS(+(a.offset + o).toFixed(3))} of the action` : '';
+  return `audio (all shots): ${a.name} at ${a.offset}s${len ? `, ${len}s long` : ''}${trim}${span}, volume ${a.volume}${a.muted ? ', muted' : ''}`;
+};
+const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps, ${s.keys} camera key${s.keys === 1 ? '' : 's'}${s.start ? `, action from ${s.start}s` : ''}`;
 const rpc = (method, params = {}, timeout) => api('POST', '/api/rpc', { method, params, timeout }).then((d) => d.result);
 const out = (v) => console.log(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 
@@ -365,7 +375,7 @@ const commands = {
       `objects (${s.objects.length}):`, ...s.objects.map((o) => `  ${o}`),
       `shots (${s.shots.length}, sequence order, * = active):`, ...s.shots.map((x, i) => ` ${shotLine(x, i)}`),
       `timeline of shot ${s.shot}: ${s.timeline.duration}s @ ${s.timeline.fps}fps, ${s.timeline.interp} path, speed ${JSON.stringify(s.timeline.speed)}${s.timeline.start ? `, shows the action from ${s.timeline.start}s (object key times below are action time)` : ''}`,
-      ...(s.timeline.audio ? [`audio: ${s.timeline.audio.name} at ${s.timeline.audio.offset}s${s.timeline.audio.length ? `, ${s.timeline.audio.length}s long` : ''}, volume ${s.timeline.audio.volume}${s.timeline.audio.muted ? ', muted' : ''}`] : []),
+      ...(s.audio ? [audioLine(s.audio)] : []),
       `camera keys (${s.keys.length}):`, ...s.keys.map((k) => `  ${k}`),
     ];
     out(lines.join('\n'));
@@ -561,6 +571,7 @@ const commands = {
     }
     if (flags.clear) { await op({ op: 'audio', clear: true }, 'remove audio'); return out('removed the audio track'); }
     if (flags.offset != null) o.offset = num(flags.offset);
+    for (const k of ['in', 'out']) if (flags[k] != null) o[k] = /^(none|off|null)$/i.test(String(flags[k])) ? null : num(flags[k]);
     if (flags.volume != null) o.volume = num(flags.volume);
     if (flags.mute != null) o.muted = bool(flags.mute);
     if (Object.keys(o).length > 1) await op(o, pos[0] ? 'load audio' : 'edit audio');
@@ -571,11 +582,10 @@ const commands = {
     }
     if (flags.fit || flags.beats) info = await rpc('audio', { beats: !!flags.beats }, 60000); // the tab decodes it (and records its length)
     if (flags.fit) await op({ op: 'audio', fit: true }, 'fit shot to audio');
-    const a = shotTimeline((await api('GET', '/api/doc')).doc, SHOT ?? undefined);
-    if (!a.audio) return out('no audio on the timeline (load one: canvas audio song.mp3)');
+    const d = (await api('GET', '/api/doc')).doc, a = shotTimeline(d, SHOT ?? undefined);
+    if (!d.audio) return out('no audio on the timeline (load one: canvas audio song.mp3)');
     if (flags.beats && flags.json) return out(info);
-    const au = a.audio;
-    const lines = [`audio: ${au.name} (${au.file}) ${au.length ? `${au.length}s` : 'length not read yet'}, starts at ${au.offset}s on the timeline, volume ${au.volume}${au.muted ? ', muted' : ''}; shot ${a.duration}s`];
+    const lines = [`${audioLine(d.audio)} (file ${d.audio.file}${d.audio.length ? '' : ', length not read yet'}); shot ${a.duration}s from ${a.start || 0}s of the action`];
     if (info?.beats) lines.push(`tempo ≈ ${info.tempo ? `${info.tempo} bpm (beat every ${info.beat}s)` : 'not found'}`, `beats in the shot: ${info.beats.join(' ') || 'none'}`, `strong onsets: ${info.onsets.join(' ') || 'none'}`);
     out(lines.join('\n'));
   },

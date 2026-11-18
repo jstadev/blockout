@@ -97,8 +97,12 @@ export function mountTimeline(root, { viewport, exporter }) {
     onClick: (e) => exporter.exportVideo({ sequence: e.shiftKey && store.doc.shots.length > 1 }).catch((err) => toast(err.message, { kind: 'error' })) });
 
   // audio: a waveform lane under the track, an Audio button in the bar (functions below are hoisted)
+  // (one track for the whole sequence, on the shots' shared action-time axis)
   const audioTrack = mountAudioTrack(root, {
-    xOf: (t) => xOf(t), tOf: (x, free) => tOf(x, free), seek: (t) => seek(t),
+    xA: (a) => xAction(a), aAt: (x) => ((x - left()) / span()) * axisT(), axisEnd: () => axisT(),
+    scrubTo: (x, e) => scrubTo(x, e), playheadA: () => axis0() + store.state.time,
+    marks: () => [0, axis0() + store.state.time, ...shotList(store.doc).flatMap((s) => [s.timeline.start || 0, (s.timeline.start || 0) + s.timeline.duration])],
+    spans: () => shotList(store.doc).map((s) => ({ a0: s.timeline.start || 0, a1: (s.timeline.start || 0) + s.timeline.duration, active: s.active })),
     cutXs: () => cutsOf(liveKeys()).map((c) => c.x), keyXs: () => [...keyXs(liveKeys()).values()],
   });
 
