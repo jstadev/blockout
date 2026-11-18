@@ -631,6 +631,27 @@ try {
   cli('shot-rm', 'shot-1');
   ok(JSON.parse(cli('doc')).shots.length === 1, 'shot-rm deletes a shot');
 
+  // --- camera moves: the Moves popover applies a preset as two keys with a path ---
+  await page.evaluate(() => window.canvas.store.set({ time: 0, selection: null, key: null }));
+  await page.getByRole('button', { name: 'Moves' }).click();
+  await page.locator('.moves-pop .moves-tile', { hasText: 'Orbit' }).click();
+  await page.locator('.moves-pop button', { hasText: 'Apply' }).click();
+  await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.some((k) => k.path?.type === 'orbit'));
+  ok(/→ orbit 90°/.test(cli('ls')), 'the Moves popover keys an orbit from the playhead');
+  ok(await page.locator('.tl-path').inputValue() === 'orbit', 'the selected key shows its path');
+  // editing: the selected key starts a move, so the menu shows its settings and Update redoes it
+  await page.locator('.moves-pop .moves-new').waitFor();
+  ok((await page.locator('.moves-pop .moves-title').textContent()).startsWith('Edit orbit'), 'the Moves menu opens on the selected move');
+  const ang = page.locator('.moves-pop .cc-affix:visible input').first();
+  await ang.click(); await ang.fill('180'); await ang.press('Enter');
+  await page.locator('.moves-pop button', { hasText: 'Update' }).click();
+  await page.waitForFunction(() => window.canvas.store.doc.timeline.keys.some((k) => k.path?.params?.angle === 180));
+  ok(/→ orbit 180°/.test(cli('ls')), 'Update changes the move in place');
+  await page.keyboard.press('Escape');
+  await page.locator('.tl-path').selectOption('smooth');
+  await page.waitForFunction(() => !window.canvas.store.doc.timeline.keys.some((k) => k.path));
+  ok(true, 'the path select turns the move back into a smooth segment');
+  ok(/dollyZoom from 0s to 2s/.test(cli('cam', 'dolly-zoom', '--t', '0', '--over', '2', '--by', '1')), 'canvas cam keys a dolly zoom');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();

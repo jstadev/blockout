@@ -4,7 +4,7 @@
 // Conventions: meters, Y up, rotations in degrees (XYZ order), colors as "#rrggbb".
 // Every primitive's pivot is at its bottom centre, so position [x, 0, z] sits on the ground.
 
-import { resolveEase, EASES, sampleObject, sampleCamera } from './curves.js';
+import { resolveEase, EASES, sampleObject, sampleCamera, PATHS, lensToFov } from './curves.js';
 
 export const PRIMITIVES = {
   box: { params: { w: 1, h: 1, d: 1 }, size: ['w', 'h', 'd'], about: 'cuboid, w × h × d' },
@@ -144,6 +144,7 @@ function normKey(k, prev = {}) {
   if (k.fov != null) { if (!(k.fov > 1 && k.fov < 170)) throw new Error('fov must be between 1 and 170 degrees'); out.fov = k.fov; }
   if (k.roll != null) out.roll = Number(k.roll);
   if (k.ease != null) { resolveEase(k.ease); out.ease = k.ease; }
+  if (k.path !== undefined) { const p = normPath(k.path); if (p) out.path = p; else delete out.path; }
   if (out.ease == null) out.ease = 'easeInOut';
   if (out.fov == null) out.fov = 40;
   if (out.roll == null) out.roll = 0;
@@ -151,6 +152,43 @@ function normKey(k, prev = {}) {
 }
 
 const round = (n) => Math.round(n * 1000) / 1000;
+
+// A key's path: how the camera travels from it to the next key. null or "smooth" is the usual spline.
+//   { type: 'straight' }                          a straight line (dolly, truck, crane)
+//   { type: 'orbit', center, angle?, around? }    round the vertical axis through center; angle (deg,
+//                                                 + to the camera's right) says which way and how far
+//   { type: 'turn', angle? }                      pan / tilt on the spot (angle: + pans right)
+//   { type: 'dollyZoom' }                         straight, with the lens holding the subject's size
+const PATH_ALIASES = { 'dolly-zoom': 'dollyZoom', dollyzoom: 'dollyZoom', line: 'straight' };
+function normPath(p) {
+  if (p == null || p === 'smooth' || p === false) return null;
+  if (typeof p === 'string') p = { type: p };
+  if (typeof p !== 'object' || Array.isArray(p)) throw new Error('path must be a type name or { type, ... }');
+  const type = PATH_ALIASES[p.type] || p.type;
+  if (type === 'smooth') return null;
+  if (!PATHS.includes(type)) throw new Error(`unknown path "${p.type}" (paths: smooth, ${PATHS.join(', ')})`);
+  const out = { type };
+  if (type === 'orbit' && p.center != null) out.center = vec3(p.center, 'path.center').map(round);
+  if ((type === 'orbit' || type === 'turn') && p.angle != null) {
+    if (!Number.isFinite(+p.angle)) throw new Error('path.angle must be degrees');
+    out.angle = round(+p.angle);
+  }
+  if (type === 'orbit' && p.around != null) out.around = String(p.around);
+  // the preset that made it and its settings, so the Moves menu can reopen and change it
+  if (p.move != null) {
+    if (!MOVES[p.move]) throw new Error(`unknown move "${p.move}" (moves: ${Object.keys(MOVES).join(', ')})`);
+    out.move = p.move;
+    out.params = moveParams(p.params || {});
+  }
+  return out;
+}
+const MOVE_PARAMS = ['angle', 'by', 'lens', 'fov', 'rise'];
+function moveParams(src) {
+  const out = {};
+  for (const k of MOVE_PARAMS) if (src[k] != null) { if (!Number.isFinite(+src[k])) throw new Error(`${k} must be a number`); out[k] = round(+src[k]); }
+  if (src.around != null) out.around = typeof src.around === 'string' ? src.around : vec3(src.around, 'around').map(round);
+  return out;
+}
 
 // ----- object animation: obj.anim = [{ t, position, rotation, scale, ease }], sorted by t -----
 function normAnimKey(k, base) {
@@ -186,6 +224,98 @@ function putAnimKey(doc, o, k) {
   if (shotT > doc.timeline.duration) doc.timeline.duration = shotT;
   return { ...key, t: shotT };
 }
+
+// ----- preset camera moves (cam.move) -----
+const v3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  len: (a) => Math.hypot(a[0], a[1], a[2]),
+};
+const unit = (a) => { const l = v3.len(a) || 1; return v3.mul(a, 1 / l); };
+const R = Math.PI / 180;
+// Turn p round the vertical axis through c by deg (+ moves a camera to its right, i.e. a growing atan2(x, z)).
+function spin(p, c, deg) {
+  const u = v3.sub(p, c), a = deg * R;
+  return [c[0] + u[0] * Math.cos(a) + u[2] * Math.sin(a), p[1], c[2] - u[0] * Math.sin(a) + u[2] * Math.cos(a)];
+}
+// Roughly where to aim at an object: its pivot (bottom centre) plus most of its height.
+function objectCentre(doc, id, t) {
+  const o = findObject(doc, id);
+  const at = sampleObject(o, { ...doc.timeline, speed: 'linear' }, t);
+  const p = o.params || {};
+  const h = (p.h ?? (o.type === 'person' ? PERSON_HEIGHT[p.body || 'male'] : null) ?? (p.r != null ? p.r * 2 : 1)) * (at.scale?.[1] ?? 1);
+  return [at.position[0], at.position[1] + h * (o.type === 'person' ? 0.75 : 0.5), at.position[2]];
+}
+const num = (v, name, def) => {
+  if (v == null) { if (def === undefined) throw new Error(`this move needs ${name}`); return def; }
+  if (!Number.isFinite(+v)) throw new Error(`${name} must be a number`);
+  return +v;
+};
+const r3 = (v) => v.map(round);
+
+/**
+ * The preset moves. Each makes the end framing from the start one, and the path the segment travels.
+ * Signs: angle + is right (pan, orbit) or up (tilt), clockwise for roll; by + is in (push), right (truck), up (crane).
+ */
+export const MOVES = {
+  pan: { name: 'pan', params: 'angle (deg, + right)', about: 'turn left or right on the spot', make(s, op) {
+    const angle = num(op.angle, 'angle', 45);
+    return { end: { ...s, target: r3(spin(s.target, s.position, -angle)) }, path: { type: 'turn', angle } };
+  } },
+  tilt: { name: 'tilt', params: 'angle (deg, + up)', about: 'turn up or down on the spot', make(s, op) {
+    const angle = num(op.angle, 'angle', 20);
+    const d = v3.sub(s.target, s.position), flat = Math.hypot(d[0], d[2]), dist = v3.len(d);
+    const pitch = Math.max(-89, Math.min(89, Math.atan2(d[1], flat) / R + angle)) * R;
+    const yaw = Math.atan2(d[0], d[2]);
+    const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    return { end: { ...s, target: r3(v3.add(s.position, v3.mul(dir, dist))) }, path: { type: 'turn', angle: 0 } };
+  } },
+  orbit: { name: 'orbit', params: 'angle (deg, + right), around (object id or x,y,z; default the aim), rise (m)', about: 'circle round the subject, keeping it in frame', make(s, op, doc, t) {
+    const angle = num(op.angle, 'angle', 90);
+    const around = typeof op.around === 'string' ? op.around : null;
+    const center = around ? objectCentre(doc, around, t) : op.around != null ? vec3(op.around, 'around') : s.target;
+    const rise = num(op.rise, 'rise', 0);
+    const position = spin(s.position, center, angle); position[1] += rise;
+    return { end: { ...s, position: r3(position), target: r3(spin(s.target, center, angle)) }, path: { type: 'orbit', center: r3(center), angle, ...(around ? { around } : {}) } };
+  } },
+  push: { name: 'push', params: 'by (m, + toward the aim; − pulls out)', about: 'dolly toward or away from the subject', make(s, op) {
+    const dist = v3.len(v3.sub(s.target, s.position));
+    let by = num(op.by, 'by', dist / 3);
+    if (op.pull) by = -Math.abs(by); // pull-out: a push the other way
+    by = Math.min(by, dist - 0.1);
+    return { end: { ...s, position: r3(v3.add(s.position, v3.mul(unit(v3.sub(s.target, s.position)), by))) }, path: { type: 'straight' } };
+  } },
+  truck: { name: 'truck', params: 'by (m, + right)', about: 'slide sideways, camera and aim together', make(s, op) {
+    const f = v3.sub(s.target, s.position), right = unit([-f[2], 0, f[0]]);
+    const d = v3.mul(right, num(op.by, 'by', 2));
+    return { end: { ...s, position: r3(v3.add(s.position, d)), target: r3(v3.add(s.target, d)) }, path: { type: 'straight' } };
+  } },
+  pedestal: { name: 'pedestal', params: 'by (m, + up)', about: 'rise or drop, camera and aim together', make(s, op) {
+    const d = [0, num(op.by, 'by', 1.5), 0];
+    return { end: { ...s, position: r3(v3.add(s.position, d)), target: r3(v3.add(s.target, d)) }, path: { type: 'straight' } };
+  } },
+  crane: { name: 'crane', params: 'by (m, + up)', about: 'rise or drop while keeping the subject framed', make(s, op) {
+    return { end: { ...s, position: r3(v3.add(s.position, [0, num(op.by, 'by', 2), 0])) }, path: { type: 'straight' } };
+  } },
+  zoom: { name: 'zoom', params: 'lens (mm) or fov (deg)', about: 'change focal length, the camera stays put', make(s, op) {
+    const fov = op.lens != null ? lensToFov(num(op.lens, 'lens')) : num(op.fov, 'lens or fov', s.fov * 0.6);
+    if (!(fov > 1 && fov < 170)) throw new Error('the lens must give a fov between 1 and 170 degrees');
+    return { end: { ...s, fov: round(fov) }, path: { type: 'straight' } };
+  } },
+  dollyZoom: { name: 'dollyZoom', params: 'by (m, + toward the aim; the lens widens to hold the subject)', about: 'push in while widening the lens (or pull out while tightening) so the subject keeps its size', make(s, op) {
+    const dist = v3.len(v3.sub(s.target, s.position));
+    const by = Math.min(num(op.by, 'by', dist / 2), dist - 0.1);
+    const fov = 2 * Math.atan((Math.tan((s.fov * R) / 2) * dist) / (dist - by)) / R;
+    if (!(fov > 1 && fov < 170)) throw new Error('that dolly zoom needs a lens wider than 170°: use a smaller by');
+    return { end: { ...s, position: r3(v3.add(s.position, v3.mul(unit(v3.sub(s.target, s.position)), by))), fov: round(fov) }, path: { type: 'dollyZoom' } };
+  } },
+  roll: { name: 'roll', params: 'angle (deg, + clockwise)', about: 'dutch angle: tilt the horizon', make(s, op) {
+    return { end: { ...s, roll: round(s.roll + num(op.angle, 'angle', 15)) }, path: { type: 'straight' } };
+  } },
+};
+const MOVE_ALIASES = { 'push-in': 'push', pushIn: 'push', dolly: 'push', 'pull-out': 'push', 'dolly-zoom': 'dollyZoom', dollyzoom: 'dollyZoom', vertigo: 'dollyZoom', dutch: 'roll', arc: 'orbit', boom: 'crane' };
+export const MOVE_NAMES = Object.keys(MOVES);
 
 /** Operation handlers. Each mutates doc in place and returns a result. */
 export const OPS = {
@@ -297,7 +427,9 @@ export const OPS = {
     const t = op.t ?? 0;
     const existing = tl.keys.find((k) => Math.abs(k.t - t) < 1e-3);
     if (existing) {
-      Object.assign(existing, normKey({ ...op, t }, existing));
+      const next = normKey({ ...op, t }, existing);
+      if (!next.path) delete existing.path;
+      Object.assign(existing, next);
       sortKeys(doc);
       return { id: existing.id, replaced: true };
     }
@@ -312,10 +444,63 @@ export const OPS = {
   'key.update'(doc, op) {
     const k = findKey(doc, op.id ?? op.index);
     const { id, index, ...rest } = op;
-    Object.assign(k, normKey(rest, k));
+    const next = normKey(rest, k);
+    if (!next.path) delete k.path; // path: "smooth" clears it
+    Object.assign(k, next);
     if (k.t > doc.timeline.duration) doc.timeline.duration = k.t;
     sortKeys(doc);
     return { id: k.id };
+  },
+
+  /**
+   * A preset camera move (see MOVES): from the camera's framing at shot time t (or op.from), over `over`
+   * seconds. Writes a key at t that carries the move's path and ease, and a key where the move ends;
+   * keys in between are replaced. Both are ordinary keys afterwards: drag, re-key or ease them.
+   */
+  'cam.move'(doc, op) {
+    const tl = doc.timeline;
+    // edit: <keyId|index> redoes the move that starts at that key, from the same framing; its end key is
+    // replaced. Settings not given keep the ones it was made with.
+    let edit = null, oldEnd = null;
+    if (op.edit != null) {
+      edit = findKey(doc, op.edit);
+      const sorted = [...tl.keys].sort((a, b) => a.t - b.t);
+      oldEnd = edit.path ? sorted[sorted.indexOf(edit) + 1] || null : null;
+      const was = edit.path?.move ? { move: edit.path.move, ...edit.path.params } : {};
+      op = { ...was, ease: edit.ease, over: oldEnd ? round(oldEnd.t - edit.t) : undefined, ...Object.fromEntries(Object.entries(op).filter(([, v]) => v !== undefined)), t: edit.t };
+      delete op.from;
+      if (op.move == null) throw new Error(`key ${edit.id} has no move to edit: pass move`);
+    }
+    const name = MOVE_ALIASES[op.move] || op.move;
+    const def = MOVES[name];
+    if (!def) throw new Error(`unknown move "${op.move}" (moves: ${Object.keys(MOVES).join(', ')})`);
+    const t0 = round(op.t ?? 0);
+    if (!(t0 >= 0)) throw new Error('t must be a time ≥ 0 in seconds');
+    const over = op.over ?? 3;
+    if (!(over >= 1 / (tl.fps || 24) && over <= 3600)) throw new Error('over (the move\'s length) must be at least one frame, in seconds');
+    const t1 = round(t0 + over);
+    if (oldEnd) tl.keys = tl.keys.filter((k) => k !== oldEnd);
+    const here = edit || tl.keys.find((k) => Math.abs(k.t - t0) < 1e-3);
+    let start = op.from ? normKey({ ...op.from, t: t0 }) : here || sampleCamera({ ...tl, speed: 'linear' }, t0);
+    if (!start) throw new Error('the shot has no camera keys yet: key a framing first, or pass from (canvas cam ... --from-view)');
+    start = { position: start.position.map(round), target: start.target.map(round), fov: round(start.fov ?? 40), roll: round(start.roll ?? 0) };
+    const args = op.move === 'pull-out' ? { ...op, by: -Math.abs(op.by ?? 0) || undefined, pull: true } : op;
+    const made = def.make(start, args, doc, t0);
+    const params = moveParams(args);
+    if (args.pull && params.by == null) params.by = round(v3.len(v3.sub(made.end.position, start.position)) * -1);
+    const path = { ...made.path, move: def.name, params };
+    const ease = op.ease ?? 'easeInOut';
+    resolveEase(ease);
+    // replace what was inside the move, then key both ends
+    tl.keys = tl.keys.filter((k) => k === here && !op.from ? true : !(k.t > t0 - 1e-3 && k.t < t1 + 1e-3));
+    let a = tl.keys.find((k) => Math.abs(k.t - t0) < 1e-3);
+    if (a) Object.assign(a, normKey({ ease, path }, a));
+    else tl.keys.push(a = { id: uniqueId(doc, 'k', { kind: 'keys' }), ...normKey({ t: t0, ...start, ease, path }) });
+    const b = { id: oldEnd && !tl.keys.some((k) => k.id === oldEnd.id) ? oldEnd.id : uniqueId(doc, 'k', { kind: 'keys' }), ...normKey({ t: t1, ...made.end, ease: oldEnd?.ease ?? 'easeInOut' }) };
+    tl.keys.push(b);
+    if (t1 > tl.duration) tl.duration = t1;
+    sortKeys(doc);
+    return { move: def.name, keys: [a.id, b.id], from: t0, to: t1, path: path.type, edited: !!edit };
   },
 
   /**
