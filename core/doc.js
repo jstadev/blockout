@@ -507,17 +507,23 @@ export const OPS = {
    * Give every camera segment the same ease (each key but the last). Cuts (hold keys) stay cuts unless
    * cuts: true. Pass from: <keyId> to copy that key's ease instead of naming one.
    */
+  /** One ease on every camera segment: the active shot, or every shot with allShots (cuts stay cuts unless op.cuts). */
   'key.easeAll'(doc, op) {
-    const keys = [...doc.timeline.keys].sort((a, b) => a.t - b.t);
     const ease = op.from != null ? findKey(doc, op.from).ease : op.ease;
     if (ease == null) throw new Error('key.easeAll needs ease or from');
-    let n = 0;
-    for (const k of keys.slice(0, -1)) {
-      if (!op.cuts && resolveEase(k.ease) === 'hold') continue;
-      Object.assign(k, normKey({ ease }, k));
-      n++;
+    const tls = op.allShots && doc.shots?.length ? shotList(doc).map((s) => s.timeline) : [doc.timeline];
+    let n = 0, shots = 0;
+    for (const tl of tls) {
+      const keys = [...tl.keys].sort((a, b) => a.t - b.t);
+      let hit = false;
+      for (const k of keys.slice(0, -1)) {
+        if (!op.cuts && resolveEase(k.ease) === 'hold') continue;
+        Object.assign(k, normKey({ ease }, k));
+        n++; hit = true;
+      }
+      if (hit) shots++;
     }
-    return { updated: n, ease: keys[0]?.ease };
+    return { updated: n, shots, ease };
   },
 
   'key.remove'(doc, op) {
