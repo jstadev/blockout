@@ -118,7 +118,9 @@ moment. If it starts inside the current shot, the confirmation offers to end tha
 doesn't play twice. Shot names sit in a header column on the left; click one to switch, drag it up or down to reorder. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
 empty part of a row) to put the playhead at that moment, switching to the shot that covers it. Drag a bar
 sideways to change where it picks up the action, drag it up or down to reorder, and click it and press
-Delete (or right-click it) to remove it. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
+Delete (or right-click it) to remove it. Shift or Cmd/Ctrl-click bars to pick several (or Shift or Cmd/Ctrl-drag a
+box on an empty part of the lanes); drag any picked bar sideways to move them all in time, or press Delete to
+remove them. Esc lets go. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
 top to bottom in sequence order, and the layers button (**Play all**) plays on through the cuts. The set,
 the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
 length, fps and audio.

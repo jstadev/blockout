@@ -1,6 +1,7 @@
 // Shots: one set, several cameras. The key track always stacks the shots (one row per shot on the shared
 // action-time axis, drawn and edited by timeline.js: drag a bar sideways to change where it picks up the
-// action, up or down to reorder, click it and press Delete to remove it), with a "+ New shot" row under them.
+// action, up or down to reorder, click it and press Delete to remove it;
+// Shift or Cmd/Ctrl-click or a Shift-drag box picks several to move or delete together), with a "+ New shot" row under them.
 // Clicking that row (or Shift+N) adds the next shot, picking up where the active one ends; dragging across it
 // draws any span (from 0 for coverage, from the playhead to carry on from there). A new shot starts on the
 // active shot's framing at its first moment. [ and ] switch, Shift+[ and Shift+] move the active shot,
