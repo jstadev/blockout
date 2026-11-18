@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
-import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut } from '../core/curves.js';
+import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep } from '../core/curves.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -426,4 +426,110 @@ test('shots: timeline.start picks up the shared action later; object key ops use
   assert.deepEqual(doc.objects[0].anim.map((k) => k.t), [0, 4]);
   ({ doc } = applyOps(doc, { op: 'timeline', start: 0 }));
   assert.equal(doc.timeline.start, undefined);
+});
+
+test('camera moves: cam.move writes two keys with a path; paths arc, turn and hold the subject size', () => {
+  const start = (doc) => { doc.timeline.keys = [{ id: 'k1', t: 0, position: [0, 2, 10], target: [0, 1, 0], fov: 40, roll: 0, ease: 'easeInOut' }]; return doc; };
+  // orbit: radius and height stay, the subject stays centred, + goes to the camera's right (+x from +z)
+  let { doc, results } = applyOps(start(createDoc()), { op: 'cam.move', move: 'orbit', t: 1, over: 2, angle: 90, ease: 'linear' });
+  assert.deepEqual(results[0].keys.length, 2);
+  assert.equal(doc.timeline.keys.length, 3);
+  const a = doc.timeline.keys.find((k) => k.t === 1);
+  assert.equal(a.path.type, 'orbit');
+  assert.equal(a.ease, 'linear');
+  const mid = sampleCamera(doc.timeline, 2);
+  assert.ok(Math.abs(Math.hypot(mid.position[0], mid.position[2]) - 10) < 1e-6, 'an orbit keeps its radius');
+  assert.ok(mid.position[0] > 6 && mid.position[2] > 6, 'halfway round: 45° to the right');
+  assert.deepEqual(sampleCamera(doc.timeline, 3).position.map(Math.round), [10, 2, 0]);
+  // the angle hint takes the long way round
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'orbit', t: 0, over: 2, angle: 270, ease: 'linear' }));
+  const q = sampleCamera(doc.timeline, 1);
+  assert.ok(q.position[2] < -6, '270°: halfway is behind the subject');
+  // around an object: the pivot is the object
+  ({ doc } = applyOps(start(createDoc()), [{ op: 'add', type: 'box', name: 'car', position: [5, 0, 0] }, { op: 'cam.move', move: 'orbit', around: 'car', t: 0, over: 1, angle: 180 }]));
+  assert.equal(doc.timeline.keys[0].path.around, 'car');
+  assert.deepEqual(doc.timeline.keys[0].path.center, [5, 0.5, 0]);
+  // pan: the camera stays, the aim turns right
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'pan', t: 0, over: 1, angle: 90 }));
+  const pan = sampleCamera(doc.timeline, 1);
+  assert.deepEqual(pan.position, [0, 2, 10]);
+  assert.ok(pan.target[0] > 9, 'looking along +x after panning right from looking down -z');
+  // dolly zoom: the frame keeps its width at the subject
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'dolly-zoom', t: 0, over: 2, by: 5 }));
+  const w = (s) => Math.tan((s.fov * Math.PI) / 360) * Math.hypot(...s.position.map((v, i) => v - s.target[i]));
+  const w0 = w(sampleCamera(doc.timeline, 0));
+  for (const t of [0.5, 1, 1.5, 2]) assert.ok(Math.abs(w(sampleCamera(doc.timeline, t)) - w0) < 1e-2, `dolly zoom width at ${t}s`);
+  assert.ok(doc.timeline.keys[1].fov > 60, 'the lens widened');
+  // push replaces keys inside the move; pull-out goes back; zoom, crane, truck, roll
+  ({ doc } = applyOps(start(createDoc()), [{ op: 'key.add', t: 1, position: [3, 3, 3], target: [0, 0, 0] }, { op: 'cam.move', move: 'push', t: 0, over: 2, by: 4 }]));
+  assert.deepEqual(doc.timeline.keys.map((k) => k.t), [0, 2]);
+  assert.ok(Math.abs(doc.timeline.keys[1].position[2] - (10 - 4 * Math.cos(Math.atan(1 / 10)))) < 0.01);
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'pull-out', t: 0, by: 2 }));
+  assert.ok(doc.timeline.keys[1].position[2] > 10);
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'zoom', t: 0, lens: 85 }));
+  assert.equal(Math.round(fovToLens(doc.timeline.keys[1].fov)), 85);
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'crane', t: 0, by: 2 }));
+  assert.deepEqual([doc.timeline.keys[1].position[1], doc.timeline.keys[1].target[1]], [4, 1]);
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'truck', t: 0, by: 1 }));
+  assert.deepEqual(doc.timeline.keys[1].position, [1, 2, 10]);
+  ({ doc } = applyOps(start(createDoc()), { op: 'cam.move', move: 'dutch', t: 0, angle: 12 }));
+  assert.equal(doc.timeline.keys[1].roll, 12);
+  // no keys: needs from
+  assert.throws(() => applyOps({ ...createDoc(), timeline: { ...createDoc().timeline, keys: [] } }, { op: 'cam.move', move: 'pan' }), /no camera keys/);
+  ({ doc } = applyOps({ ...createDoc(), timeline: { ...createDoc().timeline, keys: [] } }, { op: 'cam.move', move: 'pan', from: { position: [0, 2, 5], target: [0, 1, 0] } }));
+  assert.equal(doc.timeline.keys.length, 2);
+  assert.throws(() => applyOps(createDoc(), { op: 'cam.move', move: 'spin' }), /unknown move/);
+});
+
+test('key paths: set, clear with smooth, survive a reload, and stay off cuts', () => {
+  let { doc } = applyOps(createDoc(), { op: 'key.update', id: 'k1', path: 'orbit' });
+  assert.deepEqual(doc.timeline.keys[0].path, { type: 'orbit' });
+  // an orbit without a center turns round the key's aim point
+  const s = sampleCamera(doc.timeline, 2.5);
+  const r0 = Math.hypot(7, 9), r1 = Math.hypot(-6, 8);
+  assert.ok(Math.abs(Math.hypot(s.position[0], s.position[2]) - (r0 + r1) / 2) < 0.2);
+  doc = migrate(JSON.parse(JSON.stringify(doc)));
+  assert.equal(doc.timeline.keys[0].path.type, 'orbit');
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', path: 'smooth' }));
+  assert.equal(doc.timeline.keys[0].path, undefined);
+  assert.throws(() => applyOps(doc, { op: 'key.update', id: 'k1', path: 'zigzag' }), /unknown path/);
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', path: { type: 'dolly-zoom' } }));
+  assert.equal(doc.timeline.keys[0].path.type, 'dollyZoom');
+  // a hold key cuts: its path is ignored
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', ease: 'hold' }));
+  assert.deepEqual(sampleCamera(doc.timeline, 2.5).position, [7, 3.5, 9]);
+});
+
+test('sweep: shortest way round unless the hint says otherwise', () => {
+  const d = (x) => +(x * 180 / Math.PI).toFixed(6);
+  assert.equal(d(sweep(0, Math.PI / 2)), 90);
+  assert.equal(d(sweep(0, Math.PI / 2, -270)), -270);
+  assert.equal(d(sweep(0, 0, 360)), 360);
+  assert.equal(d(sweep(0, -Math.PI / 2, 270)), 270);
+});
+
+test('camera moves remember their settings and can be edited in place', () => {
+  let { doc, results } = applyOps(createDoc(), { op: 'cam.move', move: 'orbit', t: 1, over: 2, angle: 90, ease: 'linear' });
+  const [a, b] = results[0].keys;
+  const k = () => doc.timeline.keys.find((x) => x.id === a);
+  assert.deepEqual([k().path.move, k().path.params], ['orbit', { angle: 90 }]);
+  const startPos = [...k().position];
+  // change the angle and length: same start framing, the old end key is replaced (and keeps its id)
+  ({ doc, results } = applyOps(doc, { op: 'cam.move', edit: a, angle: 180, over: 3 }));
+  assert.deepEqual(results[0].keys, [a, b]);
+  assert.equal(results[0].edited, true);
+  assert.deepEqual(k().position, startPos);
+  assert.equal(k().ease, 'linear', 'settings left out keep their values');
+  assert.equal(k().path.params.angle, 180);
+  assert.deepEqual(doc.timeline.keys.map((x) => x.t), [0, 1, 4, 5]);
+  // a shorter move leaves later keys alone
+  ({ doc } = applyOps(doc, { op: 'cam.move', edit: a, over: 1 }));
+  assert.deepEqual(doc.timeline.keys.map((x) => x.t), [0, 1, 2, 5]);
+  // switch it to another move
+  ({ doc } = applyOps(doc, { op: 'cam.move', edit: a, move: 'push', by: 1 }));
+  assert.deepEqual([k().path.type, k().path.move], ['straight', 'push']);
+  // a path picked by hand is no longer a preset move
+  ({ doc } = applyOps(doc, { op: 'key.update', id: a, path: 'orbit' }));
+  assert.equal(k().path.move, undefined);
+  assert.throws(() => applyOps(doc, { op: 'cam.move', edit: 'k1' }), /no move to edit/);
 });

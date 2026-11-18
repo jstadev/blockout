@@ -137,20 +137,80 @@ export function sampleCamera(timeline, t) {
   // look across a cut, or each shot's move bends toward the other shot.
   const prev = i > 0 && !isCut(keys[i - 1]) ? keys[i - 1] : null;
   const next = !isCut(b) ? keys[i + 2] : null;
+  const out = { fov: lerp(a.fov ?? 40, b.fov ?? 40, s), roll: lerp(a.roll ?? 0, b.roll ?? 0, s), segment: i, local: s };
+  // A key's path says how the camera travels to the next key (a move); without one it is the smooth spline.
+  if (a.path && !isCut(a)) return { ...travel(a, b, s), ...out, ...(a.path.type === 'dollyZoom' ? { fov: dollyZoomFov(a, b, s) } : {}) };
   const pick = (field) => {
     if (!smooth) return lerp3(a[field], b[field], s);
     const p0 = prev?.[field] ?? extrap(a[field], b[field]);
     const p3 = next?.[field] ?? extrap(b[field], a[field]);
     return catmull(p0, a[field], b[field], p3, s);
   };
-  return {
-    position: pick('position'),
-    target: pick('target'),
-    fov: lerp(a.fov ?? 40, b.fov ?? 40, s),
-    roll: lerp(a.roll ?? 0, b.roll ?? 0, s),
-    segment: i,
-    local: s,
-  };
+  return { position: pick('position'), target: pick('target'), ...out };
+}
+
+// ----- segment paths: how a move travels from key a to key b -----
+/** The path types a key can give the segment after it ("smooth", the spline, is no path at all). */
+export const PATHS = ['straight', 'orbit', 'turn', 'dollyZoom'];
+
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const len3 = (v) => Math.hypot(v[0], v[1], v[2]);
+const DEG = Math.PI / 180;
+
+/**
+ * The angle (radians) to sweep from `from` to `to`: the shortest way round, unless `hint` (degrees) says
+ * which way and how far, e.g. 270 for three quarters of a turn the long way.
+ */
+export function sweep(from, to, hint) {
+  let d = to - from;
+  d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+  if (Number.isFinite(hint) && hint !== 0) d += 2 * Math.PI * Math.round((hint * DEG - d) / (2 * Math.PI));
+  return d;
+}
+
+// A point turning round the vertical axis through c, from p to q: angle, radius and height blend separately.
+function arc(c, p, q, s, hint) {
+  const u = sub3(p, c), v = sub3(q, c);
+  const ru = Math.hypot(u[0], u[2]), rv = Math.hypot(v[0], v[2]);
+  if (ru < 1e-4 || rv < 1e-4) return lerp3(p, q, s); // on the axis: nothing to turn
+  const a0 = Math.atan2(u[0], u[2]);
+  const th = a0 + sweep(a0, Math.atan2(v[0], v[2]), hint) * s;
+  const r = lerp(ru, rv, s);
+  return [c[0] + r * Math.sin(th), lerp(p[1], q[1], s), c[2] + r * Math.cos(th)];
+}
+
+// Direction of view as yaw (round Y, 0 = looking +z), pitch and distance.
+function aim(k) {
+  const d = sub3(k.target, k.position);
+  return { yaw: Math.atan2(d[0], d[2]), pitch: Math.atan2(d[1], Math.hypot(d[0], d[2])), dist: Math.max(1e-4, len3(d)) };
+}
+
+function travel(a, b, s) {
+  const p = a.path;
+  if (p.type === 'orbit') {
+    const c = p.center ?? a.target;
+    // positive angles orbit to the camera's right, which is a growing atan2(x, z)
+    return { position: arc(c, a.position, b.position, s, p.angle), target: arc(c, a.target, b.target, s, p.angle) };
+  }
+  if (p.type === 'turn') {
+    // pan and tilt on the spot: the view direction turns, the camera barely moves (positive pans right)
+    const position = lerp3(a.position, b.position, s);
+    const A = aim(a), B = aim(b);
+    const yaw = A.yaw + sweep(A.yaw, B.yaw, p.angle != null ? -p.angle : undefined) * s;
+    const pitch = lerp(A.pitch, B.pitch, s), dist = lerp(A.dist, B.dist, s);
+    const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    return { position, target: add3(position, dir.map((x) => x * dist)) };
+  }
+  return { position: lerp3(a.position, b.position, s), target: lerp3(a.target, b.target, s) };
+}
+
+// Dolly zoom: the lens follows the distance so the frame stays the same width at the subject (the target).
+function dollyZoomFov(a, b, s) {
+  const pos = lerp3(a.position, b.position, s), tgt = lerp3(a.target, b.target, s);
+  const half = (k) => Math.tan(((k.fov ?? 40) * DEG) / 2) * Math.max(1e-4, len3(sub3(k.target, k.position)));
+  const w = lerp(half(a), half(b), s);
+  return (2 * Math.atan(w / Math.max(1e-4, len3(sub3(tgt, pos))))) / DEG;
 }
 
 /** Convert a vertical FOV (deg) to a full-frame-equivalent focal length (mm), and back. */

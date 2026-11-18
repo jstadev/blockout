@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PRIMITIVES, createDoc, shotTimeline } from '../core/doc.js';
+import { PRIMITIVES, MOVES, createDoc, shotTimeline } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
 import { dataDir } from '../server/paths.mjs';
 
@@ -67,7 +67,7 @@ timeline, length, fps and audio; camera, timeline and render commands work on th
   canvas shot-set [id] [--name n] [--to n] [--start s]   rename, move to position n in the sequence, or set
                                             where the shot picks up the action (s seconds into the object moves)
   canvas shot-rm <id>                       delete a shot (not the last one)
-  --shot <id>   on key, key-set, key-rm, keys-clear, ease-all, timeline, audio, move, okey, okey-rm,
+  --shot <id>   on key, key-set, key-rm, keys-clear, ease-all, cam, timeline, audio, move, okey, okey-rm,
                 snapshot, storyboard and export: work on that shot without switching to it
 
 Camera timeline
@@ -75,8 +75,21 @@ Camera timeline
   canvas key --t 2 --from-view              key the camera the user is looking through right now
   canvas key-set <keyId|index> [same flags] change a key (e.g. --ease snap, --t 3)
   canvas ease-all <name|x1,y1,x2,y2>        give every camera segment that ease (cuts stay cuts; --from <keyId> copies a key's)
+  canvas key-set <keyId|index> --path smooth|straight|orbit|turn|dollyZoom   how the camera travels to the next key
   canvas key-rm <keyId|index>
   canvas keys-clear
+
+Camera moves (presets: write a key at --t with the move's path and ease, and a key where it ends;
+keys in between are replaced. Both stay ordinary keys you can drag, re-key and ease afterwards)
+  canvas cam                                list the moves and their params
+  canvas cam <move> [--t s] [--over 3] [--ease name] [--from-view] [params]
+    pan --angle 45 (+ right) · tilt --angle 20 (+ up) · orbit --angle 90 (+ right) [--around id|x,y,z] [--rise m]
+    push --by m (+ in) · pull-out --by m · truck --by m (+ right) · pedestal --by m (+ up, aim moves too)
+    crane --by m (+ up, keeps the aim) · zoom --lens 85 | --fov 20 · dolly-zoom --by m (+ in, lens widens)
+    roll --angle 15 (dutch)
+  --t defaults to the playhead (0 with no tab open); --from-view starts from the user's current view
+  canvas cam [move] --edit <keyId> [params]  change the move that starts at that key (same start framing;
+                                            settings you leave out keep their values, e.g. --angle 180 --over 4)
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
@@ -215,6 +228,7 @@ function keyFields(flags) {
   if (flags.lens != null) k.fov = (360 / Math.PI) * Math.atan(12 / num(flags.lens));
   if (flags.roll != null) k.roll = num(flags.roll);
   if (flags.ease != null) k.ease = easeArg(flags.ease);
+  if (flags.path != null) k.path = String(flags.path);
   for (const f of ['position', 'target']) if (typeof k[f] === 'number') throw new Error(`--${f === 'position' ? 'pos' : f} needs x,y,z`);
   return k;
 }
@@ -465,6 +479,29 @@ const commands = {
     if (flags.cuts) o.cuts = true;
     const r = (await op(o, 'ease all segments')).results[0];
     out(`set the ease on ${r.updated} segment${r.updated === 1 ? '' : 's'}`);
+  },
+  async cam({ pos, flags }) {
+    if (!pos[0] && flags.edit == null) {
+      out(['camera moves (canvas cam <move> [--t s] [--over 3] [--ease name] [params]):',
+        ...Object.values(MOVES).map((m) => `  ${m.name.padEnd(10)} ${m.about}; ${m.params}`),
+        '  aliases: push-in, dolly → push · pull-out (push, reversed) · dolly-zoom, vertigo → dollyZoom · dutch → roll · arc → orbit · boom → crane'].join('\n'));
+      return;
+    }
+    const o = { op: 'cam.move' };
+    if (pos[0]) o.move = pos[0];
+    if (flags.edit != null) { const r = keyRef(String(flags.edit)); o.edit = r.id ?? r.index; }
+    for (const f of ['t', 'over', 'angle', 'by', 'rise', 'lens', 'fov']) if (flags[f] != null) o[f] = num(flags[f]);
+    if (flags.ease != null) o.ease = easeArg(flags.ease);
+    if (flags.around != null) { const a = String(flags.around); o.around = /^-?[\d.]+,-?[\d.]+,-?[\d.]+$/.test(a) ? vec(a) : a; }
+    if (o.edit == null && (flags['from-view'] || (o.t == null && !SHOT))) { // the playhead belongs to the active shot
+      let cam = null;
+      try { cam = await rpc('camera'); } catch (e) { if (flags['from-view']) throw e; }
+      if (cam && o.t == null) o.t = cam.time;
+      if (cam && flags['from-view']) o.from = { position: cam.position, target: cam.target, fov: cam.fov };
+    }
+    if (o.edit == null) o.t ??= 0;
+    const r = (await op(o, `camera move: ${pos[0] || 'edit'}`)).results[0];
+    out(`${r.edited ? 'changed ' : ''}${r.move} from ${r.from}s to ${r.to}s: keys ${r.keys.join(' → ')} (${r.path} path)`);
   },
   async 'key-rm'({ pos }) { const r = await op({ op: 'key.remove', ...keyRef(pos[0]) }); out(`removed key ${r.results[0].removed}`); },
   async 'keys-clear'() { const r = await op({ op: 'key.clear' }); out(`removed ${r.results[0].removed} keys`); },

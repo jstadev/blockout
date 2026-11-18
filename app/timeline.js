@@ -5,11 +5,21 @@ import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToL
 import { store } from './store.js';
 import { mountAudioTrack } from './audiotrack.js';
 import { mountShots } from './shots.js';
+import { mountMoves } from './moves.js';
 import { shotList } from '/core/doc.js';
 
 const PAD = 14;
 const SIZES = [[1280, 720], [1920, 1080], [3840, 2160], [1080, 1920], [1080, 1080], [1440, 1080]];
 const RETIME_KEY = 'cc-retime';
+const PATH_OPTIONS = [{ value: 'smooth', label: 'Smooth' }, { value: 'straight', label: 'Straight' }, { value: 'orbit', label: 'Orbit' }, { value: 'turn', label: 'Turn' }, { value: 'dollyZoom', label: 'Dolly zoom' }];
+/** Short label for a key's path on the track: "orbit 90°", "dolly zoom". */
+export function pathLabel(p) {
+  if (!p) return '';
+  const deg = p.angle ? ` ${p.angle > 0 ? '' : '−'}${Math.abs(p.angle)}°` : '';
+  if (p.type === 'orbit') return `orbit${deg}${p.around ? ` · ${p.around}` : ''}`;
+  if (p.type === 'turn') return `turn${deg}`;
+  return p.type === 'dollyZoom' ? 'dolly zoom' : p.type;
+}
 
 /** Run fn only when key changed since the last call for this element. Refreshes run every frame while
  *  playing; rebuilding a button's children under the pointer swallows clicks, and rebuilding a select closes it. */
@@ -39,6 +49,9 @@ export function mountTimeline(root, { viewport, exporter }) {
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
+  // preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
+  const movesBtn = button({ icon: 'orbit', label: 'Moves', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
+  movesBtn.dataset.overflow = ''; // goes into the ⋯ menu on a narrow timeline
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -71,7 +84,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   const rollField = affix(rollNum, '°');
   const toViewBtn = button({ icon: 'aim', title: 'Set this key to the current view', kind: 'ghost', onClick: () => { const p = viewport.getPose(); updateKey({ position: p.position, target: p.target, fov: p.fov, roll: p.roll }); } });
   const delKeyBtn = button({ icon: 'trash', title: 'Delete key', kind: 'ghost', onClick: () => deleteKey() });
-  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, toViewBtn, delKeyBtn);
+  // path: how the camera travels to the next key (a move's arc, a turn on the spot, a dolly zoom ...)
+  const pathSel = select({ options: PATH_OPTIONS, value: 'smooth', title: 'How the camera travels to the next key', onChange: (v) => updateKey({ path: v }) });
+  pathSel.classList.add('tl-path');
+  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, pathSel, toViewBtn, delKeyBtn);
 
   // output: shot settings chip + export
   const shotDur = h('span'), shotFps = h('span');
@@ -88,7 +104,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   const shots = mountShots();
   const bar = h('div.tl-bar',
-    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, lensField, rollField, keyGroup, objKeyBtn,
+    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, movesBtn, lensField, rollField, keyGroup, objKeyBtn,
     h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
@@ -600,6 +616,18 @@ export function mountTimeline(root, { viewport, exporter }) {
       const x0 = edges[i] + (i ? 7 : 0), x1 = edges[i + 1] - (i < edges.length - 2 ? 7 : 0);
       if (x1 > x0) ctx.fillRect(x0, mid, x1 - x0, 1);
     }
+    // segments with a move's path (orbit, turn, dolly zoom ...): a heavier line and the move's name under it
+    ctx.font = `500 10px ${css('--cc-font')}`; ctx.textAlign = 'center';
+    for (let i = 0; i < ks.length - 1; i++) {
+      const a = ks[i];
+      if (!a.path || a.ease === 'hold') continue;
+      const x0 = xs.get(a.id) + 6, x1 = xs.get(ks[i + 1].id) - 6;
+      if (x1 <= x0) continue;
+      ctx.fillStyle = text; ctx.globalAlpha = 0.35; ctx.fillRect(x0, mid - 0.5, x1 - x0, 2); ctx.globalAlpha = 1;
+      const label = pathLabel(a.path);
+      if (x1 - x0 > ctx.measureText(label).width + 8) { ctx.fillStyle = dim; ctx.fillText(label, (x0 + x1) / 2, mid + 6); }
+    }
+    ctx.textAlign = 'start'; ctx.font = `10px ${css('--cc-mono')}`;
     // a long hold before a cut (the shot ends on a still): dotted from the hold key to the cut
     ctx.strokeStyle = dim; ctx.setLineDash([2, 3]); ctx.beginPath();
     for (const c of cuts) if (!c.tight && c.x - xs.get(c.a.id) > 10) { ctx.moveTo(xs.get(c.a.id) + 6, mid + 0.5); ctx.lineTo(c.x - 6, mid + 0.5); }
@@ -724,6 +752,11 @@ export function mountTimeline(root, { viewport, exporter }) {
     keyGroup.style.display = k ? '' : 'none';
     const multi = selKeys.size > 1;
     easeBtn.style.display = toViewBtn.style.display = multi ? 'none' : ''; // .cc-btn sets display, so hidden alone would not hide it
+    movesBtn.setActive(moves.open);
+    // a selected key that starts a move: the button reopens that move's settings
+    const editable = !!(k && k.path?.move && selKeys.size < 2 && keys().at(-1)?.id !== k.id);
+    if (movesBtn.lastChild.textContent !== (editable ? 'Edit move' : 'Moves')) movesBtn.lastChild.textContent = editable ? 'Edit move' : 'Moves';
+    movesBtn.title = editable ? 'Change the settings of the move that starts at this key' : 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...';
     delKeyBtn.title = multi ? `Delete ${selKeys.size} keys` : 'Delete key';
     if (k) {
       const sorted = keys();
@@ -735,6 +768,9 @@ export function mountTimeline(root, { viewport, exporter }) {
       easeName_.textContent = last ? 'last key' : easeName(k.ease);
       easeBtn.disabled = last;
       easeBtn.title = last ? 'Last key: no segment after it' : 'Easing from this key to the next (opens the curve editor)';
+      pathSel.style.display = multi || last || k.ease === 'hold' ? 'none' : '';
+      if (document.activeElement !== pathSel) pathSel.value = k.path?.type || 'smooth';
+      pathSel.title = k.path ? `To the next key: ${pathLabel(k.path)}` : 'How the camera travels to the next key';
       // selecting a key (or the agent changing its lens) puts the free view on that lens too
       changed(lensField, [k.id, k.fov], () => viewport.setFreeFov(k.fov));
       changed(rollField, [k.id, k.roll], () => { viewport.freeRoll = k.roll || 0; });
@@ -767,6 +803,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     curve.refresh();
     shot.refresh();
     shots.refresh();
+    moves.refresh();
     // the track grows to fit the stacked shots
     relayout();
     const extra = L ? Math.max(0, L.height - BASE_H) : 0;
@@ -777,6 +814,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // ---------- curve editor + shot settings ----------
   const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => easeBtn });
   const shot = mountShotSettings(root, { anchor: shotBtn, keys, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
+  const moves = mountMoves({ anchor: movesBtn, viewport });
 
 
   store.on('doc', refresh);
