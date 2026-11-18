@@ -760,6 +760,35 @@ try {
   await page.waitForFunction(() => !window.canvas.store.doc.timeline.keys.some((k) => k.path));
   ok(true, 'the path select turns the move back into a smooth segment');
   ok(/dollyZoom from 0s to 2s/.test(cli('cam', 'dolly-zoom', '--t', '0', '--over', '2', '--by', '1')), 'canvas cam keys a dolly zoom');
+
+  // --- ease curve editor: click the curve to add a point, drag it, double-click it to remove it ---
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { const s = window.canvas.store; const k = [...s.doc.timeline.keys].sort((a, b) => a.t - b.t)[0]; s.set({ key: k.id }); });
+  cli('key-set', '0', '--ease', 'easeInOut');
+  await page.waitForFunction(() => [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease === 'easeInOut');
+  await page.locator('.tl-key .tl-ease').click();
+  const cbox = await page.locator('.curve-canvas').boundingBox();
+  // find a spot on the curve (the cursor turns to "copy") and on a point ("grab"), scanning one column
+  const scan = (px, want) => page.evaluate(([px, top, want]) => {
+    const cv = document.querySelector('.curve-canvas');
+    for (let y = top + 6; y < top + 130; y++) { cv.dispatchEvent(new PointerEvent('pointermove', { clientX: px, clientY: y, bubbles: true })); if (cv.style.cursor === want) return y; }
+    return null;
+  }, [px, cbox.y, want]);
+  const ex = cbox.x + 18 + 0.5 * (cbox.width - 28);
+  const ey = await scan(ex, 'copy');
+  ok(ey != null, 'the curve shows it can take a point');
+  await page.mouse.move(ex, ey); await page.mouse.down(); await page.mouse.move(ex - 15, ey - 25, { steps: 4 }); await page.mouse.up();
+  const ease0 = () => page.evaluate(() => [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease);
+  await page.waitForFunction(() => { const e = [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease; return Array.isArray(e) && e.length === 10; });
+  const added = await ease0();
+  ok(added[4] < 0.5 && added[5] > 0.5, 'clicking the curve adds a point and drags it');
+  ok(/custom · 1 point/.test(await page.locator('.curve-name').textContent()), 'the editor names the points');
+  const px = cbox.x + 18 + added[4] * (cbox.width - 28);
+  const py = await scan(px, 'grab');
+  await page.mouse.dblclick(px, py + 3);
+  await page.waitForFunction(() => { const e = [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease; return !Array.isArray(e) || e.length === 4; });
+  ok(true, 'double-clicking a point removes it');
+  await page.locator('.curve-pop button[title="Close"]').click();
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();
