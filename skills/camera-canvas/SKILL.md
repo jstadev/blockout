@@ -215,7 +215,8 @@ canvas export --sequence                      # every shot in order, cut togethe
   `--fps` or the active shot's fps for every shot and joins each shot's audio.
 - The user's key track stacks the shots, one row per shot on the action-time axis
   (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
-  `--start`, up or down reorders; Delete on a clicked bar removes it; Play all plays through the cuts).
+  `--start`, up or down reorders; dragging a bar's left or right end retimes the shot, stretching its camera
+  keys, same as `timeline --duration s --retime [--start s]`, and Alt-drag trims it instead; Delete on a clicked bar removes it; Play all plays through the cuts).
   They add a shot from the "+ New shot" row under the shots (click = next shot, drag = any span; same as
   `shot-add --frame [--start s] [--length s]`) or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
   Shift-click Export for the whole sequence.

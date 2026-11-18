@@ -586,8 +586,10 @@ export const OPS = {
       if (op.retime) { // scale key times to the new duration
         const f = op.duration / tl.duration;
         tl.keys.forEach((k) => { k.t = round(k.t * f); });
-        // the action is shared, so with several shots only this shot's camera is stretched
-        if (doc.shots.length < 2) doc.objects.forEach((o) => o.anim?.forEach((k) => { k.t = round(k.t * f); }));
+        // the action is shared, so with several shots only this shot's camera is stretched. One shot: its
+        // object keys stretch with it, from where the shot picks up the action (and move with a new start)
+        const s0 = tl.start || 0, s1 = op.start != null ? Number(op.start) : s0;
+        if (doc.shots.length < 2) doc.objects.forEach((o) => o.anim?.forEach((k) => { k.t = round(Math.max(0, s1 + (k.t - s0) * f)); }));
       }
       tl.duration = round(op.duration);
     }

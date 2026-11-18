@@ -46,6 +46,16 @@ test('timeline retime scales key times', () => {
   assert.deepEqual(doc.timeline.keys.map((k) => k.t), [0, 10]);
 });
 
+test('timeline retime from the left edge: one shot stretches its object keys from its new start', () => {
+  let { doc } = applyOps(createDoc(), { op: 'add', type: 'box', name: 'car' });
+  ({ doc } = applyOps(doc, [{ op: 'anim.key', id: 'car', t: 0, position: [0, 0, 0] }, { op: 'anim.key', id: 'car', t: 5, position: [5, 0, 0] }]));
+  // drag the left edge 1 s right: the shot shows 1..5 of the action, 4 s long, everything squeezed into it
+  ({ doc } = applyOps(doc, { op: 'timeline', start: 1, duration: 4, retime: true }));
+  assert.equal(doc.timeline.start, 1);
+  assert.deepEqual(doc.timeline.keys.map((k) => k.t), [0, 4]);
+  assert.deepEqual(doc.objects[0].anim.map((k) => k.t), [1, 5]);
+});
+
 test('bezier easing', () => {
   for (const [name, b] of Object.entries(EASES)) {
     if (b === 'hold') continue;
