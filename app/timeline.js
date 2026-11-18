@@ -829,18 +829,20 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   const presets = h('div.curve-presets');
   const help = h('div.curve-help.cc-label');
   const closeBtn = button({ icon: 'close', kind: 'ghost', title: 'Close', onClick: () => toggle(false) });
-  // copy this segment's ease to every other segment (cuts stay cuts), as one undo step
-  const allBtn = button({ label: 'Apply to all segments', kind: 'ghost', title: 'Give every segment this ease. Cuts stay cuts.', onClick: () => {
+  // copy this segment's ease to every segment in every shot (cuts stay cuts), as one undo step
+  const allBtn = button({ icon: 'copy', label: 'Apply to all segments', title: 'Give every camera segment this ease, in every shot. Cuts stay cuts.', onClick: () => {
     const tg = target();
     if (!tg || tg.kind !== 'segment') return;
-    store.op({ op: 'key.easeAll', from: tg.key.id }, 'ease all segments')
-      .then((res) => toast(`${easeName(tg.ease)} on ${res[0].updated} segments`)).catch(() => {});
+    store.op({ op: 'key.easeAll', from: tg.key.id, allShots: true }, 'ease all segments')
+      .then(([r]) => toast(`${easeName(tg.ease)} on ${r.updated} segment${r.updated === 1 ? '' : 's'}${r.shots > 1 ? ` in ${r.shots} shots` : ''}`)).catch(() => {});
   } });
+  const allCount = h('span.curve-all__count');
+  allBtn.append(allCount);
   allBtn.classList.add('curve-all');
   const pop = h('div.cc-panel.curve-pop', { hidden: true },
     h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn),
     h('div.cc-row.curve-head', {}, title, nameEl),
-    cv, presets, allBtn, help);
+    cv, presets, h('div.curve-sep'), allBtn, help);
   root.append(pop);
 
   let live = null;    // bezier being dragged
@@ -991,6 +993,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     showName();
     hover = nearest(e); cv.style.cursor = hover < 0 ? '' : 'grab';
     const name = easeName(b);
+    if (name === 'custom') remember(b);
     commit(name !== 'custom' ? name : b);
   });
 
@@ -999,9 +1002,44 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     const current = tg ? easeName(tg.ease) : '';
     // while dragging: the bezier numbers; hovering a preset: its name; otherwise the current ease
     nameEl.classList.toggle('cc-mono', !!live);
-    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : preview && preview !== current ? preview : current;
-    nameEl.classList.toggle('is-preview', !live && !!preview && preview !== current);
+    const pn = Array.isArray(preview) ? 'your custom' : preview;
+    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : pn && pn !== current ? pn : current;
+    nameEl.classList.toggle('is-preview', !live && !!pn && pn !== current);
   };
+
+  // the last custom curve you drew, kept for this browser so the editor offers it again next time;
+  // with none saved, the first custom ease in the scene
+  const CUSTOM_KEY = 'cc-custom-ease';
+  function remember(b) { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(b)); } catch {} }
+  function remembered() {
+    try {
+      const b = JSON.parse(localStorage.getItem(CUSTOM_KEY));
+      if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite)) return b;
+    } catch {}
+    for (const s of shotList(store.doc).length ? shotList(store.doc) : [{ timeline: store.doc.timeline }]) {
+      for (const k of s.timeline.keys) if (Array.isArray(k.ease) && easeName(k.ease) === 'custom') return k.ease;
+    }
+    if (Array.isArray(store.doc.timeline.speed) && easeName(store.doc.timeline.speed) === 'custom') return store.doc.timeline.speed;
+    return null;
+  }
+
+  /** The last cell: the segment's own custom curve, else your last custom curve (click to use it), else an empty slot. */
+  function customCell(tg, current) {
+    const own = current === 'custom';
+    const b = own ? tg.ease : remembered();
+    if (!b) return h('button.cc-btn.cc-btn--ghost.curve-preset.is-empty', {
+      type: 'button', title: 'Drag the handles for a custom curve. It stays here for next time.', 'aria-label': 'custom', disabled: true,
+      html: '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><path d="M2 13C7 13 9 3 14 3"/></svg>',
+    });
+    return h('button.cc-btn.cc-btn--ghost.curve-preset', {
+      type: 'button', 'aria-label': 'custom', html: easeSvg(b, 18),
+      title: own ? 'custom (drag the handles)' : 'Your last custom curve: click to use it here',
+      class: own ? 'is-active' : 'is-custom',
+      onClick: () => { if (!own) commit(b); },
+      onPointerenter: () => { if (!own) { preview = b; showName(); draw(); } },
+      onPointerleave: () => { if (preview === b) { preview = null; showName(); draw(); } },
+    });
+  }
 
   function refresh() {
     if (!api.open || !store.doc) return;
@@ -1011,7 +1049,8 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     // a grid of curve thumbnails; the last cell holds a custom curve when there is one
     const names = Object.keys(EASES).filter((k) => !(mode === 'speed' && k === 'hold'));
     // rebuilding removes the hovered button without a pointerleave, so drop its preview
-    changed(presets, [mode, current, current === 'custom' ? tg.ease : null], () => (preview = null, presets.replaceChildren(
+    const mine = current === 'custom' ? tg.ease : remembered();
+    changed(presets, [mode, current, JSON.stringify(mine)], () => (preview = null, presets.replaceChildren(
       ...names.map((k) => h('button.cc-btn.cc-btn--ghost.curve-preset', {
         type: 'button', title: k, 'aria-label': k, html: easeSvg(k, 18),
         class: k === current ? 'is-active' : null,
@@ -1019,18 +1058,20 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
         onPointerenter: () => { preview = k; showName(); draw(); },
         onPointerleave: () => { if (preview === k) { preview = null; showName(); draw(); } },
       })),
-      h('button.cc-btn.cc-btn--ghost.curve-preset', {
-        type: 'button', title: current === 'custom' ? 'custom (drag the handles)' : 'Drag the handles for a custom curve',
-        'aria-label': 'custom', disabled: current !== 'custom',
-        class: current === 'custom' ? 'is-active' : 'is-empty',
-        html: current === 'custom' ? easeSvg(tg.ease, 18) : '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><path d="M2 13C7 13 9 3 14 3"/></svg>',
-      }))));
+      customCell(tg, current))));
     showName();
     // only worth offering when another segment would change
     const ks = keys(), cur = tg?.ease;
     const others = tg?.kind === 'segment' ? ks.slice(0, -1).filter((k) => k !== tg.key && !isCut(k)) : [];
-    allBtn.hidden = !others.length || isCut(tg.key);
-    allBtn.disabled = others.every((k) => JSON.stringify(k.ease) === JSON.stringify(cur));
+    // every segment in every shot that the button would set (cuts stay cuts)
+    const multi = (store.doc.shots?.length || 0) > 1;
+    const segs = tg?.kind === 'segment' ? (multi ? shotList(store.doc).map((x) => x.timeline) : [store.doc.timeline])
+      .flatMap((tl) => [...tl.keys].sort((a, b) => a.t - b.t).slice(0, -1).filter((k) => !isCut(k))) : [];
+    allBtn.hidden = !others.length && !multi || !segs.length || isCut(tg.key);
+    allBtn.disabled = segs.every((k) => JSON.stringify(k.ease) === JSON.stringify(cur));
+    allBtn.querySelector('.cc-btn__label').textContent = multi ? 'Apply to all shots' : 'Apply to all segments';
+    allCount.textContent = allBtn.disabled ? 'all match' : `${segs.length} segment${segs.length === 1 ? '' : 's'}`;
+    allBtn.title = allBtn.disabled ? 'Every segment already has this ease' : `Give all ${segs.length} camera segments${multi ? ` in all ${store.doc.shots.length} shots` : ''} this ease. Cuts stay cuts.`;
     help.textContent = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
       : 'Drag the orange handles. The strip shows how fast the camera moves.';

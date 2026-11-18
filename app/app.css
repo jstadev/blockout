@@ -263,7 +263,11 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .curve-presets .curve-preset.is-active { color: var(--cc-accent); }
 .curve-presets .curve-preset.is-empty { opacity: .35; }
 .curve-presets .curve-preset svg { width: 18px; height: 18px; }
-.curve-all { align-self: flex-start; height: 22px; padding: 0 8px; font-size: var(--cc-size-sm); }
+.curve-presets .curve-preset.is-custom { color: var(--cc-text); }
+.curve-sep { height: 1px; background: var(--cc-line); margin: 2px 0; }
+/* a real (bordered) button across the panel, with how many segments it will change on the right */
+.curve-all { width: 100%; justify-content: flex-start; gap: 6px; }
+.curve-all .curve-all__count { margin-left: auto; color: var(--cc-text-faint); font-size: var(--cc-size-sm); font-variant-numeric: tabular-nums; }
 .curve-all[hidden] { display: none; }
 .curve-help { white-space: normal; line-height: 1.4; }
 
