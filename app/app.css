@@ -1,11 +1,12 @@
 /* Layout of the canvas chrome. Component styles live in ui/kit.css, tokens in ui/tokens.css. */
 
 body { background: var(--cc-bg); }
-body:has(#stage.is-shot) { background: #121211; }
 
 #stage { position: fixed; inset: 0; overflow: hidden; }
 #stage canvas { display: block; outline: none; touch-action: none; }
-#stage.is-shot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 40px rgba(0, 0, 0, 0.5); border-radius: 2px; }
+/* shot view: the frame is clear, the overscan around it (the scene past the frame edge) is dimmed */
+.shot-frame { position: absolute; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 200vmax rgba(24, 24, 22, 0.55); }
+.shot-frame[hidden] { display: none; }
 
 /* top left: selection */
 #hud { position: fixed; top: 12px; left: 12px; display: flex; gap: 8px; z-index: 10; }

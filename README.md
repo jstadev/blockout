@@ -92,7 +92,7 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 | Ctrl-scroll (or ⌘-scroll, or pinch) | change the lens (focal length): the free view and selected key, or the shot camera in shot view (press K to key it) |
 | `W` `E` `R` | move / rotate / scale gizmo |
 | `F` · `Shift D` · `⌫` · `Esc` | frame · duplicate · delete · deselect |
-| `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, letterboxed to the export size) |
+| `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, framed at the export size, with the scene dimmed past the frame edge) |
 | `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
 | `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · next shot |
 | `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
