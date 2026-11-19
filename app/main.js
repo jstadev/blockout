@@ -29,12 +29,24 @@ const gizmoSeg = segmented({
   ],
   value: store.state.gizmo, onChange: (v) => store.set({ gizmo: v }),
 });
-const selBox = h('div.cc-panel.sel-box', {}, selName, gizmoSeg,
-  button({ icon: 'frame', kind: 'ghost', title: 'Frame selection (F)', onClick: () => viewport.frame(store.state.selection) }),
-  button({ icon: 'copy', kind: 'ghost', title: 'Duplicate (Shift+D)', onClick: () => duplicate() }),
-  button({ icon: 'trash', kind: 'ghost', title: 'Delete (Backspace)', onClick: () => removeSelected() }),
-);
-$('hud').append(selBox);
+const selActions = [
+  button({ icon: 'frame', label: 'Frame', kind: 'ghost', title: 'Frame selection (F)', onClick: () => viewport.frame(store.state.selection) }),
+  button({ icon: 'copy', label: 'Duplicate', kind: 'ghost', title: 'Duplicate (Shift+D)', onClick: () => duplicate() }),
+  button({ icon: 'trash', label: 'Delete', kind: 'ghost', title: 'Delete (Backspace)', onClick: () => removeSelected() }),
+];
+selActions.forEach((b, i) => b.append(h('span.sel-menu-key', {}, ['F', '⇧D', '⌫'][i])));
+// the object's Key button sits in this chip; Frame, Duplicate and Delete go into its ⋯ menu
+const selMenu = h('div.cc-panel.sel-menu', { hidden: true });
+const selMoreBtn = button({ icon: 'more', kind: 'ghost', title: 'Frame, duplicate, delete', onClick: () => toggleSelMenu() });
+selMoreBtn.classList.add('sel-more');
+function toggleSelMenu(on = selMenu.hidden) { selMenu.hidden = !on; selMoreBtn.classList.toggle('is-open', on); }
+selMenu.addEventListener('click', (e) => { if (e.target.closest('button')) toggleSelMenu(false); });
+addEventListener('pointerdown', (e) => { if (!selMenu.hidden && !selMenu.contains(e.target) && !selMoreBtn.contains(e.target)) toggleSelMenu(false); }, true);
+const selBox = h('div.cc-panel.sel-box', {}, selName, gizmoSeg);
+$('hud').append(selBox, selMenu);
+gizmoSeg.after(timeline.objKeyBtn);
+selMenu.append(...selActions);
+selBox.append(selMoreBtn);
 function refreshSel() {
   const o = store.state.selection && store.object(store.state.selection);
   selBox.hidden = !o;
