@@ -97,7 +97,8 @@ canvas key --t 2 --from-view          # key whatever the user is looking at righ
 ```
 
 - Eases: `linear ease easeIn easeOut easeInOut slowIn slowOut snap anticipate overshoot hold`, or a
-  custom cubic bezier `--ease 0.2,0,0,1`. `hold` freezes until the next key, then cuts to it.
+  custom cubic bezier `--ease 0.2,0,0,1` (add `,px,py,x3,y3,x4,y4` per extra point for a multi-point curve).
+  `hold` freezes until the next key, then cuts to it.
 - Hard cuts inside one shot: a `hold` key ends a move and the next key starts a new one; the path on each
   side of the cut is independent. For a different camera setup on the same set (a wide, then a close-up,
   then a reverse) make separate **shots** instead (section 4d): each gets its own timeline and export. To cut from one moving shot straight into another, give the last key of shot A
