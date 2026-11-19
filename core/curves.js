@@ -153,17 +153,22 @@ export function sampleCamera(timeline, t) {
 // ----- shudder: exact jerks back and forth along a segment, on top of its ease -----
 export const SHUDDER_SHAPES = ['jerk', 'wobble', 'stutter'];
 export const SHUDDER_OVER = ['even', 'fade', 'build'];
-export const SHUDDER_DEFAULT = { jerks: 6, amount: 4, shape: 'jerk', over: 'even' };
+export const SHUDDER_DEFAULT = { jerks: 6, amount: 4, shape: 'jerk', over: 'even', from: 0, to: 1 };
 
 /**
  * How far (as a share of the move, 0–1) the shudder pulls the camera back at time u (0–1) of the segment.
- * sh = { jerks, amount (% of the move), shape, over }. Every shape is 0 at both ends, so keys still land.
+ * sh = { jerks, amount (% of the move), shape, over, from?, to? }. from / to (0–1, default the whole segment)
+ * limit it to a section of the segment; the jerks and `over` count within that section. Every shape is 0 at
+ * both ends of the section, so the camera joins the plain move there and keys still land.
  *   jerk     snaps back fast (the first 12% of each beat), then eases forward again
  *   wobble   a smooth back-and-forth
  *   stutter  falls behind, then catches up in one snap (stop-start)
  */
 export function shudderOffset(sh, u) {
   if (!sh || !(sh.amount > 0) || !(sh.jerks >= 1)) return 0;
+  const a = sh.from ?? 0, b = sh.to ?? 1;
+  if (!(b > a) || u <= a || u >= b) return 0;
+  u = (u - a) / (b - a);
   const x = u * sh.jerks, f = x - Math.floor(x);
   const w = sh.shape === 'wobble' ? (1 - Math.cos(2 * Math.PI * f)) / 2 : sh.shape === 'stutter' ? f : f < 0.12 ? f / 0.12 : (1 - f) / 0.88;
   const env = sh.over === 'fade' ? 1 - u : sh.over === 'build' ? u : 1;

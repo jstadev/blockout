@@ -633,3 +633,16 @@ test('shudder: exact jerks along the segment, keys still land, set / change / cl
   ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', ease: 'hold', shudder: {} }));
   assert.equal(sampleCamera(doc.timeline, a.t + T * 0.28).local, 0);
 });
+
+test('shudder from / to: only plays in that section of the segment', () => {
+  let { doc } = applyOps(createDoc(), { op: 'key.update', id: 'k1', ease: 'linear', shudder: { jerks: 2, amount: 10, from: 0.5, to: 0.9 } });
+  const sh = doc.timeline.keys[0].shudder;
+  assert.deepEqual(sh, { jerks: 2, amount: 10, shape: 'jerk', over: 'even', from: 0.5, to: 0.9 });
+  for (const u of [0.1, 0.3, 0.5, 0.7, 0.9, 0.95]) assert.ok(shudderOffset(sh, u) < 1e-9, `quiet at ${u}`);
+  // first jerk peaks 12% into its beat: the beat is 0.2 of the segment, so at 0.524
+  assert.ok(Math.abs(shudderOffset(sh, 0.524) - 0.1) < 1e-9);
+  assert.throws(() => applyOps(doc, { op: 'key.update', id: 'k1', shudder: { from: 0.95 } }), /from/);
+  // back to the whole segment
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', shudder: { from: 0, to: 1 } }));
+  assert.equal(doc.timeline.keys[0].shudder.from, undefined);
+});

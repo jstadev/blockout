@@ -329,7 +329,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         audio: doc.audio || null,
         shot: doc.shot,
         shots: shotList(doc).map((s) => ({ id: s.id, name: s.name, active: s.active, duration: s.timeline.duration, fps: s.timeline.fps, start: s.timeline.start || 0, keys: s.timeline.keys.length })),
-        keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}${pathNote(k)}${k.shudder ? ` shudder=${k.shudder.jerks} ${k.shudder.shape}s, ${k.shudder.amount}% back, ${k.shudder.over}` : ''}`),
+        keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}${pathNote(k)}${k.shudder ? ` shudder=${k.shudder.jerks} ${k.shudder.shape}s, ${k.shudder.amount}% back, ${k.shudder.over}${k.shudder.from != null || k.shudder.to != null ? `, from ${k.shudder.from ?? 0} to ${k.shudder.to ?? 1} of the segment` : ''}` : ''}`),
       });
     },
     'GET /api/status': (req, res) => json(res, 200, { ...statusPayload(), tabs: clients.size, scene: scenePath, exports: exportsDir }),

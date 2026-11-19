@@ -978,6 +978,11 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   const shOn = onOff({ title: 'Shudder: the camera jerks back and forth along this move', onChange: (v) => shCommit(v ? {} : 'off') });
   const shJerks = number({ value: SHUDDER_DEFAULT.jerks, step: 1, min: 1, max: 60, precision: 0, title: 'How many jerks over the move', onInput: (v) => shPreview({ jerks: v }), onChange: (v) => shCommit({ jerks: v }) });
   const shAmount = number({ value: SHUDDER_DEFAULT.amount, step: 0.5, min: 0.5, max: 50, precision: 1, title: 'How far each jerk pulls the camera back, as a share of the whole move', onInput: (v) => shPreview({ amount: v }), onChange: (v) => shCommit({ amount: v }) });
+  // where in the segment it plays, in seconds from the segment's first key (stored as shares of the segment)
+  const span = () => { const tg = target(); return tg?.kind === 'segment' ? Math.max(1e-3, tg.next.t - tg.key.t) : 1; };
+  const shFrac = (sec) => Math.min(1, Math.max(0, sec / span()));
+  const shFrom = number({ value: 0, step: 0.05, min: 0, precision: 2, title: 'Where the shudder starts, in seconds after this key', onInput: (v) => shPreview({ from: shFrac(v) }), onChange: (v) => shCommit({ from: shFrac(v) }) });
+  const shTo = number({ value: 1, step: 0.05, min: 0, precision: 2, title: 'Where the shudder stops, in seconds after this key', onInput: (v) => shPreview({ to: shFrac(v) }), onChange: (v) => shCommit({ to: shFrac(v) }) });
   const shShape = segmented({ value: SHUDDER_DEFAULT.shape, onChange: (v) => shCommit({ shape: v }), options: [
     { value: 'jerk', label: 'Jerk', title: 'Snaps back, then eases forward again' },
     { value: 'wobble', label: 'Wobble', title: 'A smooth back and forth' },
@@ -988,6 +993,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     { value: 'build', label: 'Build', title: 'Grows towards the end' }] });
   const shBody = h('div.curve-shudder__body', {},
     h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Back'), affix(shAmount, '%')),
+    h('div.cc-row', {}, h('span.cc-label', {}, 'From'), affix(shFrom, 's'), h('span.cc-label.curve-shudder__back', {}, 'To'), affix(shTo, 's')),
     h('div.cc-row', {}, h('span.cc-label', {}, 'Shape'), shShape),
     h('div.cc-row', {}, h('span.cc-label', {}, 'Over move'), shOver));
   const shWrap = h('div.curve-shudder', {}, h('div.cc-row', {}, h('span.cc-label', {}, 'Shudder'), h('span.cc-spacer'), shOn), shBody);
@@ -1079,6 +1085,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
 
     // curve, and with a shudder the path the camera really takes on top of it
     ctx.strokeStyle = text; ctx.lineWidth = 2; ctx.lineJoin = 'round'; curvePath(b); ctx.stroke(); ctx.lineWidth = 1;
+    if (sh && ((sh.from ?? 0) > 0 || (sh.to ?? 1) < 1)) {
+      ctx.fillStyle = accent; ctx.globalAlpha = 0.08;
+      ctx.fillRect(toX(sh.from ?? 0), T, toX(sh.to ?? 1) - toX(sh.from ?? 0), SB - T); ctx.globalAlpha = 1;
+    }
     if (sh) {
       ctx.beginPath();
       for (let i = 0; i <= 400; i++) { const u = i / 400; (i ? ctx.lineTo : ctx.moveTo).call(ctx, toX(u), toY(prog(u))); }
@@ -1239,7 +1249,12 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
       shOn.set(!!cur); shBody.hidden = !cur;
       const v = { ...SHUDDER_DEFAULT, ...cur };
       shJerks.set(v.jerks); shAmount.set(v.amount); shShape.value = v.shape; shOver.value = v.over;
+      const len = tg.next.t - tg.key.t;
+      shFrom.set(+(v.from * len).toFixed(2)); shTo.set(+(v.to * len).toFixed(2));
     }
+    // never taller than the room above it (it sits on its bottom edge): scroll inside instead
+    const room = Math.floor(pop.getBoundingClientRect().bottom - 12);
+    if (room > 0 && pop.style.maxHeight !== `${room}px`) pop.style.maxHeight = `${room}px`;
     help.textContent = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
       : 'Drag the orange handles. The strip shows how fast the camera moves.';

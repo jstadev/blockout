@@ -190,15 +190,17 @@ function normPath(p) {
 function normShudder(sh, prev) {
   if (sh == null || sh === false || sh === 'off') return null;
   if (sh === true || sh === 'on') sh = {};
-  if (typeof sh !== 'object' || Array.isArray(sh)) throw new Error('shudder must be { jerks, amount, shape, over } or "off"');
+  if (typeof sh !== 'object' || Array.isArray(sh)) throw new Error('shudder must be { jerks, amount, shape, over, from, to } or "off"');
   const out = { ...SHUDDER_DEFAULT, ...prev, ...Object.fromEntries(Object.entries(sh).filter(([, v]) => v != null)) };
   const jerks = Math.round(+out.jerks), amount = +out.amount;
   if (!(jerks >= 1 && jerks <= 60)) throw new Error('shudder.jerks must be a whole number from 1 to 60');
   if (!(amount >= 0 && amount <= 50)) throw new Error('shudder.amount is how far each jerk pulls back, as a % of the move: 0 to 50');
   if (!SHUDDER_SHAPES.includes(out.shape)) throw new Error(`shudder.shape must be one of ${SHUDDER_SHAPES.join(', ')}`);
   if (!SHUDDER_OVER.includes(out.over)) throw new Error(`shudder.over must be one of ${SHUDDER_OVER.join(', ')}`);
+  const from = +out.from, to = +out.to;
+  if (!(from >= 0 && to <= 1 && to - from >= 0.01)) throw new Error('shudder.from / shudder.to are where it starts and stops, as shares of the segment (0–1), from before to');
   if (amount === 0) return null;
-  return { jerks, amount: round(amount), shape: out.shape, over: out.over };
+  return { jerks, amount: round(amount), shape: out.shape, over: out.over, ...(from > 0 && { from: round(from) }), ...(to < 1 && { to: round(to) }) };
 }
 const MOVE_PARAMS = ['angle', 'by', 'lens', 'fov', 'rise'];
 function moveParams(src) {

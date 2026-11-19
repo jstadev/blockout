@@ -140,7 +140,8 @@ one's end time. Check with a storyboard.
 **Shudder / judder** (the camera jerks back and forth during a move): don't fake it with extra keys or
 ease points. `canvas key-set <id> --shudder 6,4` gives the segment after that key 6 jerks that each pull
 back 4% of the move, on top of its ease; `--shape jerk|wobble|stutter`, `--over even|fade|build`, and
-`--shudder off`. The keys still land exactly. `canvas ls` shows it as `shudder=6 jerks, 4% back, even`.
+`--shudder off`; `--shudder-from 0.4 --shudder-to 0.8` limits it to that part of the segment (shares
+of its length). The keys still land exactly. `canvas ls` shows it as `shudder=6 jerks, 4% back, even`.
 
 ## 4a. Moving objects
 
