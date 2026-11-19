@@ -321,8 +321,8 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 body.has-audio .tl-keycard { bottom: calc(156px + var(--stack-h, 0px)); }
 .tl-keycard .tl-key { margin-left: 0; background: transparent; }
 .tl-keycard .tl-key > * { flex-shrink: 0; }
-/* popovers sit just above the key card: the same 6px gap they keep above the timeline */
-body.has-keycard :is(.curve-pop, .moves-pop) { translate: 0 calc(-6px - var(--keycard-h, 32px)); }
+/* popovers sit just above the key card, with the same 8px gap the card keeps above the timeline */
+body.has-keycard :is(.curve-pop, .moves-pop) { translate: 0 calc(-8px - var(--keycard-h, 32px)); }
 /* Loop and Play all: the menu that opens while hovering Play (over the key card, so it stays next to the button) */
 .tl-playmenu { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); padding: 6px 10px 6px 8px; display: flex; flex-direction: column; gap: 4px; z-index: 25; animation: cc-in 120ms var(--cc-ease); }
 .tl-playmenu[hidden] { display: none; }

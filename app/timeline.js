@@ -947,7 +947,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   let lastExtra = 0;
 
   // ---------- curve editor + shot settings ----------
-  const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => easeBtn });
+  const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => (keyCard.hidden ? easeBtn : keyCard) });
   // Loop and Play all: a small menu that opens while the pointer is over Play (and stays while it is over the menu)
   const loopSw = onOff({ value: store.state.loop, title: 'Loop playback', onChange: (v) => store.set({ loop: v }) });
   const playAllSw = onOff({ value: !!store.state.playAll, title: 'Play all: playback runs on through the cuts into the next shot', onChange: (v) => store.set({ playAll: v }) });
@@ -1006,7 +1006,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn),
     h('div.cc-row.curve-head', {}, title, nameEl),
     cv, presets, h('div.curve-sep'), allBtn, help);
-  root.append(pop);
+  document.body.append(pop); // outside #timeline: its blurred panel would become the box `position: fixed` measures from
 
   // The ease is a flat array (see resolveEase): pairs at index % 6 = 0 or 2 are handles, % 6 = 4 points.
   let live = null;    // bezier being dragged
@@ -1325,8 +1325,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     if (!on) preview = null;
     if (on && anchor) {
       const a = mode === 'speed' ? null : anchor();
-      const r = a && a.offsetParent ? a.getBoundingClientRect() : null;
-      pop.style.left = r ? `${Math.max(12, Math.min(innerWidth - 304, r.left - 40))}px` : '';
+      const r = a && a.getClientRects().length ? a.getBoundingClientRect() : null;
+      // over the key card: flush with its left edge; otherwise a little left of the ease button
+      const x = a?.classList.contains('tl-keycard') ? r?.left : r && r.left - 40;
+      pop.style.left = r ? `${Math.max(12, Math.min(innerWidth - 304, x))}px` : '';
     }
     refresh();
   }
