@@ -789,6 +789,27 @@ try {
   await page.waitForFunction(() => { const e = [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease; return !Array.isArray(e) || e.length === 4; });
   ok(true, 'double-clicking a point removes it');
   await page.locator('.curve-pop button[title="Close"]').click();
+  // --- toolbar: the key card, Key's caret, the object chip, Loop in the shot popover ---
+  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: null, selection: null }); });
+  await page.waitForTimeout(150);
+  const barIn = (sel) => page.evaluate((sel) => !!document.querySelector(`.tl-bar ${sel}`), sel);
+  ok(!(await barIn('.tl-key')) && await barIn('.tl-keycaret') && (await page.$$('.tl-bar .cc-affix')).length === 2, 'the bar has lens, roll and Key\'s caret, not the key settings');
+  const kA = JSON.parse(cli('doc')).timeline.keys[0].id;
+  await page.evaluate((id) => window.canvas.store.set({ key: id }), kA);
+  await page.waitForTimeout(150);
+  ok(await page.evaluate(() => !document.querySelector('.tl-keycard').hidden && !!document.querySelector('.tl-keycard .tl-ease')), 'a selected key opens its card above the timeline');
+  await page.evaluate(() => window.canvas.store.set({ key: null }));
+  await page.click('.tl-keycaret');
+  ok(await page.evaluate(() => !document.querySelector('.moves-pop').hidden), 'Key\'s caret opens the Moves menu');
+  await page.keyboard.press('Escape');
+  cli('add', 'box', '--name', 'chip');
+  await page.evaluate(() => window.canvas.store.set({ selection: 'chip' }));
+  await page.waitForTimeout(150);
+  ok(await page.evaluate(() => !!document.querySelector('.sel-box .tl-objkey:not([hidden])')), 'the object chip carries its Key button');
+  await page.click('.tl-shot');
+  ok(await page.evaluate(() => !document.querySelector('.shot-switch').hidden), 'Loop sits in the shot popover');
+  await page.keyboard.press('Escape');
+  cli('rm', 'chip');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();

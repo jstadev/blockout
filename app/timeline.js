@@ -38,20 +38,18 @@ const fmtFps = (v) => String(+(+v).toFixed(3));
 export function mountTimeline(root, { viewport, exporter }) {
   // ---------- bar: play | camera | output ----------
   const playBtn = button({ icon: 'play', title: 'Play / pause (Space)', onClick: () => store.set({ playing: !store.state.playing }) });
-  const startBtn = button({ icon: 'start', title: 'Go to start (Home)', kind: 'ghost', onClick: () => seek(0) });
-  const loopBtn = button({ icon: 'loop', title: 'Loop playback', kind: 'ghost', onClick: () => store.set({ loop: !store.state.loop }) });
   const timeNow = h('span');
   const timeDur = h('span.tl-faint');
-  const frameEl = h('span.cc-mono.tl-faint.tl-frame', { title: 'Frame at the playhead' });
   const timeEl = h('span.cc-mono.tl-time', {}, timeNow, timeDur);
   const viewSeg = segmented({
     options: [{ value: 'free', label: 'Free', icon: 'orbit', title: 'Orbit the set (C)' }, { value: 'shot', label: 'Shot', icon: 'camera', title: 'Look through the timeline camera (C)' }],
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
-  // preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
-  const movesBtn = button({ icon: 'orbit', label: 'Moves', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
-  movesBtn.dataset.overflow = ''; // goes into the ⋯ menu on a narrow timeline
+  keyBtn.classList.add('tl-keybtn');
+  // Key's caret: preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
+  const keyCaret = button({ icon: 'chevronDown', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
+  keyCaret.classList.add('tl-keycaret');
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -87,7 +85,9 @@ export function mountTimeline(root, { viewport, exporter }) {
   // path: how the camera travels to the next key (a move's arc, a turn on the spot, a dolly zoom ...)
   const pathSel = select({ options: PATH_OPTIONS, value: 'smooth', title: 'How the camera travels to the next key', onChange: (v) => updateKey({ path: v }) });
   pathSel.classList.add('tl-path');
-  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, pathSel, toViewBtn, delKeyBtn);
+  // a key that starts a preset move: reopen that move's settings
+  const editMoveBtn = button({ icon: 'orbit', label: 'Edit move', kind: 'ghost', title: 'Change the settings of the move that starts at this key', onClick: () => moves.toggle(true) });
+  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, pathSel, editMoveBtn, toViewBtn, delKeyBtn);
 
   // output: shot settings chip + export
   const shotDur = h('span'), shotFps = h('span');
@@ -107,24 +107,40 @@ export function mountTimeline(root, { viewport, exporter }) {
   });
 
   const shots = mountShots();
-  const bar = h('div.tl-bar',
-    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, movesBtn, lensField, rollField, keyGroup, objKeyBtn,
-    h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
+  const bar = h('div.tl-bar', {}, playBtn, timeEl, h('span.cc-divider'), viewSeg, keyBtn, keyCaret, lensField, rollField,
+    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
+
+  // The bar keeps play, the camera and output. The selected key's settings open in a card above that key
+  // (placeKeyCard), Loop and Play all are switches in the shot popover, and the object's Key button sits in
+  // the object chip at the top left (main.js).
+  const keyCard = h('div.cc-panel.tl-keycard', { hidden: true }, keyGroup);
+  document.body.append(keyCard);
+  /** Put the key card above the selected key, and lift the popovers over it. */
+  function placeKeyCard() {
+    const k = store.state.key && store.keyById(store.state.key);
+    const show = !!k && !!L;
+    keyCard.hidden = !show;
+    document.body.classList.toggle('has-keycard', show);
+    if (!show) return;
+    const x = track.getBoundingClientRect().left + (keyXs(liveKeys()).get(k.id) ?? xOf(k.t));
+    const w = keyCard.offsetWidth;
+    const left = Math.max(12, Math.min(innerWidth - w - 12, x - w / 2));
+    keyCard.style.left = `${left}px`;
+    keyCard.style.setProperty('--notch', `${Math.max(10, Math.min(w - 10, x - left))}px`);
+  }
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
   // up while it overflows, and one level back whenever it would fit again. At the last level (4) the less used
   // controls move into a ⋯ menu, as they are, so they keep working and show their labels there. Runs on resize
   // and when the bar's contents change (a key selected, an object keyed, audio loaded), at most once a frame.
-  const moreBtn = button({ icon: 'more', kind: 'ghost', title: 'More: loop, play all, audio, shot settings, object key', onClick: () => toggleMore() });
+  const moreBtn = button({ icon: 'more', kind: 'ghost', title: 'More: audio, shot settings', onClick: () => toggleMore() });
   moreBtn.classList.add('tl-more');
   exportBtn.before(moreBtn);
   const morePop = h('div.cc-panel.tl-more-pop', { hidden: true });
   document.body.append(morePop); // outside #timeline, like the other popovers
-  loopBtn.dataset.menuLabel = 'Loop';
-  shots.playAllBtn.dataset.menuLabel = 'Play all';
   // A control opts into the menu with data-overflow. Each keeps a marker where it sits in the bar, so it goes
   // back to the same place.
-  for (const el of [loopBtn, shots.playAllBtn, audioTrack.btn, shotBtn, objKeyBtn]) el.dataset.overflow = '';
+  for (const el of [audioTrack.btn, shotBtn]) el.dataset.overflow = '';
   const overflow = [...bar.querySelectorAll(':scope > [data-overflow]')].map((el) => {
     const mark = document.createComment('');
     el.after(mark);
@@ -160,9 +176,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     morePop.hidden = !on;
     moreBtn.classList.toggle('is-open', on);
   }
-  // a click on an item does its thing (opening its own popover from where the item is), then the menu closes;
-  // Loop and Play all are toggles, so the menu stays open to show their new state
-  morePop.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b !== loopBtn && b !== shots.playAllBtn) toggleMore(false); });
+  // a click on an item does its thing (opening its own popover from where the item is), then the menu closes
+  morePop.addEventListener('click', (e) => { if (e.target.closest('button')) toggleMore(false); });
   addEventListener('pointerdown', (e) => { if (!morePop.hidden && !morePop.contains(e.target) && !moreBtn.contains(e.target)) toggleMore(false); }, true);
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && !morePop.hidden) { e.stopPropagation(); toggleMore(false); } }, true);
 
@@ -175,7 +190,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // and Delete removes them.
   let picked = new Set();
   let drag = null; // { kind: 'key'|'okey'|'scrub', id, t, moved }; a key drag moves every selected key
-  // Selected camera keys. store.state.key is the primary one (its ease, lens, time show in the bar);
+  // Selected camera keys. store.state.key is the primary one (its ease, path and time show in the key card);
   // shift-click adds the range from it, ctrl/cmd-click toggles one, and dragging any of them moves them all.
   let selKeys = new Set();
   const syncSel = () => {
@@ -701,6 +716,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (!store.doc) return;
     const dpr = devicePixelRatio || 1;
     relayout();
+    placeKeyCard(); // the key card follows its key, also while it is dragged
     const W = track.clientWidth, H0 = track.clientHeight;
     if (track.width !== Math.round(W * dpr) || track.height !== Math.round(H0 * dpr)) { track.width = Math.round(W * dpr); track.height = Math.round(H0 * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -851,7 +867,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     const t = store.state.time;
     timeNow.textContent = t.toFixed(2);
     timeDur.textContent = ` / ${tl.duration.toFixed(2)} s`;
-    frameEl.textContent = `f${Math.round(t * tl.fps)}`;
+    timeEl.title = `Frame ${Math.round(t * tl.fps)}`;
     // only swap the icon when play state flips: refresh runs every frame while playing, and replacing the
     // icon under the pointer between mousedown and mouseup swallows the click.
     if (playBtn.dataset.playing !== String(!!store.state.playing)) {
@@ -859,7 +875,8 @@ export function mountTimeline(root, { viewport, exporter }) {
       playBtn.replaceChildren(icon(store.state.playing ? 'pause' : 'play'));
       playBtn.title = store.state.playing ? 'Pause (Space)' : 'Play (Space)';
     }
-    loopBtn.setActive(store.state.loop);
+    loopSw.set(store.state.loop); playAllSw.set(!!store.state.playAll);
+    playAllRow.hidden = store.doc.shots.length < 2;
     viewSeg.value = store.state.view;
     keyBtn.setActive(store.state.camDirty);
     keyBtn.title = store.state.camDirty ? 'The camera moved: press K to key this framing' : 'Key the current view at the playhead (K)';
@@ -870,11 +887,10 @@ export function mountTimeline(root, { viewport, exporter }) {
     keyGroup.style.display = k ? '' : 'none';
     const multi = selKeys.size > 1;
     easeBtn.style.display = toViewBtn.style.display = multi ? 'none' : ''; // .cc-btn sets display, so hidden alone would not hide it
-    movesBtn.setActive(moves.open);
-    // a selected key that starts a move: the button reopens that move's settings
+    keyCaret.setActive(moves.open);
+    // a selected key that starts a move: its card offers that move's settings again
     const editable = !!(k && k.path?.move && selKeys.size < 2 && keys().at(-1)?.id !== k.id);
-    if (movesBtn.lastChild.textContent !== (editable ? 'Edit move' : 'Moves')) movesBtn.lastChild.textContent = editable ? 'Edit move' : 'Moves';
-    movesBtn.title = editable ? 'Change the settings of the move that starts at this key' : 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...';
+    editMoveBtn.style.display = editable ? '' : 'none';
     delKeyBtn.title = multi ? `Delete ${selKeys.size} keys` : 'Delete key';
     if (k) {
       const sorted = keys();
@@ -931,14 +947,20 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   // ---------- curve editor + shot settings ----------
   const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => easeBtn });
-  const shot = mountShotSettings(root, { anchor: shotBtn, keys, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
-  const moves = mountMoves({ anchor: movesBtn, viewport });
+  // Loop and Play all live in the shot popover
+  const loopSw = onOff({ value: store.state.loop, title: 'Loop playback', onChange: (v) => store.set({ loop: v }) });
+  const playAllSw = onOff({ value: !!store.state.playAll, title: 'Play all: playback runs on through the cuts into the next shot', onChange: (v) => store.set({ playAll: v }) });
+  const swRow = (label, sw) => h('div.cc-row.shot-switch', {}, h('span.cc-label', {}, label), sw);
+  const playAllRow = swRow('Play all', playAllSw);
+  const playbackRows = [swRow('Loop', loopSw), playAllRow];
+  const shot = mountShotSettings(root, { anchor: shotBtn, keys, extra: playbackRows, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
+  const moves = mountMoves({ anchor: keyCaret, viewport });
 
 
   store.on('doc', refresh);
   store.on('state', refresh);
   new ResizeObserver(draw).observe(track);
-  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
+  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots, objKeyBtn };
 }
 
 /**
@@ -1300,7 +1322,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
 
 
 /** Popover from the "5.00 s · 24 fps" chip: duration (with retime), frame rate (any value, presets), export size, shot speed. */
-function mountShotSettings(root, { anchor, keys, openSpeed }) {
+function mountShotSettings(root, { anchor, keys, openSpeed, extra = [] }) {
   let retime = true;
   try { retime = localStorage.getItem(RETIME_KEY) !== '0'; } catch {}
   const tlOp = (patch, label) => store.op({ op: 'timeline', ...patch }, label).catch(() => {});
@@ -1328,6 +1350,7 @@ function mountShotSettings(root, { anchor, keys, openSpeed }) {
     rowEl('Frame rate', affix(fpsNum, 'fps')),
     rowEl('Size', sizeSel),
     rowEl('Playback', speedBtn),
+    ...extra,
     h('div.cc-divider.cc-divider--h'),
     foot,
   );
