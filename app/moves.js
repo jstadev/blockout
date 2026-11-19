@@ -45,7 +45,7 @@ const MOVES = [
 ];
 
 export function mountMoves({ anchor: anchorEl, viewport, onApplied }) {
-  // the button it opens from: an element, or a function when the toolbar layout can change it
+  // the button it opens from: an element, or a function returning one
   const anchorOf = () => (typeof anchorEl === 'function' ? anchorEl() : anchorEl);
   let cur = MOVES[2];
   const amounts = Object.fromEntries(MOVES.map((m) => [m.id, m.amount.value]));

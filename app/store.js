@@ -24,7 +24,6 @@ export const store = {
     launch: null,
     exporting: false,
     chat: true,            // chat sidebar open
-    bar: 'a',              // timeline toolbar layout on trial: 'now' | 'a' | 'b' (kept per browser)
   },
 
   on(event, fn) {
@@ -65,8 +64,6 @@ try {
   const saved = JSON.parse(sessionStorage.getItem('cc-state') || '{}');
   for (const k of SAVE) if (k in saved) store.state[k] = saved[k];
 } catch {}
-try { const b = localStorage.getItem('cc-bar'); if (['now', 'a', 'b'].includes(b)) store.state.bar = b; } catch {}
-store.on('state', (c) => { if (c.bar) try { localStorage.setItem('cc-bar', store.state.bar); } catch {} });
 addEventListener('beforeunload', () => {
   try { sessionStorage.setItem('cc-state', JSON.stringify(Object.fromEntries(SAVE.map((k) => [k, store.state[k]])))); } catch {}
 });

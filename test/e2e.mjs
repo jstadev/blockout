@@ -46,8 +46,6 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  // the checks below drive today's toolbar; layouts A and B are checked near the end
-  await page.addInitScript(() => { try { if (!sessionStorage.getItem('e2e-bar')) { localStorage.setItem('cc-bar', 'now'); sessionStorage.setItem('e2e-bar', '1'); } } catch {} });
   await page.goto(`http://127.0.0.1:${PORT}`);
   await page.waitForFunction(() => window.canvas?.store.doc && window.canvas.viewport.meshes.size === 2);
   ok(true, 'page loads the scene');
@@ -763,38 +761,26 @@ try {
   ok(true, 'the path select turns the move back into a smooth segment');
   ok(/dollyZoom from 0s to 2s/.test(cli('cam', 'dolly-zoom', '--t', '0', '--over', '2', '--by', '1')), 'canvas cam keys a dolly zoom');
 
-  // --- toolbar layouts on trial: A and B ---
-  await page.evaluate(() => { const s = window.canvas.store; s.set({ bar: 'a', key: null, selection: null }); });
+  // --- toolbar: the key card, Key's caret, the object chip, Loop in the shot popover ---
+  await page.evaluate(() => { const s = window.canvas.store; s.set({ key: null, selection: null }); });
   await page.waitForTimeout(150);
   const barIn = (sel) => page.evaluate((sel) => !!document.querySelector(`.tl-bar ${sel}`), sel);
-  ok(!(await barIn('.tl-key')) && await barIn('.tl-lenschip') && await barIn('.tl-keycaret'), 'A: the bar has the lens chip and Key caret, not the key settings');
+  ok(!(await barIn('.tl-key')) && await barIn('.tl-keycaret') && (await page.$$('.tl-bar .cc-affix')).length === 2, 'the bar has lens, roll and Key\'s caret, not the key settings');
   const kA = JSON.parse(cli('doc')).timeline.keys[0].id;
   await page.evaluate((id) => window.canvas.store.set({ key: id }), kA);
   await page.waitForTimeout(150);
-  ok(await page.evaluate(() => !document.querySelector('.tl-keycard').hidden && !!document.querySelector('.tl-keycard .tl-ease')), 'A: a selected key opens its card above the timeline');
-  await page.click('.tl-lenschip');
-  ok(await page.evaluate(() => !document.querySelector('.tl-lens-pop').hidden && document.querySelectorAll('.tl-lens-pop .cc-affix').length === 2), 'A: the lens chip opens lens and roll');
-  await page.keyboard.press('Escape');
+  ok(await page.evaluate(() => !document.querySelector('.tl-keycard').hidden && !!document.querySelector('.tl-keycard .tl-ease')), 'a selected key opens its card above the timeline');
   await page.evaluate(() => window.canvas.store.set({ key: null }));
   await page.click('.tl-keycaret');
-  ok(await page.evaluate(() => !document.querySelector('.moves-pop').hidden), 'A: Key\'s caret opens the Moves menu');
+  ok(await page.evaluate(() => !document.querySelector('.moves-pop').hidden), 'Key\'s caret opens the Moves menu');
   await page.keyboard.press('Escape');
   cli('add', 'box', '--name', 'chip');
   await page.evaluate(() => window.canvas.store.set({ selection: 'chip' }));
   await page.waitForTimeout(150);
-  ok(await page.evaluate(() => !!document.querySelector('.sel-box .tl-objkey:not([hidden])')), 'A: the object chip carries its Key button');
+  ok(await page.evaluate(() => !!document.querySelector('.sel-box .tl-objkey:not([hidden])')), 'the object chip carries its Key button');
   await page.click('.tl-shot');
-  ok(await page.evaluate(() => !document.querySelector('.shot-switch').hidden), 'A: Loop sits in the shot popover');
+  ok(await page.evaluate(() => !document.querySelector('.shot-switch').hidden), 'Loop sits in the shot popover');
   await page.keyboard.press('Escape');
-  await page.evaluate(() => window.canvas.store.set({ bar: 'b' }));
-  await page.waitForTimeout(150);
-  ok(await barIn('.tl-objkey') && !(await barIn('.tl-key')), 'B: with an object picked the bar shows its Key button');
-  await page.evaluate((id) => window.canvas.store.set({ selection: null, key: id }), kA);
-  await page.waitForTimeout(150);
-  ok(await barIn('.tl-key .tl-ease') && await barIn('.tl-key .cc-affix') && !(await barIn('.cc-seg')), 'B: a picked key swaps the camera tools for its settings');
-  await page.evaluate(() => window.canvas.store.set({ key: null, bar: 'now' }));
-  await page.waitForTimeout(150);
-  ok(await barIn('.tl-key') && !(await barIn('.tl-lenschip')), 'Now: today\'s bar comes back');
   cli('rm', 'chip');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
