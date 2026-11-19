@@ -1,7 +1,7 @@
 // Camera timeline: transport, keyframe track, selected-key controls and the easing / speed curve editor.
 
 import { h, button, segmented, number, select, icon, toast, affix, panel, toggle as onOff } from './ui/kit.js';
-import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToLens, lensToFov, isCut } from '/core/curves.js';
+import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToLens, lensToFov, isCut, shudder, SHUDDER_DEFAULT } from '/core/curves.js';
 import { store } from './store.js';
 import { mountAudioTrack } from './audiotrack.js';
 import { mountShots } from './shots.js';
@@ -734,15 +734,15 @@ export function mountTimeline(root, { viewport, exporter }) {
       const x0 = edges[i] + (i ? 7 : 0), x1 = edges[i + 1] - (i < edges.length - 2 ? 7 : 0);
       if (x1 > x0) ctx.fillRect(x0, mid, x1 - x0, 1);
     }
-    // segments with a move's path (orbit, turn, dolly zoom ...): a heavier line and the move's name under it
+    // segments with a move's path (orbit, turn, dolly zoom ...) or a shudder: a heavier line and its name under it
     ctx.font = `500 10px ${css('--cc-font')}`; ctx.textAlign = 'center';
     for (let i = 0; i < ks.length - 1; i++) {
       const a = ks[i];
-      if (!a.path || a.ease === 'hold') continue;
+      if (!(a.path || a.shudder) || a.ease === 'hold') continue;
       const x0 = xs.get(a.id) + 6, x1 = xs.get(ks[i + 1].id) - 6;
       if (x1 <= x0) continue;
       ctx.fillStyle = text; ctx.globalAlpha = 0.35; ctx.fillRect(x0, mid - 0.5, x1 - x0, 2); ctx.globalAlpha = 1;
-      const label = pathLabel(a.path);
+      const label = [pathLabel(a.path), a.shudder ? `shudder ×${a.shudder.jerks}` : ''].filter(Boolean).join(' · ');
       if (x1 - x0 > ctx.measureText(label).width + 8) { ctx.fillStyle = dim; ctx.fillText(label, (x0 + x1) / 2, mid + 6); }
     }
     ctx.textAlign = 'start'; ctx.font = `10px ${css('--cc-mono')}`;
@@ -964,10 +964,37 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   const allCount = h('span.curve-all__count');
   allBtn.append(allCount);
   allBtn.classList.add('curve-all');
+  // shudder: exact jerks back and forth along this segment, on top of its ease
+  let liveSh = null; // settings being scrubbed, drawn before they are committed
+  const shPatch = (patch) => { const tg = target(); return { ...SHUDDER_DEFAULT, ...tg?.key.shudder, ...patch }; };
+  const shPreview = (patch) => { liveSh = shPatch(patch); draw(); };
+  const shCommit = (patch) => {
+    const tg = target();
+    liveSh = null;
+    if (!tg || tg.kind !== 'segment') return;
+    store.set({ key: tg.key.id });
+    updateKey({ shudder: patch === 'off' ? 'off' : shPatch(patch) });
+  };
+  const shOn = onOff({ title: 'Shudder: the camera jerks back and forth along this move', onChange: (v) => shCommit(v ? {} : 'off') });
+  const shJerks = number({ value: SHUDDER_DEFAULT.jerks, step: 1, min: 1, max: 60, precision: 0, title: 'How many jerks over the move', onInput: (v) => shPreview({ jerks: v }), onChange: (v) => shCommit({ jerks: v }) });
+  const shAmount = number({ value: SHUDDER_DEFAULT.amount, step: 0.5, min: 0.5, max: 50, precision: 1, title: 'How far each jerk pulls the camera back, as a share of the whole move', onInput: (v) => shPreview({ amount: v }), onChange: (v) => shCommit({ amount: v }) });
+  const shShape = segmented({ value: SHUDDER_DEFAULT.shape, onChange: (v) => shCommit({ shape: v }), options: [
+    { value: 'jerk', label: 'Jerk', title: 'Snaps back, then eases forward again' },
+    { value: 'wobble', label: 'Wobble', title: 'A smooth back and forth' },
+    { value: 'stutter', label: 'Stutter', title: 'Falls behind, then catches up in one snap' }] });
+  const shOver = segmented({ value: SHUDDER_DEFAULT.over, onChange: (v) => shCommit({ over: v }), options: [
+    { value: 'even', label: 'Even', title: 'The same all the way' },
+    { value: 'fade', label: 'Fade out', title: 'Strong at the start, gone by the end' },
+    { value: 'build', label: 'Build', title: 'Grows towards the end' }] });
+  const shBody = h('div.curve-shudder__body', {},
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Back'), affix(shAmount, '%')),
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Shape'), shShape),
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Over move'), shOver));
+  const shWrap = h('div.curve-shudder', {}, h('div.cc-row', {}, h('span.cc-label', {}, 'Shudder'), h('span.cc-spacer'), shOn), shBody);
   const pop = h('div.cc-panel.curve-pop', { hidden: true },
     h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn),
     h('div.cc-row.curve-head', {}, title, nameEl),
-    cv, presets, h('div.curve-sep'), allBtn, help);
+    cv, presets, h('div.curve-sep'), shWrap, allBtn, help);
   root.append(pop);
 
   let live = null;    // bezier being dragged
@@ -1027,6 +1054,8 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     const surface = css('--cc-surface-solid');
     const font = (px) => `${px}px ${css('--cc-font') || 'sans-serif'}`;
     const b = tg ? (live || resolveEase(tg.ease)) : 'hold';
+    const sh = tg?.kind === 'segment' && b !== 'hold' ? liveSh || tg.key.shudder || null : null;
+    const prog = (u) => shudder(sh, bezier(b, u), u);
     fit(tg ? b : 'linear');
 
     // grid: quarter-time verticals through curve and strip, the 0 and 1 progress lines
@@ -1048,8 +1077,13 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     }
     ctx.setLineDash([]);
 
-    // curve
+    // curve, and with a shudder the path the camera really takes on top of it
     ctx.strokeStyle = text; ctx.lineWidth = 2; ctx.lineJoin = 'round'; curvePath(b); ctx.stroke(); ctx.lineWidth = 1;
+    if (sh) {
+      ctx.beginPath();
+      for (let i = 0; i <= 400; i++) { const u = i / 400; (i ? ctx.lineTo : ctx.moveTo).call(ctx, toX(u), toY(prog(u))); }
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1;
+    }
     ctx.fillStyle = text;
     for (const [x, y] of [[0, 0], [1, 1]]) { ctx.beginPath(); ctx.arc(toX(x), toY(y), 2.5, 0, Math.PI * 2); ctx.fill(); }
 
@@ -1057,9 +1091,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     ctx.fillStyle = faint; ctx.font = font(9); ctx.textAlign = 'right'; ctx.fillText('time →', R, ST + 8); ctx.textAlign = 'left';
     if (b === 'hold') { ctx.fillText('speed · holds, then cuts', L + 3, ST + 8); }
     else {
-      const N = 80, sp = [];
+      const N = sh ? 400 : 80, sp = [], d = 1e-3;
       let mx = 0, mn = 0;
-      for (let i = 0; i <= N; i++) { const s = bezierSpeed(b, i / N); sp.push(s); mx = Math.max(mx, s); mn = Math.min(mn, s); }
+      const speedAt = (u) => (sh ? (prog(Math.min(1, u + d)) - prog(Math.max(0, u - d))) / (Math.min(1, u + d) - Math.max(0, u - d)) : bezierSpeed(b, u));
+      for (let i = 0; i <= N; i++) { const s = speedAt(i / N); sp.push(s); mx = Math.max(mx, s); mn = Math.min(mn, s); }
       const top = Math.max(2, mx), sy = (s) => SB - ((s - mn) / (top - mn)) * (SB - ST - 10);
       ctx.beginPath(); ctx.moveTo(toX(0), sy(0));
       sp.forEach((s, i) => ctx.lineTo(toX(i / N), sy(s)));
@@ -1128,7 +1163,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     // while dragging: the bezier numbers; hovering a preset: its name; otherwise the current ease
     nameEl.classList.toggle('cc-mono', !!live);
     const pn = Array.isArray(preview) ? 'your custom' : preview;
-    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : pn && pn !== current ? pn : current;
+    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : pn && pn !== current ? pn : current + (tg?.kind === 'segment' && tg.key.shudder && !isCut(tg.key) ? ' + shudder' : '');
     nameEl.classList.toggle('is-preview', !live && !!pn && pn !== current);
   };
 
@@ -1197,6 +1232,14 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     allBtn.querySelector('.cc-btn__label').textContent = multi ? 'Apply to all shots' : 'Apply to all segments';
     allCount.textContent = allBtn.disabled ? 'all match' : `${segs.length} segment${segs.length === 1 ? '' : 's'}`;
     allBtn.title = allBtn.disabled ? 'Every segment already has this ease' : `Give all ${segs.length} camera segments${multi ? ` in all ${store.doc.shots.length} shots` : ''} this ease. Cuts stay cuts.`;
+    const seg = tg?.kind === 'segment' && !isCut(tg.key);
+    shWrap.hidden = !seg;
+    if (seg && !liveSh) { // not while a field is being scrubbed
+      const cur = tg.key.shudder;
+      shOn.set(!!cur); shBody.hidden = !cur;
+      const v = { ...SHUDDER_DEFAULT, ...cur };
+      shJerks.set(v.jerks); shAmount.set(v.amount); shShape.value = v.shape; shOver.value = v.over;
+    }
     help.textContent = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
       : 'Drag the orange handles. The strip shows how fast the camera moves.';

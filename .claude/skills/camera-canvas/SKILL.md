@@ -137,6 +137,11 @@ start framing (settings left out keep their values; name another move to switch 
 `canvas ls` shows a path as `→ orbit 90° around hero`. Chain moves by starting the next at the previous
 one's end time. Check with a storyboard.
 
+**Shudder / judder** (the camera jerks back and forth during a move): don't fake it with extra keys or
+ease points. `canvas key-set <id> --shudder 6,4` gives the segment after that key 6 jerks that each pull
+back 4% of the move, on top of its ease; `--shape jerk|wobble|stutter`, `--over even|fade|build`, and
+`--shudder off`. The keys still land exactly. `canvas ls` shows it as `shudder=6 jerks, 4% back, even`.
+
 ## 4a. Moving objects
 
 Objects can move during the shot. Each move adds keys on the shot timeline; between keys an object

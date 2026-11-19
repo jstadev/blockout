@@ -131,7 +131,8 @@ export function sampleCamera(timeline, t) {
   while (i < keys.length - 2 && tt >= keys[i + 1].t) i++;
   const a = keys[i], b = keys[i + 1];
   const span = Math.max(1e-6, b.t - a.t);
-  const s = bezier(resolveEase(a.ease), clamp((tt - a.t) / span, 0, 1));
+  const u = clamp((tt - a.t) / span, 0, 1);
+  const s = shudder(isCut(a) ? null : a.shudder, bezier(resolveEase(a.ease), u), u);
   const smooth = (timeline.interp ?? 'smooth') === 'smooth';
   // A hold key ends a shot: the camera stays there, then cuts to the next key. The smooth path must not
   // look across a cut, or each shot's move bends toward the other shot.
@@ -147,6 +148,31 @@ export function sampleCamera(timeline, t) {
     return catmull(p0, a[field], b[field], p3, s);
   };
   return { position: pick('position'), target: pick('target'), ...out };
+}
+
+// ----- shudder: exact jerks back and forth along a segment, on top of its ease -----
+export const SHUDDER_SHAPES = ['jerk', 'wobble', 'stutter'];
+export const SHUDDER_OVER = ['even', 'fade', 'build'];
+export const SHUDDER_DEFAULT = { jerks: 6, amount: 4, shape: 'jerk', over: 'even' };
+
+/**
+ * How far (as a share of the move, 0–1) the shudder pulls the camera back at time u (0–1) of the segment.
+ * sh = { jerks, amount (% of the move), shape, over }. Every shape is 0 at both ends, so keys still land.
+ *   jerk     snaps back fast (the first 12% of each beat), then eases forward again
+ *   wobble   a smooth back-and-forth
+ *   stutter  falls behind, then catches up in one snap (stop-start)
+ */
+export function shudderOffset(sh, u) {
+  if (!sh || !(sh.amount > 0) || !(sh.jerks >= 1)) return 0;
+  const x = u * sh.jerks, f = x - Math.floor(x);
+  const w = sh.shape === 'wobble' ? (1 - Math.cos(2 * Math.PI * f)) / 2 : sh.shape === 'stutter' ? f : f < 0.12 ? f / 0.12 : (1 - f) / 0.88;
+  const env = sh.over === 'fade' ? 1 - u : sh.over === 'build' ? u : 1;
+  return (sh.amount / 100) * env * w;
+}
+
+/** Progress s (from the ease) at time u, with the shudder on top. Never pulls back past the start key. */
+export function shudder(sh, s, u) {
+  return sh ? Math.max(Math.min(s, 0), s - shudderOffset(sh, u)) : s;
 }
 
 // ----- segment paths: how a move travels from key a to key b -----

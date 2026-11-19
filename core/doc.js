@@ -4,7 +4,7 @@
 // Conventions: meters, Y up, rotations in degrees (XYZ order), colors as "#rrggbb".
 // Every primitive's pivot is at its bottom centre, so position [x, 0, z] sits on the ground.
 
-import { resolveEase, EASES, sampleObject, sampleCamera, PATHS, lensToFov } from './curves.js';
+import { resolveEase, EASES, sampleObject, sampleCamera, PATHS, lensToFov, SHUDDER_SHAPES, SHUDDER_OVER, SHUDDER_DEFAULT } from './curves.js';
 
 export const PRIMITIVES = {
   box: { params: { w: 1, h: 1, d: 1 }, size: ['w', 'h', 'd'], about: 'cuboid, w × h × d' },
@@ -146,6 +146,7 @@ function normKey(k, prev = {}) {
   if (k.roll != null) out.roll = Number(k.roll);
   if (k.ease != null) { resolveEase(k.ease); out.ease = k.ease; }
   if (k.path !== undefined) { const p = normPath(k.path); if (p) out.path = p; else delete out.path; }
+  if (k.shudder !== undefined) { const sh = normShudder(k.shudder, prev.shudder); if (sh) out.shudder = sh; else delete out.shudder; }
   if (out.ease == null) out.ease = 'easeInOut';
   if (out.fov == null) out.fov = 40;
   if (out.roll == null) out.roll = 0;
@@ -182,6 +183,22 @@ function normPath(p) {
     out.params = moveParams(p.params || {});
   }
   return out;
+}
+// A key's shudder: exact jerks back and forth along the segment after it, on top of its ease (see
+// shudderOffset in core/curves.js). Partial settings change the key's current shudder (or the defaults);
+// null, false, "off" or amount 0 removes it.
+function normShudder(sh, prev) {
+  if (sh == null || sh === false || sh === 'off') return null;
+  if (sh === true || sh === 'on') sh = {};
+  if (typeof sh !== 'object' || Array.isArray(sh)) throw new Error('shudder must be { jerks, amount, shape, over } or "off"');
+  const out = { ...SHUDDER_DEFAULT, ...prev, ...Object.fromEntries(Object.entries(sh).filter(([, v]) => v != null)) };
+  const jerks = Math.round(+out.jerks), amount = +out.amount;
+  if (!(jerks >= 1 && jerks <= 60)) throw new Error('shudder.jerks must be a whole number from 1 to 60');
+  if (!(amount >= 0 && amount <= 50)) throw new Error('shudder.amount is how far each jerk pulls back, as a % of the move: 0 to 50');
+  if (!SHUDDER_SHAPES.includes(out.shape)) throw new Error(`shudder.shape must be one of ${SHUDDER_SHAPES.join(', ')}`);
+  if (!SHUDDER_OVER.includes(out.over)) throw new Error(`shudder.over must be one of ${SHUDDER_OVER.join(', ')}`);
+  if (amount === 0) return null;
+  return { jerks, amount: round(amount), shape: out.shape, over: out.over };
 }
 const MOVE_PARAMS = ['angle', 'by', 'lens', 'fov', 'rise'];
 function moveParams(src) {
@@ -430,6 +447,7 @@ export const OPS = {
     if (existing) {
       const next = normKey({ ...op, t }, existing);
       if (!next.path) delete existing.path;
+      if (!next.shudder) delete existing.shudder;
       Object.assign(existing, next);
       sortKeys(doc);
       return { id: existing.id, replaced: true };
@@ -447,6 +465,7 @@ export const OPS = {
     const { id, index, ...rest } = op;
     const next = normKey(rest, k);
     if (!next.path) delete k.path; // path: "smooth" clears it
+    if (!next.shudder) delete k.shudder; // shudder: "off" clears it
     Object.assign(k, next);
     if (k.t > doc.timeline.duration) doc.timeline.duration = k.t;
     sortKeys(doc);
