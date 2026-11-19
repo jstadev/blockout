@@ -806,9 +806,17 @@ try {
   await page.evaluate(() => window.canvas.store.set({ selection: 'chip' }));
   await page.waitForTimeout(150);
   ok(await page.evaluate(() => !!document.querySelector('.sel-box .tl-objkey:not([hidden])')), 'the object chip carries its Key button');
-  await page.click('.tl-shot');
-  ok(await page.evaluate(() => !document.querySelector('.shot-switch').hidden), 'Loop sits in the shot popover');
-  await page.keyboard.press('Escape');
+  await page.hover('.tl-bar > .cc-btn:first-child');
+  await page.waitForTimeout(100);
+  ok(await page.evaluate(() => !document.querySelector('.tl-playmenu').hidden), 'hovering Play shows Loop and Play all');
+  const loop0 = await page.evaluate(() => window.canvas.store.state.loop);
+  await page.hover('.tl-playmenu .tl-playrow-label');
+  await page.click('.tl-playmenu .tl-playrow-label');
+  ok(await page.evaluate((l) => window.canvas.store.state.loop === !l, loop0), 'the menu stays open on the way there and toggles Loop');
+  await page.click('.tl-playmenu .tl-playrow-label');
+  await page.mouse.move(700, 300);
+  await page.waitForTimeout(400);
+  ok(await page.evaluate(() => document.querySelector('.tl-playmenu').hidden), 'it closes when the pointer leaves');
   cli('rm', 'chip');
   ok(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

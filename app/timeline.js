@@ -126,7 +126,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     const w = keyCard.offsetWidth;
     const left = Math.max(12, Math.min(innerWidth - w - 12, x - w / 2));
     keyCard.style.left = `${left}px`;
-    keyCard.style.setProperty('--notch', `${Math.max(10, Math.min(w - 10, x - left))}px`);
+    const kh = `${keyCard.offsetHeight}px`;
+    if (document.body.style.getPropertyValue('--keycard-h') !== kh) document.body.style.setProperty('--keycard-h', kh);
   }
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
@@ -947,13 +948,25 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   // ---------- curve editor + shot settings ----------
   const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => easeBtn });
-  // Loop and Play all live in the shot popover
+  // Loop and Play all: a small menu that opens while the pointer is over Play (and stays while it is over the menu)
   const loopSw = onOff({ value: store.state.loop, title: 'Loop playback', onChange: (v) => store.set({ loop: v }) });
   const playAllSw = onOff({ value: !!store.state.playAll, title: 'Play all: playback runs on through the cuts into the next shot', onChange: (v) => store.set({ playAll: v }) });
-  const swRow = (label, sw) => h('div.cc-row.shot-switch', {}, h('span.cc-label', {}, label), sw);
-  const playAllRow = swRow('Play all', playAllSw);
-  const playbackRows = [swRow('Loop', loopSw), playAllRow];
-  const shot = mountShotSettings(root, { anchor: shotBtn, keys, extra: playbackRows, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
+  const swRow = (label, sw) => h('div.cc-row.tl-playrow', {}, sw, h('span.tl-playrow-label', { onClick: () => sw.click() }, label));
+  const playAllRow = swRow('Play all shots', playAllSw);
+  const playMenu = h('div.cc-panel.tl-playmenu', { hidden: true }, swRow('Loop', loopSw), playAllRow);
+  document.body.append(playMenu);
+  let playMenuTimer = 0;
+  const showPlayMenu = (on) => {
+    clearTimeout(playMenuTimer);
+    if (!on) { playMenuTimer = setTimeout(() => { playMenu.hidden = true; }, 220); return; }
+    playMenu.style.left = `${Math.max(12, playBtn.getBoundingClientRect().left - 4)}px`;
+    playMenu.hidden = false;
+  };
+  for (const el of [playBtn, playMenu]) {
+    el.addEventListener('pointerenter', () => showPlayMenu(true));
+    el.addEventListener('pointerleave', () => showPlayMenu(false));
+  }
+  const shot = mountShotSettings(root, { anchor: shotBtn, keys, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
   const moves = mountMoves({ anchor: keyCaret, viewport });
 
 
@@ -1322,7 +1335,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
 
 
 /** Popover from the "5.00 s · 24 fps" chip: duration (with retime), frame rate (any value, presets), export size, shot speed. */
-function mountShotSettings(root, { anchor, keys, openSpeed, extra = [] }) {
+function mountShotSettings(root, { anchor, keys, openSpeed }) {
   let retime = true;
   try { retime = localStorage.getItem(RETIME_KEY) !== '0'; } catch {}
   const tlOp = (patch, label) => store.op({ op: 'timeline', ...patch }, label).catch(() => {});
@@ -1350,7 +1363,6 @@ function mountShotSettings(root, { anchor, keys, openSpeed, extra = [] }) {
     rowEl('Frame rate', affix(fpsNum, 'fps')),
     rowEl('Size', sizeSel),
     rowEl('Playback', speedBtn),
-    ...extra,
     h('div.cc-divider.cc-divider--h'),
     foot,
   );

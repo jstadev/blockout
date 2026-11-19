@@ -122,7 +122,7 @@ sideways to change where it picks up the action, drag it up or down to reorder, 
 Delete (or right-click it) to remove it. Shift or Cmd/Ctrl-click bars to pick several (or Shift or Cmd/Ctrl-drag a
 box on an empty part of the lanes); drag any picked bar sideways to move them all in time, or press Delete to
 remove them. Esc lets go. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
-top to bottom in sequence order, and **Play all** (in the shot popover, the "5.00 s · 24 fps" chip, next to Loop) plays on through the cuts. The set,
+top to bottom in sequence order, and **Play all** (hover the Play button; Loop is there too) plays on through the cuts. The set,
 the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
 length, fps and audio.
 Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.
