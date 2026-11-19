@@ -50,6 +50,9 @@ export class Viewport {
 
     this.layout();
     addEventListener('resize', () => this.layout());
+    // the timeline grows and shrinks with its shots and the audio lane: keep the shot frame clear of it
+    const tlEl = document.getElementById('timeline');
+    if (tlEl && typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.layout()).observe(tlEl);
     this._lastView = store.state.view;
     store.on('state', (c) => {
       if (c.view) this._applyView();
