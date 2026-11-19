@@ -209,9 +209,12 @@ export function mountTimeline(root, { viewport, exporter }) {
   // the last shot so there is room to see (and draw) where a new one would go.
   // Layout (px): the ruler band, a header column (GUT) with the shots' names, hairline-separated lanes, the
   // new-shot row and a lane for the selected object's keys at the bottom.
-  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, NEW_H = 22, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56;
-  let L = null; // { T, end, start, rows: [{ s, top, h }], active, add: { top, h }, height }
+  // The track grows with the shots up to MAX_ROWS of them (and the new-shot row); past that the lanes scroll
+  // under the ruler (wheel or trackpad), so the ruler, the object lane and the audio lane below stay put.
+  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, NEW_H = 22, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56, MAX_ROWS = 6;
+  let L = null; // { T, end, start, rows: [{ s, top, h }], active, add: { top, h }, list: { top, bottom, max }, height }
   let hoverNew = false; // the pointer is over the new-shot row: preview the shot a click would add
+  let scroll = 0, scrolledTo = null; // how far the lanes are scrolled (px); the active shot it last brought into view
   function relayout() {
     const doc = store.doc;
     if (!doc) { L = null; return; }
@@ -220,12 +223,24 @@ export function mountTimeline(root, { viewport, exporter }) {
     for (const x of shots) end = Math.max(end, (x.timeline.start || 0) + x.timeline.duration);
     for (const o of doc.objects) if (o.anim?.length) end = Math.max(end, o.anim[o.anim.length - 1].t);
     const T = Math.max(1, end + Math.max(1, end * 0.25)); // headroom for the next shot
-    let y = RULER;
-    const rows = shots.map((x) => { const r = { s: x, top: y, h: x.active ? ACTIVE_H : ROW_H }; y += r.h + GAP; return r; });
-    const add = { top: y, h: NEW_H }; y += NEW_H;
-    L = { T, end, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), add, height: y + LANE };
+    const hs = shots.map((x) => (x.active ? ACTIVE_H : ROW_H) + GAP);
+    const content = hs.reduce((a, b) => a + b, 0) + NEW_H;
+    const view = Math.min(content, ACTIVE_H + (MAX_ROWS - 1) * ROW_H + MAX_ROWS * GAP + NEW_H), max = content - view;
+    const ai = shots.findIndex((x) => x.active);
+    if (doc.shot !== scrolledTo && ai >= 0) { // another shot became active: bring it into view
+      scrolledTo = doc.shot;
+      const off = hs.slice(0, ai).reduce((a, b) => a + b, 0);
+      const need = hs[ai] + (ai === shots.length - 1 ? NEW_H : 0); // the last shot brings the new-shot row with it
+      if (off < scroll) scroll = off; else if (off + need > scroll + view) scroll = off + need - view;
+    }
+    scroll = Math.max(0, Math.min(max, scroll));
+    let y = RULER - scroll;
+    const rows = shots.map((x, i) => { const r = { s: x, top: y, h: hs[i] - GAP }; y += hs[i]; return r; });
+    const add = { top: y, h: NEW_H };
+    L = { T, end, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), add, list: { top: RULER, bottom: RULER + view, max }, height: RULER + view + LANE };
   }
-  const inNewRow = (y) => !!L && y >= L.add.top && y < L.add.top + L.add.h;
+  const inList = (y) => !L || (y >= L.list.top && y < L.list.bottom); // the scrolling lanes, not the ruler or the object lane
+  const inNewRow = (y) => !!L && inList(y) && y >= L.add.top && y < L.add.top + L.add.h;
   /** New shot: snap action time `a` to 0, the playhead, or a shot's start or end within a few px; else a frame. */
   function snapAction(a, e) {
     const marks = [0, L.start + store.state.time];
@@ -247,7 +262,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // a shot's bar handle: anywhere on another shot's bar, or the name strip along the top of the active one
   // (its top strip keeps the rest free for keys), or its name in the header column
   const onHandle = (r, x, y) => !!r && y < r.top + r.h && (inGutter(x) || (covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 12)));
-  const rowAt = (y) => (L ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
+  const rowAt = (y) => (L && inList(y) ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
   /** A shot bar's left or right end, to drag for retiming. Another shot's bar: either side of its end. The
    *  active one: just outside its ends (the first and last keys sit right on them), or anywhere along the
    *  end above or below the keys. */
@@ -267,7 +282,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (drag?.kind !== 'edge' || !drag.moved || drag.s.id !== s.id) return null;
     return drag.trim ? drag.st0 + t : drag.st + t * (drag.dur / drag.dur0);
   };
-  const inActive = (y) => !L || (y >= L.active.top && y < L.active.top + L.active.h);
+  const inActive = (y) => !L || (inList(y) && y >= L.active.top && y < L.active.top + L.active.h);
   const snap = (t, e) => (e?.shiftKey ? t : Math.round(t * fps()) / fps());
   const keys = () => [...store.doc.timeline.keys].sort((a, b) => a.t - b.t);
   // While keys are dragged, they (and the other halves of their cuts) are drawn shifted by the drag.
@@ -344,7 +359,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       return;
     }
     // Shift or Cmd/Ctrl-drag on an empty part of the lanes: box-select shots
-    if (!ok && !k && L && e.button === 0 && (e.shiftKey || e.metaKey || e.ctrlKey) && e.offsetY > RULER && e.offsetY < L.add.top && !inGutter(x)) {
+    if (!ok && !k && L && e.button === 0 && (e.shiftKey || e.metaKey || e.ctrlKey) && inList(e.offsetY) && e.offsetY < L.add.top && !inGutter(x)) {
       drag = { kind: 'box', x0: x, y0: e.offsetY, x1: x, y1: e.offsetY, base: new Set(picked), moved: false };
       store.set({ playing: false });
       return;
@@ -385,6 +400,14 @@ export function mountTimeline(root, { viewport, exporter }) {
       scrubTo(x, e);
     }
   });
+  // more shots than fit: the wheel (or a two-finger swipe) scrolls the lanes; Ctrl/Cmd+wheel is left alone
+  track.addEventListener('wheel', (e) => {
+    if (!L || L.list.max <= 0 || e.ctrlKey || e.metaKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    const s0 = scroll;
+    scroll = Math.max(0, Math.min(L.list.max, scroll + e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? L.list.bottom - L.list.top : 1)));
+    if (scroll !== s0) draw();
+  }, { passive: false });
   track.addEventListener('pointermove', (e) => {
     if (!drag) {
       const r = rowAt(e.offsetY), hn = inNewRow(e.offsetY);
@@ -419,7 +442,9 @@ export function mountTimeline(root, { viewport, exporter }) {
       if (!drag.moved) drag.axis = drag.gut || Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
       drag.moved = true;
       track.style.cursor = drag.axis === 'y' ? 'ns-resize' : 'grabbing';
-      if (drag.axis === 'y') { // reorder: the lane under the pointer
+      if (drag.axis === 'y') { // reorder: the lane under the pointer (near the ends of a scrolled list, scroll it)
+        if (L.list.max > 0) scroll += e.offsetY < L.list.top + 10 ? -ROW_H / 2 : e.offsetY > L.list.bottom - 10 ? ROW_H / 2 : 0;
+        relayout();
         const ys = L.rows.map((r) => r.top + r.h / 2);
         let to = 0; for (let i = 0; i < ys.length; i++) if (Math.abs(e.offsetY - ys[i]) < Math.abs(e.offsetY - ys[to])) to = i;
         drag.to = to;
@@ -616,19 +641,22 @@ export function mountTimeline(root, { viewport, exporter }) {
     const soft = css('--cc-accent-soft'), font = css('--cc-font'), mono = css('--cc-mono');
     const reorder = drag?.kind === 'shot' && drag.axis === 'y';
     // structure: the active lane's header cell, lane hairlines, the header column's edge
-    const act = L.active;
-    ctx.fillStyle = text; ctx.globalAlpha = 0.05; ctx.fillRect(0, act.top + 1, GUT, act.h - 1); ctx.globalAlpha = 1;
-    ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
+    const act = L.active, { top: lt, bottom: lb } = L.list;
     ctx.fillStyle = line;
-    for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
-    ctx.fillRect(0, L.add.top + L.add.h, W, 1);
     ctx.fillRect(GUT, 0, 1, H0);
+    ctx.fillRect(0, lb, W, 1); // the lanes end here, scrolled or not
     drawRuler(W, L.T, xAction, 0, { dim, line });
     // faint gridlines carry the ruler's ticks down through the lanes
     const step = (xAction(L.T) - xAction(0)) / L.T > 40 ? 1 : 5;
     ctx.fillStyle = line; ctx.globalAlpha = 0.6;
     for (let a = 0; a <= L.T + 1e-6; a += step) ctx.fillRect(Math.round(xAction(a)), RULER + 1, 1, H0 - RULER - 1);
     ctx.globalAlpha = 1;
+    // the lanes, clipped to their (scrolling) window under the ruler
+    ctx.save(); ctx.beginPath(); ctx.rect(0, lt + 1, W, lb - lt - 1); ctx.clip();
+    ctx.fillStyle = text; ctx.globalAlpha = 0.05; ctx.fillRect(0, act.top + 1, GUT, act.h - 1); ctx.globalAlpha = 1;
+    ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
+    ctx.fillStyle = line;
+    for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
     ctx.textBaseline = 'middle';
     for (const [i, r] of L.rows.entries()) {
       const tl = r.s.timeline, my = r.top + r.h / 2 + 1;
@@ -663,13 +691,6 @@ export function mountTimeline(root, { viewport, exporter }) {
       }
     }
     drawNewRow(W, { text, dim, line, accent, font, mono });
-    // the selected object's key lane is named after it
-    const so = selObj();
-    if (so?.anim?.length) {
-      ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
-      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
-      ctx.restore();
-    }
     // box select
     if (drag?.kind === 'box' && drag.moved) {
       const bx = Math.max(GUT, Math.min(drag.x0, drag.x1)), by = Math.max(RULER, Math.min(drag.y0, drag.y1));
@@ -681,6 +702,20 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (reorder && drag.to !== drag.from) {
       const r = L.rows[drag.to];
       ctx.fillStyle = accent; ctx.fillRect(0, (drag.to < drag.from ? r.top : r.top + r.h) - 0.5, W, 2);
+    }
+    ctx.restore();
+    // more shots than fit: a scrollbar along the right edge of the lanes
+    if (L.list.max > 0) {
+      const vh = lb - lt, th = Math.max(16, (vh * vh) / (vh + L.list.max)), ty = lt + (scroll / L.list.max) * (vh - th);
+      ctx.fillStyle = text; ctx.globalAlpha = 0.22;
+      ctx.beginPath(); ctx.roundRect(W - 5, ty + 2, 3, th - 4, 1.5); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    // the selected object's key lane is named after it
+    const so = selObj();
+    if (so?.anim?.length) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
+      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
+      ctx.restore();
     }
     ctx.textBaseline = 'top';
     ctx.font = `10px ${mono}`;
@@ -734,7 +769,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
     const ks = liveKeys();
     const cuts = cutsOf(ks), xs = keyXs(ks);
-    if (L) { ctx.save(); ctx.translate(0, L.active.top); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); }
+    if (L) { ctx.save(); ctx.beginPath(); ctx.rect(0, L.list.top + 1, W, L.list.bottom - L.list.top - 1); ctx.clip(); ctx.translate(0, L.active.top); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); }
 
     // ruler (one shot: in shot time; several: the stack's action-time ruler is drawn above)
     if (!L) drawRuler(W, D, xOf, F, { dim, line }, cuts);
