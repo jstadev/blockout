@@ -29,12 +29,42 @@ const gizmoSeg = segmented({
   ],
   value: store.state.gizmo, onChange: (v) => store.set({ gizmo: v }),
 });
-const selBox = h('div.cc-panel.sel-box', {}, selName, gizmoSeg,
-  button({ icon: 'frame', kind: 'ghost', title: 'Frame selection (F)', onClick: () => viewport.frame(store.state.selection) }),
-  button({ icon: 'copy', kind: 'ghost', title: 'Duplicate (Shift+D)', onClick: () => duplicate() }),
-  button({ icon: 'trash', kind: 'ghost', title: 'Delete (Backspace)', onClick: () => removeSelected() }),
-);
-$('hud').append(selBox);
+const selActions = [
+  button({ icon: 'frame', label: 'Frame', kind: 'ghost', title: 'Frame selection (F)', onClick: () => viewport.frame(store.state.selection) }),
+  button({ icon: 'copy', label: 'Duplicate', kind: 'ghost', title: 'Duplicate (Shift+D)', onClick: () => duplicate() }),
+  button({ icon: 'trash', label: 'Delete', kind: 'ghost', title: 'Delete (Backspace)', onClick: () => removeSelected() }),
+];
+selActions.forEach((b, i) => b.append(h('span.sel-menu-key', {}, ['F', '⇧D', '⌫'][i])));
+// toolbar layout A: the object's Key button sits in this chip and the actions go into a ⋯ menu
+const selMenu = h('div.cc-panel.sel-menu', { hidden: true });
+const selMoreBtn = button({ icon: 'more', kind: 'ghost', title: 'Frame, duplicate, delete', onClick: () => toggleSelMenu() });
+selMoreBtn.classList.add('sel-more');
+function toggleSelMenu(on = selMenu.hidden) { selMenu.hidden = !on; selMoreBtn.classList.toggle('is-open', on); }
+selMenu.addEventListener('click', (e) => { if (e.target.closest('button')) toggleSelMenu(false); });
+addEventListener('pointerdown', (e) => { if (!selMenu.hidden && !selMenu.contains(e.target) && !selMoreBtn.contains(e.target)) toggleSelMenu(false); }, true);
+const selBox = h('div.cc-panel.sel-box', {}, selName, gizmoSeg, ...selActions);
+$('hud').append(selBox, selMenu);
+function placeSelActions(layout) {
+  toggleSelMenu(false);
+  if (layout === 'a') {
+    gizmoSeg.after(timeline.objKeyBtn);
+    selMenu.append(...selActions);
+    selBox.append(selMoreBtn);
+  } else {
+    selMoreBtn.remove();
+    selBox.append(...selActions);
+  }
+}
+store.on('barLayout', placeSelActions);
+placeSelActions(store.state.bar);
+
+// ---------- toolbar layout switch (while trying the layouts out) ----------
+const barSeg = segmented({
+  options: [{ value: 'now', label: 'Now', title: 'Today\'s toolbar' }, { value: 'a', label: 'A', title: 'A: camera bar; key settings open on the key' }, { value: 'b', label: 'B', title: 'B: the middle of the bar swaps with what you pick' }],
+  value: store.state.bar, onChange: (v) => store.set({ bar: v }),
+});
+const barSwitch = h('div.bar-switch', { title: 'Try the toolbar layouts' }, h('span.cc-label', {}, 'Toolbar'), barSeg);
+store.on('state', (c) => { if (c.bar) barSeg.value = store.state.bar; });
 function refreshSel() {
   const o = store.state.selection && store.object(store.state.selection);
   selBox.hidden = !o;
@@ -60,7 +90,7 @@ const helpBtn = button({ icon: 'keyboard', kind: 'ghost', title: 'Shortcuts (?)'
 const saves = mountSaves($('corner'), { viewport });
 document.body.append(helpPanel);
 // top-right menu, one pill: Scenes · | · Shortcuts · Chat toggle
-$('corner').append(saves.btn, h('span.cc-divider'), helpBtn, prompt.toggleBtn);
+$('corner').append(barSwitch, h('span.cc-divider'), saves.btn, h('span.cc-divider'), helpBtn, prompt.toggleBtn);
 
 // ---------- controls dock (right) ----------
 const ctxFor = (c) => ({

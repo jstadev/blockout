@@ -308,3 +308,39 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .moves-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .moves-at { margin-left: 6px; color: var(--cc-text-faint); font-weight: 400; text-transform: none; }
 .moves-pop .cc-panel__head .moves-new { height: 20px; padding: 0 7px; font-size: var(--cc-size-sm); text-transform: none; letter-spacing: 0; }
+
+/* ---------- toolbar layouts on trial (Now / A / B), switched from the chip at the top ---------- */
+.bar-switch { display: flex; align-items: center; gap: 6px; padding-left: 6px; }
+/* A: Key and its caret read as one split button */
+body.bar-a .tl-bar > .tl-keybtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-bar > .tl-keycaret { margin-left: -3px; width: 18px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: transparent; }
+.tl-bar > .tl-keycaret svg { width: 10px; height: 10px; }
+.tl-keycaret.is-open, .tl-lenschip.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
+.tl-lenschip { gap: 5px; }
+.tl-lenschip > svg { color: var(--cc-text-dim); }
+.tl-lens-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
+.tl-lens-pop[hidden] { display: none; }
+.tl-lens-pop .tl-lens-label { width: 34px; }
+.tl-lens-pop .cc-affix { width: 72px; }
+.tl-lens-hint { color: var(--cc-text-faint); font-size: var(--cc-size-sm); white-space: nowrap; }
+body.has-audio .tl-lens-pop { bottom: calc(156px + var(--stack-h, 0px)); }
+/* A: the selected key's settings in a card above the timeline, pointing at the key */
+.tl-keycard { position: fixed; bottom: calc(118px + var(--stack-h, 0px)); z-index: 24; padding: 3px; border-radius: 9px; }
+.tl-keycard[hidden] { display: none; }
+body.has-audio .tl-keycard { bottom: calc(150px + var(--stack-h, 0px)); }
+.tl-keycard::after { content: ''; position: absolute; left: var(--notch, 50%); bottom: -5px; width: 9px; height: 9px; margin-left: -5px; transform: rotate(45deg); background: var(--cc-surface-solid); box-shadow: 1px 1px 0 var(--cc-line); }
+.tl-keycard .tl-key { margin-left: 0; background: transparent; }
+.tl-keycard .tl-key > * { flex-shrink: 0; }
+body.has-keycard :is(.curve-pop, .moves-pop, .tl-lens-pop) { translate: 0 -38px; }
+/* the shot popover's Loop and Play all switches (A and B) */
+.shot-switch { min-height: 22px; }
+.shot-switch[hidden] { display: none; }
+/* A: the object chip carries Key; Frame, Duplicate and Delete go into its ⋯ menu */
+.sel-box .tl-objkey { margin-left: 2px; }
+.sel-box .cc-btn__label, .sel-box .sel-menu-key { display: none; }
+.sel-menu { position: fixed; top: 48px; left: 12px; padding: 4px; display: flex; flex-direction: column; gap: 2px; min-width: 160px; z-index: 25; }
+.sel-menu[hidden] { display: none; }
+.sel-menu > .cc-btn { justify-content: flex-start; gap: 8px; width: 100%; height: 28px; padding: 0 8px; }
+.sel-menu > .cc-btn:hover { background: var(--cc-surface-sunk); }
+.sel-menu-key { margin-left: auto; color: var(--cc-text-faint); font-family: var(--cc-mono); font-size: var(--cc-size-sm); }
+.sel-more.is-open { background: var(--cc-surface-sunk); }
