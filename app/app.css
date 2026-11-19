@@ -248,6 +248,7 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .audio-pop .cc-row > .cc-slider { flex: 1; }
 .audio-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--cc-text); }
 .audio-actions { gap: 4px; }
+.audio-pop .cc-row > .audio-bpm { width: auto; margin-left: auto; }
 
 .curve-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); left: 12px; width: 292px; padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
 .curve-pop[hidden] { display: none; }

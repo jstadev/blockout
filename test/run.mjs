@@ -310,6 +310,12 @@ test('audio op: load, offset, volume, fit, replace, clear', () => {
   assert.equal(doc.audio.in, undefined); assert.equal(doc.audio.out, undefined);
   assert.equal(doc.audio.volume, 0.5);
   assert.equal(migrate(doc).audio.file, 'other.wav');
+  ({ doc } = applyOps(doc, { op: 'audio', beats: true }));
+  assert.equal(doc.audio.beats, true, 'beats shown');
+  ({ doc } = applyOps(doc, { op: 'audio', file: 'third.wav' }));
+  assert.equal(doc.audio.beats, true, 'showing beats survives replacing the file');
+  ({ doc } = applyOps(doc, { op: 'audio', beats: false }));
+  assert.equal('beats' in doc.audio, false, 'hiding beats leaves no field');
   ({ doc } = applyOps(doc, { op: 'audio', clear: true }));
   assert.equal(doc.audio, undefined);
 });

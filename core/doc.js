@@ -623,6 +623,7 @@ export const OPS = {
    * the timeline). offset: the action time where the file's first sample sits (negative skips into the file).
    * in / out: trim, in seconds of the file: only that part is heard (null = from the start / to the end).
    * length: the file's duration, filled in by the browser once decoded.
+   * beats: show the beat grid on the audio lane (a view setting kept with the scene).
    * fit: make the active shot end where the audio ends. clear: remove the track.
    */
   audio(doc, op) {
@@ -639,6 +640,7 @@ export const OPS = {
     if (op.offset != null) { if (!Number.isFinite(op.offset) || Math.abs(op.offset) > 3600) throw new Error('audio.offset must be seconds (−3600…3600)'); a.offset = round(op.offset); }
     if (op.volume != null) { if (!(op.volume >= 0 && op.volume <= 4)) throw new Error('audio.volume must be 0–4 (1 = as recorded)'); a.volume = round(op.volume); }
     if (op.muted != null) a.muted = !!op.muted;
+    if (op.beats != null) { if (op.beats) a.beats = true; else delete a.beats; }
     if (op.length != null) { if (!(op.length > 0)) throw new Error('audio.length must be > 0 seconds'); a.length = round(op.length); }
     for (const k of ['in', 'out']) {
       if (op[k] === undefined) continue;

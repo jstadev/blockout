@@ -10,7 +10,7 @@ const RATE = 48000;      // decode and mix at this sample rate
 const PEAK_RATE = 200;   // waveform buckets per second of audio
 
 let ctx = null;          // realtime AudioContext, made on first play (browsers want a user gesture)
-let cur = { file: null, buffer: null, peaks: null, loading: null, error: null };
+let cur = { file: null, buffer: null, peaks: null, loading: null, error: null, grid: null };
 let voice = null;        // what is playing: { src, gain, at (ctx time), t (timeline time at `at`) }
 const listeners = new Set();
 const changed = () => listeners.forEach((fn) => fn());
@@ -43,15 +43,63 @@ function computePeaks(buf) {
   return peaks;
 }
 
+/** Onset envelope: positive change in log energy per hop of 512 samples, all channels mixed. */
+function onsetEnvelope(buf) {
+  const hop = 512, fr = buf.sampleRate / hop, n = Math.floor(buf.length / hop);
+  const env = new Float32Array(n);
+  const chans = [...Array(buf.numberOfChannels)].map((_, c) => buf.getChannelData(c));
+  let prev = 0;
+  for (let i = 0; i < n; i++) {
+    let e = 0;
+    for (const d of chans) for (let j = i * hop, k = j + hop; j < k; j++) e += d[j] * d[j];
+    const l = Math.log1p(1000 * e / hop);
+    env[i] = Math.max(0, l - prev); prev = l;
+  }
+  let mean = 0; for (const v of env) mean += v; mean /= n || 1;
+  let sd = 0; for (const v of env) sd += (v - mean) ** 2; sd = Math.sqrt(sd / (n || 1));
+  return { env, fr, n, mean, sd };
+}
+
+/**
+ * The file's beat grid, in seconds of the file: tempo from the envelope's autocorrelation (70–180 bpm,
+ * leaning toward ~120), the period refined to a fraction of a frame so long tracks don't drift, the phase
+ * that lands on the most onset energy, and which beat in four starts a bar. One steady tempo per file.
+ */
+function beatGrid(buf, E = onsetEnvelope(buf)) {
+  const { env, fr, n } = E;
+  let best = 0, bestLag = 0;
+  for (let lag = Math.round(fr * 60 / 180); lag <= Math.round(fr * 60 / 70); lag++) {
+    let s = 0; for (let i = lag; i < n; i++) s += env[i] * env[i - lag];
+    const bpm = 60 * fr / lag, w = Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2);
+    if (s * w > best) { best = s * w; bestLag = lag; }
+  }
+  if (!bestLag || !(best > 0)) return null;
+  // a little slack either side of each onset, so the refined grid isn't thrown by a frame of jitter
+  const sm = new Float32Array(n);
+  for (let i = 0; i < n; i++) sm[i] = Math.max(env[i], 0.5 * (env[i - 1] || 0), 0.5 * (env[i + 1] || 0));
+  const fit = (P) => { // best phase for period P (frames): [score, phase]
+    let bs = -1, bp = 0;
+    for (let p = 0; p < P; p += 0.5) { let s = 0; for (let x = p; x < n; x += P) s += sm[Math.round(x)] || 0; if (s > bs) { bs = s; bp = p; } }
+    return [bs, bp];
+  };
+  let period = bestLag, [score, phase] = fit(bestLag);
+  for (let P = bestLag - 1; P <= bestLag + 1 + 1e-9; P += 0.02) { const [s, p] = fit(P); if (s > score) { score = s; period = P; phase = p; } }
+  const times = [];
+  for (let x = phase; x < n; x += period) times.push(x / fr);
+  let bar = 0, bs = -1; // which beat (mod 4) starts a bar: the one with the most energy on it
+  for (let b = 0; b < 4; b++) { let s = 0; for (let k = b; k < times.length; k += 4) s += sm[Math.round(times[k] * fr)] || 0; if (s > bs) { bs = s; bar = b; } }
+  return { tempo: Math.round(600 * fr / period) / 10, beat: period / fr, times, bar };
+}
+
 async function load(a) {
   if (!a) {
-    if (cur.file) { cur = { file: null, buffer: null, peaks: null, loading: null, error: null }; stopVoice(); changed(); }
+    if (cur.file) { cur = { file: null, buffer: null, peaks: null, loading: null, error: null, grid: null }; stopVoice(); changed(); }
     return null;
   }
   if (cur.file === a.file) return cur.loading;
   stopVoice();
   const file = a.file;
-  cur = { file, buffer: null, peaks: null, loading: null, error: null };
+  cur = { file, buffer: null, peaks: null, loading: null, error: null, grid: null };
   cur.loading = (async () => {
     try {
       const res = await fetch(`/audio/${encodeURIComponent(file)}`);
@@ -107,9 +155,28 @@ export const audio = {
   get peaks() { return cur.peaks; },
   get loading() { return !!cur.file && !cur.buffer && !cur.error; },
   get error() { return cur.error; },
+  /** True once the beat grid is found, false if the file has no steady beat, null before it is worked out. */
+  get gridFound() { return cur.grid === false ? false : cur.grid ? true : null; },
   PEAK_RATE, RATE,
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   load: () => load(track()),
+
+  /**
+   * The file's beat grid ({ tempo, beat, times: seconds into the file, bar: which beat in 4 starts a bar }),
+   * or null while it is decoding or if no steady beat was found. Worked out once per file, after a frame,
+   * so turning beats on doesn't stall the draw that asked; listeners hear when it is ready.
+   */
+  grid() {
+    if (!cur.buffer) return null;
+    if (cur.grid === null && !cur.gridPending) {
+      const file = cur.file;
+      cur.gridPending = setTimeout(() => {
+        if (cur.file !== file) return;
+        cur.grid = beatGrid(cur.buffer) || false; cur.gridPending = null; changed();
+      }, 0);
+    }
+    return cur.grid || null;
+  },
   play, stop: stopVoice,
 
   /** Timeline time from the audio clock while it plays (so picture and sound stay locked), else null. */
@@ -167,38 +234,15 @@ export const audio = {
     if (!a) throw new Error('no audio on the timeline');
     await load(a);
     if (!cur.buffer) throw new Error(cur.error || 'the audio could not be decoded');
-    const buf = cur.buffer, sr = buf.sampleRate, hop = 512, fr = sr / hop;
-    const n = Math.floor(buf.length / hop);
-    const env = new Float32Array(n);
-    const chans = [...Array(buf.numberOfChannels)].map((_, c) => buf.getChannelData(c));
-    let prev = 0;
-    for (let i = 0; i < n; i++) {
-      let e = 0;
-      for (const d of chans) for (let j = i * hop, k = j + hop; j < k; j++) e += d[j] * d[j];
-      const l = Math.log1p(1000 * e / hop);
-      env[i] = Math.max(0, l - prev); prev = l;
-    }
-    let mean = 0; for (const v of env) mean += v; mean /= n || 1;
-    let sd = 0; for (const v of env) sd += (v - mean) ** 2; sd = Math.sqrt(sd / (n || 1));
-    // tempo
-    let best = 0, bestLag = 0;
-    for (let lag = Math.round(fr * 60 / 180); lag <= Math.round(fr * 60 / 70); lag++) {
-      let s = 0; for (let i = lag; i < n; i++) s += env[i] * env[i - lag];
-      const bpm = 60 * fr / lag, w = Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2); // lean toward ~120
-      if (s * w > best) { best = s * w; bestLag = lag; }
-    }
+    const buf = cur.buffer, E = onsetEnvelope(buf), { env, fr, n, mean, sd } = E;
+    if (cur.grid == null) cur.grid = beatGrid(buf, E) || false;
+    const g = cur.grid || null;
     const st = shotStart(), { inT, outT } = trimOf(a, buf.duration);
     const toT = (i) => Math.round((i / fr + a.offset - st) * 1000) / 1000;
     const D = store.doc.timeline.duration;
     const inShot = (t) => t >= 0 && t <= D + 1e-6 && t + st - a.offset >= inT - 1e-6 && t + st - a.offset <= outT + 1e-6;
-    let beats = [], tempo = null, beat = null;
-    if (bestLag && best > 0) {
-      let phase = 0, ps = -1;
-      for (let p = 0; p < bestLag; p++) { let s = 0; for (let i = p; i < n; i += bestLag) s += env[i]; if (s > ps) { ps = s; phase = p; } }
-      for (let i = phase; i < n; i += bestLag) beats.push(toT(i));
-      beats = beats.filter(inShot);
-      tempo = Math.round(600 * fr / bestLag) / 10; beat = Math.round(1000 * bestLag / fr) / 1000;
-    }
+    const beats = g ? g.times.map((t) => toT(t * fr)).filter(inShot) : [];
+    const tempo = g?.tempo ?? null, beat = g ? Math.round(1000 * g.beat) / 1000 : null;
     // strong onsets: local maxima well above the mean, at least 0.12 s apart, strongest 48 in the shot
     const gap = Math.round(0.12 * fr), thr = mean + 1.5 * sd, picks = [];
     for (let i = 1; i < n - 1; i++) {
