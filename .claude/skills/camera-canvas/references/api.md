@@ -96,7 +96,10 @@ shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot 
 ### Eases
 
 `linear ease easeIn easeOut easeInOut slowIn slowOut snap anticipate overshoot hold`, or `[x1, y1, x2, y2]`
-(CSS cubic-bezier; x in 0–1, y may overshoot). `hold` = no motion until the next key, then a hard cut
+(CSS cubic-bezier; x in 0–1, y may overshoot). For finer shapes add points: each extra
+`px, py, x3, y3, x4, y4` adds a point (px, py) the curve passes through, after the incoming handle
+before it (x2, y2) and with its outgoing handle (x3, y3), so the array is 4 + 6 × points long; point x
+increases from 0 to 1. The curve editor writes these when you click the curve. `hold` = no motion until the next key, then a hard cut
 to it. On camera keys a hold also splits the smooth path: the moves before and after the cut don't
 bend toward each other. For a cut between two moving shots, put shot B's first key one frame after
 shot A's last (hold) key.

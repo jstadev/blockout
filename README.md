@@ -101,8 +101,8 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 **Timeline:** drag the playhead to scrub; drag a key (◆) to retime it (snaps to frames, Shift for
 free); double-click the track to add a key from the current view; right-click a key to delete it.
 With a key selected: its ease, lens (mm), "set to current view" and delete. The curve button opens
-the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
-camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
+the editor: **Segment** edits the bezier ease between two keys (the shaded area is the
+camera's speed; click the curve to add a point with its own handles, double-click a point to remove it), **Shot speed** remaps time across the whole shot for speed ramps.
 
 **Moves:** the Moves button next to Key applies a preset camera move from the playhead: pan, tilt, orbit,
 push in, truck, crane, pedestal, zoom, dolly zoom or dutch. A move is two ordinary keys; the first one

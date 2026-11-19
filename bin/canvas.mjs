@@ -74,7 +74,7 @@ Camera timeline
   canvas key --t 2 --pos x,y,z --target x,y,z [--fov 40 | --lens 35] [--roll 0] [--ease name|x1,y1,x2,y2]
   canvas key --t 2 --from-view              key the camera the user is looking through right now
   canvas key-set <keyId|index> [same flags] change a key (e.g. --ease snap, --t 3)
-  canvas ease-all <name|x1,y1,x2,y2>        give every camera segment that ease (cuts stay cuts; --from <keyId> copies a key's; --all-shots: every shot)
+  canvas ease-all <name|x1,y1,x2,y2[,px,py,x3,y3,x4,y4…]>  give every camera segment that ease (cuts stay cuts; --from <keyId> copies a key's; --all-shots: every shot)
   canvas key-set <keyId|index> --path smooth|straight|orbit|turn|dollyZoom   how the camera travels to the next key
   canvas key-rm <keyId|index>
   canvas keys-clear

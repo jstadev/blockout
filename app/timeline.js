@@ -1,7 +1,7 @@
 // Camera timeline: transport, keyframe track, selected-key controls and the easing / speed curve editor.
 
 import { h, button, segmented, number, select, icon, toast, affix, panel, toggle as onOff } from './ui/kit.js';
-import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToLens, lensToFov, isCut } from '/core/curves.js';
+import { EASES, bezier, bezierSpeed, resolveEase, easeName, splitEase, removeEasePoint, sampleCamera, fovToLens, lensToFov, isCut } from '/core/curves.js';
 import { store } from './store.js';
 import { mountAudioTrack } from './audiotrack.js';
 import { mountShots } from './shots.js';
@@ -941,7 +941,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
 }
 
-/** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */
+/**
+ * Popover with a draggable bezier ease for the segment at the playhead, or the shot-wide speed curve.
+ * Click the curve to add a point with its own handles; double-click or right-click a point to remove it.
+ */
 function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   // canvas layout: the curve on top, a speed strip under it, sharing one time axis
   const W = 276, H = 184, L = 18, R = W - 10, T = 10, CB = 124, ST = 136, SB = H - 6;
@@ -970,9 +973,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     cv, presets, h('div.curve-sep'), allBtn, help);
   root.append(pop);
 
+  // The ease is a flat array (see resolveEase): pairs at index % 6 = 0 or 2 are handles, % 6 = 4 points.
   let live = null;    // bezier being dragged
-  let dragging = -1;  // handle index being dragged
-  let hover = -1;     // handle index under the pointer
+  let dragging = -1;  // index of the pair being dragged
+  let hover = -1;     // index of the pair under the pointer, or -2 over the curve (click adds a point)
   let preview = null; // preset name under the pointer, drawn as a ghost
   let lo = 0, hi = 1; // visible progress range; grows past [0, 1] only when the curve does
   const api = { open: false, toggle, refresh };
@@ -986,7 +990,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   function fit(b) {
     let mn = 0, mx = 1;
     if (b !== 'hold') {
-      mn = Math.min(mn, b[1], b[3]); mx = Math.max(mx, b[1], b[3]);
+      for (let i = 1; i < b.length; i += 2) { mn = Math.min(mn, b[i]); mx = Math.max(mx, b[i]); }
       for (let i = 0; i <= 40; i++) { const y = bezier(b, i / 40); mn = Math.min(mn, y); mx = Math.max(mx, y); }
     }
     const pad = 0.07 * (mx - mn);
@@ -1073,54 +1077,128 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     }
     if (b === 'hold') return;
 
-    // handles: arm from its end point, hollow when idle, filled when hovered or dragged
-    [[b[0], b[1], 0, 0], [b[2], b[3], 1, 1]].forEach(([x, y, ax, ay], i) => {
-      const on = i === hover || i === dragging;
+    // handles: arm from its point, hollow when idle, filled when hovered or dragged; added points are diamonds
+    for (const k of pairs(b)) {
+      if (k % 6 === 4) continue;
+      const [ax, ay] = anchorOf(b, k), on = k === hover || k === dragging;
       ctx.strokeStyle = accent; ctx.lineWidth = 1.25;
-      ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(x), toY(y)); ctx.stroke();
-      ctx.beginPath(); ctx.arc(toX(x), toY(y), on ? 6 : 5, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(b[k]), toY(b[k + 1])); ctx.stroke();
+      ctx.beginPath(); ctx.arc(toX(b[k]), toY(b[k + 1]), on ? 6 : 5, 0, Math.PI * 2);
       ctx.fillStyle = on ? accent : surface; ctx.fill(); ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
-    });
+    }
+    for (const k of pairs(b)) {
+      if (k % 6 !== 4) continue;
+      const on = k === hover || k === dragging, x = toX(b[k]), y = toY(b[k + 1]), r = on ? 6 : 5;
+      ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+      ctx.fillStyle = on ? accent : text; ctx.fill(); ctx.strokeStyle = surface; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1;
+    }
+  }
+
+  // ----- the pieces of a bezier ease: pairs (handles and points) by their index in the flat array -----
+  const pairs = (b) => (b === 'hold' ? [] : b.map((_, i) => i).filter((i) => i % 2 === 0));
+  // point j (0 = start, last = end) as [x, y]
+  const pointAt = (b, j) => (j <= 0 ? [0, 0] : 6 * j - 2 >= b.length ? [1, 1] : [b[6 * j - 2], b[6 * j - 1]]);
+  // the point a handle hangs from: an outgoing handle (% 6 = 0) from the point before it, an incoming one from the point after
+  const anchorOf = (b, k) => (k % 6 === 0 ? pointAt(b, k / 6) : pointAt(b, (k + 4) / 6));
+  // a handle's segment, as the x range it may move in (so the curve stays a function of time)
+  const rangeOf = (b, k) => { const s = Math.floor(k / 6); return [pointAt(b, s)[0], pointAt(b, s + 1)[0]]; };
+  // the other handle of the same point, or -1 at the start and end
+  const twinOf = (b, k) => { const t = k % 6 === 0 ? k - 4 : k + 4; return t > 0 && t < b.length - 2 && t % 6 !== 4 ? t : -1; };
+  const clampX = (b, k) => { const [a, c] = rangeOf(b, k); b[k] = Math.min(c, Math.max(a, b[k])); };
+
+  /** Move pair k of live to (x, y). A point carries its handles; a handle turns its twin with it unless Alt is held. */
+  function moveTo(k, x, y, free) {
+    const b = live;
+    if (k % 6 === 4) {
+      const j = (k + 2) / 6, gap = 0.01;
+      x = Math.min(pointAt(b, j + 1)[0] - gap, Math.max(pointAt(b, j - 1)[0] + gap, x));
+      const dx = x - b[k], dy = y - b[k + 1];
+      b[k] = x; b[k + 1] = y;
+      for (const h of [k - 2, k + 2]) { b[h] += dx; b[h + 1] += dy; }
+      for (const h of [k - 6, k - 4, k - 2, k + 2, k + 4, k + 6]) if (h >= 0 && h < b.length && h % 6 !== 4) clampX(b, h);
+    } else {
+      b[k] = x; b[k + 1] = y; clampX(b, k);
+      const t = twinOf(b, k);
+      if (t >= 0 && !free) {
+        // keep the point smooth: the twin points the opposite way, keeping its own length
+        const [px, py] = anchorOf(b, k);
+        const ux = b[k] - px, uy = b[k + 1] - py, ul = Math.hypot(ux, uy);
+        const len = Math.hypot(b[t] - px, b[t + 1] - py);
+        if (ul > 1e-6) {
+          let vx = (-ux / ul) * len, vy = (-uy / ul) * len;
+          const [a, c] = rangeOf(b, t), room = vx < 0 ? px - a : c - px;
+          if (Math.abs(vx) > room) { const f = room / Math.abs(vx); vx *= f; vy *= f; }
+          b[t] = px + vx; b[t + 1] = py + vy;
+        }
+      }
+    }
+    for (let i = 0; i < b.length; i++) b[i] = +b[i].toFixed(3);
   }
 
   const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  /** The pair under the pointer, -2 when it is over the curve itself (a click adds a point there), else -1. */
   const nearest = (e) => {
     const tg = target(); if (!tg) return -1;
-    const b = resolveEase(tg.ease); if (b === 'hold') return -1;
+    const b = live || resolveEase(tg.ease); if (b === 'hold') return -1;
     const [x, y] = pos(e);
-    const d0 = Math.hypot(toX(b[0]) - x, toY(b[1]) - y), d1 = Math.hypot(toX(b[2]) - x, toY(b[3]) - y);
-    return Math.min(d0, d1) > 16 ? -1 : d0 < d1 ? 0 : 1;
+    let best = -1, bd = 12;
+    for (const k of pairs(b)) {
+      const d = Math.hypot(toX(b[k]) - x, toY(b[k + 1]) - y) - (k % 6 === 4 ? 3 : 0); // points win a near tie
+      if (d < bd) { bd = d; best = k; }
+    }
+    if (best >= 0) return best;
+    const u = (x - L) / (R - L);
+    return u > 0.01 && u < 0.99 && Math.abs(toY(bezier(b, u)) - y) < 7 ? -2 : -1;
   };
+  const cursorFor = (i) => (i === -2 ? 'copy' : i < 0 ? '' : 'grab');
+  function finish(b) {
+    const name = easeName(b);
+    if (name === 'custom') remember(b);
+    commit(name !== 'custom' ? name : b);
+  }
+  function removePoint(k) {
+    const tg = target(); if (!tg || k % 6 !== 4) return;
+    dragging = -1; live = null; hover = -1; cv.style.cursor = '';
+    finish(removeEasePoint(resolveEase(tg.ease), (k + 2) / 6));
+  }
   cv.addEventListener('pointerdown', (e) => {
-    const i = nearest(e); if (i < 0) return;
-    dragging = i; live = [...resolveEase(target().ease)];
+    if (e.button !== 0) return;
+    let i = nearest(e); if (i === -1) return;
+    const b = [...resolveEase(target().ease)];
+    if (i === -2) {
+      // a new point on the curve, split so the shape stays the same; keep dragging it
+      const { ease, point } = splitEase(b, fromX(pos(e)[0]));
+      live = ease; i = 6 * point - 2;
+    } else live = b;
+    dragging = i;
     cv.setPointerCapture(e.pointerId);
     cv.style.cursor = 'grabbing';
+    showName();
     draw();
   });
   cv.addEventListener('pointermove', (e) => {
     if (dragging < 0) {
       const i = nearest(e);
-      if (i !== hover) { hover = i; cv.style.cursor = i < 0 ? '' : 'grab'; draw(); }
+      if (i !== hover) { hover = i; cv.style.cursor = cursorFor(i); draw(); }
       return;
     }
     const [x, y] = pos(e);
-    live[dragging * 2] = +fromX(x).toFixed(3);
-    live[dragging * 2 + 1] = +fromY(y).toFixed(3);
+    moveTo(dragging, fromX(x), fromY(y), e.altKey);
     showName();
     draw();
   });
-  cv.addEventListener('pointerleave', () => { if (dragging < 0 && hover >= 0) { hover = -1; draw(); } });
+  cv.addEventListener('pointerleave', () => { if (dragging < 0 && hover !== -1) { hover = -1; draw(); } });
   cv.addEventListener('pointerup', (e) => {
     if (dragging < 0) return;
     dragging = -1;
     const b = live; live = null;
     showName();
-    hover = nearest(e); cv.style.cursor = hover < 0 ? '' : 'grab';
-    const name = easeName(b);
-    if (name === 'custom') remember(b);
-    commit(name !== 'custom' ? name : b);
+    hover = nearest(e); cv.style.cursor = cursorFor(hover);
+    finish(b);
   });
+  // double-click or right-click a point to remove it
+  cv.addEventListener('dblclick', (e) => { const i = nearest(e); if (i >= 0 && i % 6 === 4) removePoint(i); });
+  cv.addEventListener('contextmenu', (e) => { const i = nearest(e); if (i >= 0 && i % 6 === 4) { e.preventDefault(); removePoint(i); } });
 
   const showName = () => {
     const tg = target();
@@ -1128,7 +1206,9 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     // while dragging: the bezier numbers; hovering a preset: its name; otherwise the current ease
     nameEl.classList.toggle('cc-mono', !!live);
     const pn = Array.isArray(preview) ? 'your custom' : preview;
-    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : pn && pn !== current ? pn : current;
+    const points = (b) => (Array.isArray(b) && b.length > 4 ? ` · ${(b.length - 4) / 6} point${b.length === 10 ? '' : 's'}` : '');
+    nameEl.textContent = live ? (live.length === 4 ? live.map((n) => n.toFixed(2)).join(', ') : `custom${points(live)}`)
+      : pn && pn !== current ? pn : current + (current === 'custom' ? points(tg.ease) : '');
     nameEl.classList.toggle('is-preview', !live && !!pn && pn !== current);
   };
 
@@ -1139,7 +1219,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   function remembered() {
     try {
       const b = JSON.parse(localStorage.getItem(CUSTOM_KEY));
-      if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite)) return b;
+      if (Array.isArray(b) && Array.isArray(resolveEase(b))) return b;
     } catch {}
     for (const s of shotList(store.doc).length ? shotList(store.doc) : [{ timeline: store.doc.timeline }]) {
       for (const k of s.timeline.keys) if (Array.isArray(k.ease) && easeName(k.ease) === 'custom') return k.ease;
@@ -1153,12 +1233,12 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     const own = current === 'custom';
     const b = own ? tg.ease : remembered();
     if (!b) return h('button.cc-btn.cc-btn--ghost.curve-preset.is-empty', {
-      type: 'button', title: 'Drag the handles for a custom curve. It stays here for next time.', 'aria-label': 'custom', disabled: true,
+      type: 'button', title: 'Drag the handles or add points for a custom curve. It stays here for next time.', 'aria-label': 'custom', disabled: true,
       html: '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><path d="M2 13C7 13 9 3 14 3"/></svg>',
     });
     return h('button.cc-btn.cc-btn--ghost.curve-preset', {
       type: 'button', 'aria-label': 'custom', html: easeSvg(b, 18),
-      title: own ? 'custom (drag the handles)' : 'Your last custom curve: click to use it here',
+      title: own ? 'custom (drag the handles, click the curve to add a point)' : 'Your last custom curve: click to use it here',
       class: own ? 'is-active' : 'is-custom',
       onClick: () => { if (!own) commit(b); },
       onPointerenter: () => { if (!own) { preview = b; showName(); draw(); } },
@@ -1199,7 +1279,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     allBtn.title = allBtn.disabled ? 'Every segment already has this ease' : `Give all ${segs.length} camera segments${multi ? ` in all ${store.doc.shots.length} shots` : ''} this ease. Cuts stay cuts.`;
     help.textContent = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
-      : 'Drag the orange handles. The strip shows how fast the camera moves.';
+      : 'Drag the orange handles. Click the curve to add a point, double-click a point to remove it. Alt breaks a point\'s handles apart.';
     draw();
   }
 
