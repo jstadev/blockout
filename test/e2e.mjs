@@ -596,6 +596,10 @@ try {
   await page.locator('.tl-audiobtn').click();
   ok(await page.locator('.audio-pop').isVisible() && /−0\.25–5\.75 s of the action/.test(await page.locator('.audio-pop .audio-foot').textContent()), 'Audio menu shows where the clip plays in the action');
   await page.screenshot({ path: path.join(dir, 'audio.png') });
+  await page.locator('.audio-pop .cc-row:has(.audio-bpm) .cc-toggle').click();
+  await page.waitForFunction(() => window.canvas.store.doc.audio.beats === true && /bpm/.test(document.querySelector('.audio-pop .audio-bpm').textContent));
+  ok(/^12\d bpm|^11[89] bpm/.test(await page.locator('.audio-pop .audio-bpm').textContent()) && cli('ls').includes('beats shown'), `Beats toggle marks the beat grid (${await page.locator('.audio-pop .audio-bpm').textContent()})`);
+  await page.screenshot({ path: path.join(dir, 'audio-beats.png') });
   await page.keyboard.press('Escape');
   // slide the audio by dragging the waveform
   const lb = await page.locator('.tl-audio').boundingBox();

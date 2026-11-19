@@ -93,10 +93,11 @@ keys in between are replaced. Both stay ordinary keys you can drag, re-key and e
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
-  canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--fit]
+  canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--show-beats on|off] [--fit]
                   load a music / dialogue track onto the timeline (mixed into the export). One track spans
                   every shot, on the shared action time. --offset: action time where the file starts
                   (negative skips into it); --in / --out: trim, seconds into the file (none = untrimmed);
+                  --show-beats: mark the beat grid on the audio lane in the tab;
                   --fit: the active shot ends where the audio ends
   canvas audio --beats [--json]             tempo and onset times inside the shot (needs the tab), to key/cut on
   canvas audio --clear                      remove the audio track
@@ -196,7 +197,7 @@ const audioLine = (a) => {
   const len = a.length, i = a.in || 0, o = a.out ?? len;
   const trim = a.in || a.out != null ? `, trimmed to ${i}–${o ?? 'end'}s of the file` : '';
   const span = o != null ? `, plays ${fmtS(+(a.offset + i).toFixed(3))}–${fmtS(+(a.offset + o).toFixed(3))} of the action` : '';
-  return `audio (all shots): ${a.name} at ${a.offset}s${len ? `, ${len}s long` : ''}${trim}${span}, volume ${a.volume}${a.muted ? ', muted' : ''}`;
+  return `audio (all shots): ${a.name} at ${a.offset}s${len ? `, ${len}s long` : ''}${trim}${span}, volume ${a.volume}${a.muted ? ', muted' : ''}${a.beats ? ', beats shown' : ''}`;
 };
 const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps, ${s.keys} camera key${s.keys === 1 ? '' : 's'}${s.start ? `, action from ${s.start}s` : ''}`;
 const rpc = (method, params = {}, timeout) => api('POST', '/api/rpc', { method, params, timeout }).then((d) => d.result);
@@ -574,6 +575,7 @@ const commands = {
     for (const k of ['in', 'out']) if (flags[k] != null) o[k] = /^(none|off|null)$/i.test(String(flags[k])) ? null : num(flags[k]);
     if (flags.volume != null) o.volume = num(flags.volume);
     if (flags.mute != null) o.muted = bool(flags.mute);
+    if (flags['show-beats'] != null) o.beats = bool(flags['show-beats']);
     if (Object.keys(o).length > 1) await op(o, pos[0] ? 'load audio' : 'edit audio');
     let info = null;
     if ((flags.fit || flags.beats) && SHOT) {
