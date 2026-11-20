@@ -325,17 +325,23 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .tl-bar > .tl-keycaret svg { width: 10px; height: 10px; }
 .tl-keycaret.is-open { background: var(--cc-surface-sunk); border-color: var(--cc-line-strong); }
 .tl-bar.is-fit1 > .tl-keycaret { width: 18px; }
-/* the selected key's settings in a card above the timeline, pointing at the key */
-.tl-keycard { position: fixed; bottom: calc(118px + var(--stack-h, 0px)); z-index: 24; padding: 3px; border-radius: 9px; }
+/* the selected key's settings in a card above the timeline, centred on the key */
+.tl-keycard { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); z-index: 24; padding: 3px; border-radius: 9px; }
 .tl-keycard[hidden] { display: none; }
-body.has-audio .tl-keycard { bottom: calc(150px + var(--stack-h, 0px)); }
-.tl-keycard::after { content: ''; position: absolute; left: var(--notch, 50%); bottom: -5px; width: 9px; height: 9px; margin-left: -5px; transform: rotate(45deg); background: var(--cc-surface-solid); box-shadow: 1px 1px 0 var(--cc-line); }
+body.has-audio .tl-keycard { bottom: calc(156px + var(--stack-h, 0px)); }
 .tl-keycard .tl-key { margin-left: 0; background: transparent; }
 .tl-keycard .tl-key > * { flex-shrink: 0; }
-body.has-keycard :is(.curve-pop, .moves-pop) { translate: 0 -38px; }
-/* the shot popover's Loop and Play all switches */
-.shot-switch { min-height: 22px; }
-.shot-switch[hidden] { display: none; }
+/* popovers sit just above the key card, with the same 8px gap the card keeps above the timeline */
+body.has-keycard :is(.curve-pop, .moves-pop) { translate: 0 calc(-8px - var(--keycard-h, 32px)); }
+/* Loop and Play all: the menu that opens while hovering Play (over the key card, so it stays next to the button) */
+.tl-playmenu { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); padding: 6px 10px 6px 8px; display: flex; flex-direction: column; gap: 4px; z-index: 25; animation: cc-in 120ms var(--cc-ease); }
+.tl-playmenu[hidden] { display: none; }
+body.has-audio .tl-playmenu { bottom: calc(156px + var(--stack-h, 0px)); }
+.tl-playmenu::after { content: ''; position: absolute; left: 0; right: 0; bottom: -16px; height: 16px; } /* bridge to the button */
+.tl-playrow { gap: 8px; min-height: 22px; }
+.tl-playrow[hidden] { display: none; }
+.tl-playrow .cc-toggle { transform: scale(0.85); transform-origin: left center; }
+.tl-playrow-label { cursor: pointer; user-select: none; white-space: nowrap; }
 /* the object chip carries Key; Frame, Duplicate and Delete go into its ⋯ menu */
 .sel-box .tl-objkey { margin-left: 2px; }
 .sel-box .cc-btn__label, .sel-box .sel-menu-key { display: none; }
