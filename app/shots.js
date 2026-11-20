@@ -5,7 +5,7 @@
 // Clicking that row (or Shift+N) adds the next shot, picking up where the active one ends; dragging across it
 // draws any span (from 0 for coverage, from the playhead to carry on from there). A new shot starts on the
 // active shot's framing at its first moment. [ and ] switch, Shift+[ and Shift+] move the active shot,
-// "Play all" plays through the cuts, Shift-click Export renders the whole sequence. Everything goes through
+// "Play all" plays through the cuts, Export renders the whole timeline (Shift-click: just the active shot). Everything goes through
 // the shot.* ops, so the agent can do the same from the CLI.
 
 import { button, toast } from './ui/kit.js';
