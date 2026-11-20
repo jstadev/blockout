@@ -100,11 +100,12 @@ shows "no reply yet" instead of spinning forever, and is closed as soon as the a
 
 **Timeline:** drag the playhead to scrub; drag a key (◆) to retime it (snaps to frames, Shift for
 free); double-click the track to add a key from the current view; right-click a key to delete it.
-With a key selected: its ease, lens (mm), "set to current view" and delete. The curve button opens
-the editor: **Segment** edits the cubic-bezier ease between two keys (the shaded area is the
-camera's speed), **Shot speed** remaps time across the whole shot for speed ramps.
+Select a key and its settings open in a small card just above it: its ease, the path to the next key,
+"set to current view" and delete. Lens (mm) and roll stay in the bar. The curve button opens
+the editor: **Segment** edits the bezier ease between two keys (the shaded area is the
+camera's speed; click the curve to add a point with its own handles, double-click a point to remove it), **Shot speed** remaps time across the whole shot for speed ramps.
 
-**Moves:** the Moves button next to Key applies a preset camera move from the playhead: pan, tilt, orbit,
+**Moves:** the caret on the Key button applies a preset camera move from the playhead: pan, tilt, orbit,
 push in, truck, crane, pedestal, zoom, dolly zoom or dutch. A move is two ordinary keys; the first one
 remembers how the camera travels to the second (an arc round the subject, a turn on the spot, a dolly zoom),
 shown under the track and in the selected key's path menu. The agent does the same with `canvas cam`.
@@ -121,7 +122,7 @@ sideways to change where it picks up the action, drag it up or down to reorder, 
 Delete (or right-click it) to remove it. Shift or Cmd/Ctrl-click bars to pick several (or Shift or Cmd/Ctrl-drag a
 box on an empty part of the lanes); drag any picked bar sideways to move them all in time, or press Delete to
 remove them. Esc lets go. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
-top to bottom in sequence order, and the layers button (**Play all**) plays on through the cuts. The set,
+top to bottom in sequence order, and **Play all** (in the shot popover, the "5.00 s · 24 fps" chip, next to Loop) plays on through the cuts. The set,
 the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
 length, fps and audio.
 Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.

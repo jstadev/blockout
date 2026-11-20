@@ -1,7 +1,7 @@
 // Camera timeline: transport, keyframe track, selected-key controls and the easing / speed curve editor.
 
 import { h, button, segmented, number, select, icon, toast, affix, panel, toggle as onOff } from './ui/kit.js';
-import { EASES, bezier, bezierSpeed, resolveEase, easeName, sampleCamera, fovToLens, lensToFov, isCut, shudder, SHUDDER_DEFAULT } from '/core/curves.js';
+import { EASES, bezier, bezierSpeed, resolveEase, easeName, splitEase, removeEasePoint, sampleCamera, fovToLens, lensToFov, isCut, shudder, SHUDDER_DEFAULT } from '/core/curves.js';
 import { store } from './store.js';
 import { mountAudioTrack } from './audiotrack.js';
 import { mountShots } from './shots.js';
@@ -38,20 +38,18 @@ const fmtFps = (v) => String(+(+v).toFixed(3));
 export function mountTimeline(root, { viewport, exporter }) {
   // ---------- bar: play | camera | output ----------
   const playBtn = button({ icon: 'play', title: 'Play / pause (Space)', onClick: () => store.set({ playing: !store.state.playing }) });
-  const startBtn = button({ icon: 'start', title: 'Go to start (Home)', kind: 'ghost', onClick: () => seek(0) });
-  const loopBtn = button({ icon: 'loop', title: 'Loop playback', kind: 'ghost', onClick: () => store.set({ loop: !store.state.loop }) });
   const timeNow = h('span');
   const timeDur = h('span.tl-faint');
-  const frameEl = h('span.cc-mono.tl-faint.tl-frame', { title: 'Frame at the playhead' });
   const timeEl = h('span.cc-mono.tl-time', {}, timeNow, timeDur);
   const viewSeg = segmented({
     options: [{ value: 'free', label: 'Free', icon: 'orbit', title: 'Orbit the set (C)' }, { value: 'shot', label: 'Shot', icon: 'camera', title: 'Look through the timeline camera (C)' }],
     value: store.state.view, onChange: (v) => store.set({ view: v }),
   });
   const keyBtn = button({ icon: 'keyAdd', label: 'Key', title: 'Key the current view at the playhead (K)', onClick: () => keyFromView() });
-  // preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
-  const movesBtn = button({ icon: 'orbit', label: 'Moves', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
-  movesBtn.dataset.overflow = ''; // goes into the ⋯ menu on a narrow timeline
+  keyBtn.classList.add('tl-keybtn');
+  // Key's caret: preset camera moves (pan, orbit, dolly zoom ...) from the playhead; the popover is mounted below
+  const keyCaret = button({ icon: 'chevronDown', title: 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...', onClick: () => moves.toggle() });
+  keyCaret.classList.add('tl-keycaret');
   // Key the selected object where it is now, at the playhead. Once it has a key, dragging it with the
   // gizmo at another time adds the next key, so a move is: key, scrub, drag.
   const objKeyLabel = h('span');
@@ -87,7 +85,9 @@ export function mountTimeline(root, { viewport, exporter }) {
   // path: how the camera travels to the next key (a move's arc, a turn on the spot, a dolly zoom ...)
   const pathSel = select({ options: PATH_OPTIONS, value: 'smooth', title: 'How the camera travels to the next key', onChange: (v) => updateKey({ path: v }) });
   pathSel.classList.add('tl-path');
-  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, pathSel, toViewBtn, delKeyBtn);
+  // a key that starts a preset move: reopen that move's settings
+  const editMoveBtn = button({ icon: 'orbit', label: 'Edit move', kind: 'ghost', title: 'Change the settings of the move that starts at this key', onClick: () => moves.toggle(true) });
+  const keyGroup = h('div.tl-key', {}, h('span.tl-diamond'), keyTime, easeBtn, pathSel, editMoveBtn, toViewBtn, delKeyBtn);
 
   // output: shot settings chip + export
   const shotDur = h('span'), shotFps = h('span');
@@ -107,24 +107,40 @@ export function mountTimeline(root, { viewport, exporter }) {
   });
 
   const shots = mountShots();
-  const bar = h('div.tl-bar',
-    {}, startBtn, playBtn, loopBtn, timeEl, frameEl, h('span.cc-divider'), viewSeg, keyBtn, movesBtn, lensField, rollField, keyGroup, objKeyBtn,
-    h('span.cc-spacer'), shots.playAllBtn, audioTrack.btn, shotBtn, exportBtn);
+  const bar = h('div.tl-bar', {}, playBtn, timeEl, h('span.cc-divider'), viewSeg, keyBtn, keyCaret, lensField, rollField,
+    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
+
+  // The bar keeps play, the camera and output. The selected key's settings open in a card above that key
+  // (placeKeyCard), Loop and Play all are switches in the shot popover, and the object's Key button sits in
+  // the object chip at the top left (main.js).
+  const keyCard = h('div.cc-panel.tl-keycard', { hidden: true }, keyGroup);
+  document.body.append(keyCard);
+  /** Put the key card above the selected key, and lift the popovers over it. */
+  function placeKeyCard() {
+    const k = store.state.key && store.keyById(store.state.key);
+    const show = !!k && !!L;
+    keyCard.hidden = !show;
+    document.body.classList.toggle('has-keycard', show);
+    if (!show) return;
+    const x = track.getBoundingClientRect().left + (keyXs(liveKeys()).get(k.id) ?? xOf(k.t));
+    const w = keyCard.offsetWidth;
+    const left = Math.max(12, Math.min(innerWidth - w - 12, x - w / 2));
+    keyCard.style.left = `${left}px`;
+    keyCard.style.setProperty('--notch', `${Math.max(10, Math.min(w - 10, x - left))}px`);
+  }
 
   // When the controls don't fit, step the bar down (.is-fit1..3 in app.css) only as far as it needs: one level
   // up while it overflows, and one level back whenever it would fit again. At the last level (4) the less used
   // controls move into a ⋯ menu, as they are, so they keep working and show their labels there. Runs on resize
   // and when the bar's contents change (a key selected, an object keyed, audio loaded), at most once a frame.
-  const moreBtn = button({ icon: 'more', kind: 'ghost', title: 'More: loop, play all, audio, shot settings, object key', onClick: () => toggleMore() });
+  const moreBtn = button({ icon: 'more', kind: 'ghost', title: 'More: audio, shot settings', onClick: () => toggleMore() });
   moreBtn.classList.add('tl-more');
   exportBtn.before(moreBtn);
   const morePop = h('div.cc-panel.tl-more-pop', { hidden: true });
   document.body.append(morePop); // outside #timeline, like the other popovers
-  loopBtn.dataset.menuLabel = 'Loop';
-  shots.playAllBtn.dataset.menuLabel = 'Play all';
   // A control opts into the menu with data-overflow. Each keeps a marker where it sits in the bar, so it goes
   // back to the same place.
-  for (const el of [loopBtn, shots.playAllBtn, audioTrack.btn, shotBtn, objKeyBtn]) el.dataset.overflow = '';
+  for (const el of [audioTrack.btn, shotBtn]) el.dataset.overflow = '';
   const overflow = [...bar.querySelectorAll(':scope > [data-overflow]')].map((el) => {
     const mark = document.createComment('');
     el.after(mark);
@@ -160,9 +176,8 @@ export function mountTimeline(root, { viewport, exporter }) {
     morePop.hidden = !on;
     moreBtn.classList.toggle('is-open', on);
   }
-  // a click on an item does its thing (opening its own popover from where the item is), then the menu closes;
-  // Loop and Play all are toggles, so the menu stays open to show their new state
-  morePop.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b !== loopBtn && b !== shots.playAllBtn) toggleMore(false); });
+  // a click on an item does its thing (opening its own popover from where the item is), then the menu closes
+  morePop.addEventListener('click', (e) => { if (e.target.closest('button')) toggleMore(false); });
   addEventListener('pointerdown', (e) => { if (!morePop.hidden && !morePop.contains(e.target) && !moreBtn.contains(e.target)) toggleMore(false); }, true);
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && !morePop.hidden) { e.stopPropagation(); toggleMore(false); } }, true);
 
@@ -175,7 +190,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // and Delete removes them.
   let picked = new Set();
   let drag = null; // { kind: 'key'|'okey'|'scrub', id, t, moved }; a key drag moves every selected key
-  // Selected camera keys. store.state.key is the primary one (its ease, lens, time show in the bar);
+  // Selected camera keys. store.state.key is the primary one (its ease, path and time show in the key card);
   // shift-click adds the range from it, ctrl/cmd-click toggles one, and dragging any of them moves them all.
   let selKeys = new Set();
   const syncSel = () => {
@@ -194,9 +209,12 @@ export function mountTimeline(root, { viewport, exporter }) {
   // the last shot so there is room to see (and draw) where a new one would go.
   // Layout (px): the ruler band, a header column (GUT) with the shots' names, hairline-separated lanes, the
   // new-shot row and a lane for the selected object's keys at the bottom.
-  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, NEW_H = 22, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56;
-  let L = null; // { T, end, start, rows: [{ s, top, h }], active, add: { top, h }, height }
+  // The track grows with the shots up to MAX_ROWS of them (and the new-shot row); past that the lanes scroll
+  // under the ruler (wheel or trackpad), so the ruler, the object lane and the audio lane below stay put.
+  const RULER = 18, ACTIVE_H = 40, ROW_H = 24, NEW_H = 22, GAP = 0, LANE = 16, GUT = 96, INSET = 3, BASE_H = 56, MAX_ROWS = 6;
+  let L = null; // { T, end, start, rows: [{ s, top, h }], active, add: { top, h }, list: { top, bottom, max }, height }
   let hoverNew = false; // the pointer is over the new-shot row: preview the shot a click would add
+  let scroll = 0, scrolledTo = null; // how far the lanes are scrolled (px); the active shot it last brought into view
   function relayout() {
     const doc = store.doc;
     if (!doc) { L = null; return; }
@@ -205,12 +223,24 @@ export function mountTimeline(root, { viewport, exporter }) {
     for (const x of shots) end = Math.max(end, (x.timeline.start || 0) + x.timeline.duration);
     for (const o of doc.objects) if (o.anim?.length) end = Math.max(end, o.anim[o.anim.length - 1].t);
     const T = Math.max(1, end + Math.max(1, end * 0.25)); // headroom for the next shot
-    let y = RULER;
-    const rows = shots.map((x) => { const r = { s: x, top: y, h: x.active ? ACTIVE_H : ROW_H }; y += r.h + GAP; return r; });
-    const add = { top: y, h: NEW_H }; y += NEW_H;
-    L = { T, end, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), add, height: y + LANE };
+    const hs = shots.map((x) => (x.active ? ACTIVE_H : ROW_H) + GAP);
+    const content = hs.reduce((a, b) => a + b, 0) + NEW_H;
+    const view = Math.min(content, ACTIVE_H + (MAX_ROWS - 1) * ROW_H + MAX_ROWS * GAP + NEW_H), max = content - view;
+    const ai = shots.findIndex((x) => x.active);
+    if (doc.shot !== scrolledTo && ai >= 0) { // another shot became active: bring it into view
+      scrolledTo = doc.shot;
+      const off = hs.slice(0, ai).reduce((a, b) => a + b, 0);
+      const need = hs[ai] + (ai === shots.length - 1 ? NEW_H : 0); // the last shot brings the new-shot row with it
+      if (off < scroll) scroll = off; else if (off + need > scroll + view) scroll = off + need - view;
+    }
+    scroll = Math.max(0, Math.min(max, scroll));
+    let y = RULER - scroll;
+    const rows = shots.map((x, i) => { const r = { s: x, top: y, h: hs[i] - GAP }; y += hs[i]; return r; });
+    const add = { top: y, h: NEW_H };
+    L = { T, end, start: doc.timeline.start || 0, rows, active: rows.find((r) => r.s.active), add, list: { top: RULER, bottom: RULER + view, max }, height: RULER + view + LANE };
   }
-  const inNewRow = (y) => !!L && y >= L.add.top && y < L.add.top + L.add.h;
+  const inList = (y) => !L || (y >= L.list.top && y < L.list.bottom); // the scrolling lanes, not the ruler or the object lane
+  const inNewRow = (y) => !!L && inList(y) && y >= L.add.top && y < L.add.top + L.add.h;
   /** New shot: snap action time `a` to 0, the playhead, or a shot's start or end within a few px; else a frame. */
   function snapAction(a, e) {
     const marks = [0, L.start + store.state.time];
@@ -232,7 +262,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   // a shot's bar handle: anywhere on another shot's bar, or the name strip along the top of the active one
   // (its top strip keeps the rest free for keys), or its name in the header column
   const onHandle = (r, x, y) => !!r && y < r.top + r.h && (inGutter(x) || (covers(r.s, aOf(x)) && (!r.s.active || y < r.top + 12)));
-  const rowAt = (y) => (L ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
+  const rowAt = (y) => (L && inList(y) ? L.rows.find((r) => y >= r.top && y < r.top + r.h + GAP) : null);
   /** A shot bar's left or right end, to drag for retiming. Another shot's bar: either side of its end. The
    *  active one: just outside its ends (the first and last keys sit right on them), or anywhere along the
    *  end above or below the keys. */
@@ -252,7 +282,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (drag?.kind !== 'edge' || !drag.moved || drag.s.id !== s.id) return null;
     return drag.trim ? drag.st0 + t : drag.st + t * (drag.dur / drag.dur0);
   };
-  const inActive = (y) => !L || (y >= L.active.top && y < L.active.top + L.active.h);
+  const inActive = (y) => !L || (inList(y) && y >= L.active.top && y < L.active.top + L.active.h);
   const snap = (t, e) => (e?.shiftKey ? t : Math.round(t * fps()) / fps());
   const keys = () => [...store.doc.timeline.keys].sort((a, b) => a.t - b.t);
   // While keys are dragged, they (and the other halves of their cuts) are drawn shifted by the drag.
@@ -329,7 +359,7 @@ export function mountTimeline(root, { viewport, exporter }) {
       return;
     }
     // Shift or Cmd/Ctrl-drag on an empty part of the lanes: box-select shots
-    if (!ok && !k && L && e.button === 0 && (e.shiftKey || e.metaKey || e.ctrlKey) && e.offsetY > RULER && e.offsetY < L.add.top && !inGutter(x)) {
+    if (!ok && !k && L && e.button === 0 && (e.shiftKey || e.metaKey || e.ctrlKey) && inList(e.offsetY) && e.offsetY < L.add.top && !inGutter(x)) {
       drag = { kind: 'box', x0: x, y0: e.offsetY, x1: x, y1: e.offsetY, base: new Set(picked), moved: false };
       store.set({ playing: false });
       return;
@@ -370,6 +400,14 @@ export function mountTimeline(root, { viewport, exporter }) {
       scrubTo(x, e);
     }
   });
+  // more shots than fit: the wheel (or a two-finger swipe) scrolls the lanes; Ctrl/Cmd+wheel is left alone
+  track.addEventListener('wheel', (e) => {
+    if (!L || L.list.max <= 0 || e.ctrlKey || e.metaKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    const s0 = scroll;
+    scroll = Math.max(0, Math.min(L.list.max, scroll + e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? L.list.bottom - L.list.top : 1)));
+    if (scroll !== s0) draw();
+  }, { passive: false });
   track.addEventListener('pointermove', (e) => {
     if (!drag) {
       const r = rowAt(e.offsetY), hn = inNewRow(e.offsetY);
@@ -404,7 +442,9 @@ export function mountTimeline(root, { viewport, exporter }) {
       if (!drag.moved) drag.axis = drag.gut || Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
       drag.moved = true;
       track.style.cursor = drag.axis === 'y' ? 'ns-resize' : 'grabbing';
-      if (drag.axis === 'y') { // reorder: the lane under the pointer
+      if (drag.axis === 'y') { // reorder: the lane under the pointer (near the ends of a scrolled list, scroll it)
+        if (L.list.max > 0) scroll += e.offsetY < L.list.top + 10 ? -ROW_H / 2 : e.offsetY > L.list.bottom - 10 ? ROW_H / 2 : 0;
+        relayout();
         const ys = L.rows.map((r) => r.top + r.h / 2);
         let to = 0; for (let i = 0; i < ys.length; i++) if (Math.abs(e.offsetY - ys[i]) < Math.abs(e.offsetY - ys[to])) to = i;
         drag.to = to;
@@ -601,19 +641,22 @@ export function mountTimeline(root, { viewport, exporter }) {
     const soft = css('--cc-accent-soft'), font = css('--cc-font'), mono = css('--cc-mono');
     const reorder = drag?.kind === 'shot' && drag.axis === 'y';
     // structure: the active lane's header cell, lane hairlines, the header column's edge
-    const act = L.active;
-    ctx.fillStyle = text; ctx.globalAlpha = 0.05; ctx.fillRect(0, act.top + 1, GUT, act.h - 1); ctx.globalAlpha = 1;
-    ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
+    const act = L.active, { top: lt, bottom: lb } = L.list;
     ctx.fillStyle = line;
-    for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
-    ctx.fillRect(0, L.add.top + L.add.h, W, 1);
     ctx.fillRect(GUT, 0, 1, H0);
+    ctx.fillRect(0, lb, W, 1); // the lanes end here, scrolled or not
     drawRuler(W, L.T, xAction, 0, { dim, line });
     // faint gridlines carry the ruler's ticks down through the lanes
     const step = (xAction(L.T) - xAction(0)) / L.T > 40 ? 1 : 5;
     ctx.fillStyle = line; ctx.globalAlpha = 0.6;
     for (let a = 0; a <= L.T + 1e-6; a += step) ctx.fillRect(Math.round(xAction(a)), RULER + 1, 1, H0 - RULER - 1);
     ctx.globalAlpha = 1;
+    // the lanes, clipped to their (scrolling) window under the ruler
+    ctx.save(); ctx.beginPath(); ctx.rect(0, lt + 1, W, lb - lt - 1); ctx.clip();
+    ctx.fillStyle = text; ctx.globalAlpha = 0.05; ctx.fillRect(0, act.top + 1, GUT, act.h - 1); ctx.globalAlpha = 1;
+    ctx.fillStyle = accent; ctx.fillRect(0, act.top + 1, 2, act.h - 1);
+    ctx.fillStyle = line;
+    for (const r of L.rows) ctx.fillRect(0, r.top + r.h, W, 1);
     ctx.textBaseline = 'middle';
     for (const [i, r] of L.rows.entries()) {
       const tl = r.s.timeline, my = r.top + r.h / 2 + 1;
@@ -648,13 +691,6 @@ export function mountTimeline(root, { viewport, exporter }) {
       }
     }
     drawNewRow(W, { text, dim, line, accent, font, mono });
-    // the selected object's key lane is named after it
-    const so = selObj();
-    if (so?.anim?.length) {
-      ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
-      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
-      ctx.restore();
-    }
     // box select
     if (drag?.kind === 'box' && drag.moved) {
       const bx = Math.max(GUT, Math.min(drag.x0, drag.x1)), by = Math.max(RULER, Math.min(drag.y0, drag.y1));
@@ -666,6 +702,20 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (reorder && drag.to !== drag.from) {
       const r = L.rows[drag.to];
       ctx.fillStyle = accent; ctx.fillRect(0, (drag.to < drag.from ? r.top : r.top + r.h) - 0.5, W, 2);
+    }
+    ctx.restore();
+    // more shots than fit: a scrollbar along the right edge of the lanes
+    if (L.list.max > 0) {
+      const vh = lb - lt, th = Math.max(16, (vh * vh) / (vh + L.list.max)), ty = lt + (scroll / L.list.max) * (vh - th);
+      ctx.fillStyle = text; ctx.globalAlpha = 0.22;
+      ctx.beginPath(); ctx.roundRect(W - 5, ty + 2, 3, th - 4, 1.5); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    // the selected object's key lane is named after it
+    const so = selObj();
+    if (so?.anim?.length) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, H0 - LANE, GUT - 8, LANE); ctx.clip();
+      ctx.font = `10px ${mono}`; ctx.fillStyle = dim; ctx.fillText(so.id, 12, laneY() + 1);
+      ctx.restore();
     }
     ctx.textBaseline = 'top';
     ctx.font = `10px ${mono}`;
@@ -701,6 +751,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     if (!store.doc) return;
     const dpr = devicePixelRatio || 1;
     relayout();
+    placeKeyCard(); // the key card follows its key, also while it is dragged
     const W = track.clientWidth, H0 = track.clientHeight;
     if (track.width !== Math.round(W * dpr) || track.height !== Math.round(H0 * dpr)) { track.width = Math.round(W * dpr); track.height = Math.round(H0 * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -718,7 +769,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
     const ks = liveKeys();
     const cuts = cutsOf(ks), xs = keyXs(ks);
-    if (L) { ctx.save(); ctx.translate(0, L.active.top); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); }
+    if (L) { ctx.save(); ctx.beginPath(); ctx.rect(0, L.list.top + 1, W, L.list.bottom - L.list.top - 1); ctx.clip(); ctx.translate(0, L.active.top); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); }
 
     // ruler (one shot: in shot time; several: the stack's action-time ruler is drawn above)
     if (!L) drawRuler(W, D, xOf, F, { dim, line }, cuts);
@@ -851,7 +902,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     const t = store.state.time;
     timeNow.textContent = t.toFixed(2);
     timeDur.textContent = ` / ${tl.duration.toFixed(2)} s`;
-    frameEl.textContent = `f${Math.round(t * tl.fps)}`;
+    timeEl.title = `Frame ${Math.round(t * tl.fps)}`;
     // only swap the icon when play state flips: refresh runs every frame while playing, and replacing the
     // icon under the pointer between mousedown and mouseup swallows the click.
     if (playBtn.dataset.playing !== String(!!store.state.playing)) {
@@ -859,7 +910,8 @@ export function mountTimeline(root, { viewport, exporter }) {
       playBtn.replaceChildren(icon(store.state.playing ? 'pause' : 'play'));
       playBtn.title = store.state.playing ? 'Pause (Space)' : 'Play (Space)';
     }
-    loopBtn.setActive(store.state.loop);
+    loopSw.set(store.state.loop); playAllSw.set(!!store.state.playAll);
+    playAllRow.hidden = store.doc.shots.length < 2;
     viewSeg.value = store.state.view;
     keyBtn.setActive(store.state.camDirty);
     keyBtn.title = store.state.camDirty ? 'The camera moved: press K to key this framing' : 'Key the current view at the playhead (K)';
@@ -870,11 +922,10 @@ export function mountTimeline(root, { viewport, exporter }) {
     keyGroup.style.display = k ? '' : 'none';
     const multi = selKeys.size > 1;
     easeBtn.style.display = toViewBtn.style.display = multi ? 'none' : ''; // .cc-btn sets display, so hidden alone would not hide it
-    movesBtn.setActive(moves.open);
-    // a selected key that starts a move: the button reopens that move's settings
+    keyCaret.setActive(moves.open);
+    // a selected key that starts a move: its card offers that move's settings again
     const editable = !!(k && k.path?.move && selKeys.size < 2 && keys().at(-1)?.id !== k.id);
-    if (movesBtn.lastChild.textContent !== (editable ? 'Edit move' : 'Moves')) movesBtn.lastChild.textContent = editable ? 'Edit move' : 'Moves';
-    movesBtn.title = editable ? 'Change the settings of the move that starts at this key' : 'Preset camera moves from the playhead: pan, tilt, orbit, push in, crane, dolly zoom...';
+    editMoveBtn.style.display = editable ? '' : 'none';
     delKeyBtn.title = multi ? `Delete ${selKeys.size} keys` : 'Delete key';
     if (k) {
       const sorted = keys();
@@ -931,17 +982,26 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   // ---------- curve editor + shot settings ----------
   const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => easeBtn });
-  const shot = mountShotSettings(root, { anchor: shotBtn, keys, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
-  const moves = mountMoves({ anchor: movesBtn, viewport });
+  // Loop and Play all live in the shot popover
+  const loopSw = onOff({ value: store.state.loop, title: 'Loop playback', onChange: (v) => store.set({ loop: v }) });
+  const playAllSw = onOff({ value: !!store.state.playAll, title: 'Play all: playback runs on through the cuts into the next shot', onChange: (v) => store.set({ playAll: v }) });
+  const swRow = (label, sw) => h('div.cc-row.shot-switch', {}, h('span.cc-label', {}, label), sw);
+  const playAllRow = swRow('Play all', playAllSw);
+  const playbackRows = [swRow('Loop', loopSw), playAllRow];
+  const shot = mountShotSettings(root, { anchor: shotBtn, keys, extra: playbackRows, openSpeed: () => { shot.toggle(false); curve.toggle(true, 'speed'); } });
+  const moves = mountMoves({ anchor: keyCaret, viewport });
 
 
   store.on('doc', refresh);
   store.on('state', refresh);
   new ResizeObserver(draw).observe(track);
-  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots };
+  return { refresh, keyFromView, seek, xAt: (t) => xOf(t), yAt: () => (L ? L.active.top + L.active.h / 2 + 2 : 0), newRowY: () => (L ? L.add.top + L.add.h / 2 : 0), rowY: (id) => { const r = L?.rows.find((x) => x.s.id === id); return r ? r.top + r.h / 2 + 1 : 0; }, pickedShots: () => [...picked], xAction: (a) => xAction(a), deleteKey, draw, loadAudio: audioTrack.loadFile, shots, objKeyBtn };
 }
 
-/** Popover with a draggable cubic-bezier for the segment at the playhead, or the shot-wide speed curve. */
+/**
+ * Popover with a draggable bezier ease for the segment at the playhead, or the shot-wide speed curve.
+ * Click the curve to add a point with its own handles; double-click or right-click a point to remove it.
+ */
 function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   // canvas layout: the curve on top, a speed strip under it, sharing one time axis
   const W = 276, H = 184, L = 18, R = W - 10, T = 10, CB = 124, ST = 136, SB = H - 6;
@@ -1003,9 +1063,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     cv, presets, h('div.curve-sep'), shWrap, allBtn, help);
   root.append(pop);
 
+  // The ease is a flat array (see resolveEase): pairs at index % 6 = 0 or 2 are handles, % 6 = 4 points.
   let live = null;    // bezier being dragged
-  let dragging = -1;  // handle index being dragged
-  let hover = -1;     // handle index under the pointer
+  let dragging = -1;  // index of the pair being dragged
+  let hover = -1;     // index of the pair under the pointer, or -2 over the curve (click adds a point)
   let preview = null; // preset name under the pointer, drawn as a ghost
   let lo = 0, hi = 1; // visible progress range; grows past [0, 1] only when the curve does
   const api = { open: false, toggle, refresh };
@@ -1019,7 +1080,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   function fit(b) {
     let mn = 0, mx = 1;
     if (b !== 'hold') {
-      mn = Math.min(mn, b[1], b[3]); mx = Math.max(mx, b[1], b[3]);
+      for (let i = 1; i < b.length; i += 2) { mn = Math.min(mn, b[i]); mx = Math.max(mx, b[i]); }
       for (let i = 0; i <= 40; i++) { const y = bezier(b, i / 40); mn = Math.min(mn, y); mx = Math.max(mx, y); }
     }
     const pad = 0.07 * (mx - mn);
@@ -1118,54 +1179,128 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     }
     if (b === 'hold') return;
 
-    // handles: arm from its end point, hollow when idle, filled when hovered or dragged
-    [[b[0], b[1], 0, 0], [b[2], b[3], 1, 1]].forEach(([x, y, ax, ay], i) => {
-      const on = i === hover || i === dragging;
+    // handles: arm from its point, hollow when idle, filled when hovered or dragged; added points are diamonds
+    for (const k of pairs(b)) {
+      if (k % 6 === 4) continue;
+      const [ax, ay] = anchorOf(b, k), on = k === hover || k === dragging;
       ctx.strokeStyle = accent; ctx.lineWidth = 1.25;
-      ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(x), toY(y)); ctx.stroke();
-      ctx.beginPath(); ctx.arc(toX(x), toY(y), on ? 6 : 5, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.moveTo(toX(ax), toY(ay)); ctx.lineTo(toX(b[k]), toY(b[k + 1])); ctx.stroke();
+      ctx.beginPath(); ctx.arc(toX(b[k]), toY(b[k + 1]), on ? 6 : 5, 0, Math.PI * 2);
       ctx.fillStyle = on ? accent : surface; ctx.fill(); ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
-    });
+    }
+    for (const k of pairs(b)) {
+      if (k % 6 !== 4) continue;
+      const on = k === hover || k === dragging, x = toX(b[k]), y = toY(b[k + 1]), r = on ? 6 : 5;
+      ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+      ctx.fillStyle = on ? accent : text; ctx.fill(); ctx.strokeStyle = surface; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1;
+    }
+  }
+
+  // ----- the pieces of a bezier ease: pairs (handles and points) by their index in the flat array -----
+  const pairs = (b) => (b === 'hold' ? [] : b.map((_, i) => i).filter((i) => i % 2 === 0));
+  // point j (0 = start, last = end) as [x, y]
+  const pointAt = (b, j) => (j <= 0 ? [0, 0] : 6 * j - 2 >= b.length ? [1, 1] : [b[6 * j - 2], b[6 * j - 1]]);
+  // the point a handle hangs from: an outgoing handle (% 6 = 0) from the point before it, an incoming one from the point after
+  const anchorOf = (b, k) => (k % 6 === 0 ? pointAt(b, k / 6) : pointAt(b, (k + 4) / 6));
+  // a handle's segment, as the x range it may move in (so the curve stays a function of time)
+  const rangeOf = (b, k) => { const s = Math.floor(k / 6); return [pointAt(b, s)[0], pointAt(b, s + 1)[0]]; };
+  // the other handle of the same point, or -1 at the start and end
+  const twinOf = (b, k) => { const t = k % 6 === 0 ? k - 4 : k + 4; return t > 0 && t < b.length - 2 && t % 6 !== 4 ? t : -1; };
+  const clampX = (b, k) => { const [a, c] = rangeOf(b, k); b[k] = Math.min(c, Math.max(a, b[k])); };
+
+  /** Move pair k of live to (x, y). A point carries its handles; a handle turns its twin with it unless Alt is held. */
+  function moveTo(k, x, y, free) {
+    const b = live;
+    if (k % 6 === 4) {
+      const j = (k + 2) / 6, gap = 0.01;
+      x = Math.min(pointAt(b, j + 1)[0] - gap, Math.max(pointAt(b, j - 1)[0] + gap, x));
+      const dx = x - b[k], dy = y - b[k + 1];
+      b[k] = x; b[k + 1] = y;
+      for (const h of [k - 2, k + 2]) { b[h] += dx; b[h + 1] += dy; }
+      for (const h of [k - 6, k - 4, k - 2, k + 2, k + 4, k + 6]) if (h >= 0 && h < b.length && h % 6 !== 4) clampX(b, h);
+    } else {
+      b[k] = x; b[k + 1] = y; clampX(b, k);
+      const t = twinOf(b, k);
+      if (t >= 0 && !free) {
+        // keep the point smooth: the twin points the opposite way, keeping its own length
+        const [px, py] = anchorOf(b, k);
+        const ux = b[k] - px, uy = b[k + 1] - py, ul = Math.hypot(ux, uy);
+        const len = Math.hypot(b[t] - px, b[t + 1] - py);
+        if (ul > 1e-6) {
+          let vx = (-ux / ul) * len, vy = (-uy / ul) * len;
+          const [a, c] = rangeOf(b, t), room = vx < 0 ? px - a : c - px;
+          if (Math.abs(vx) > room) { const f = room / Math.abs(vx); vx *= f; vy *= f; }
+          b[t] = px + vx; b[t + 1] = py + vy;
+        }
+      }
+    }
+    for (let i = 0; i < b.length; i++) b[i] = +b[i].toFixed(3);
   }
 
   const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  /** The pair under the pointer, -2 when it is over the curve itself (a click adds a point there), else -1. */
   const nearest = (e) => {
     const tg = target(); if (!tg) return -1;
-    const b = resolveEase(tg.ease); if (b === 'hold') return -1;
+    const b = live || resolveEase(tg.ease); if (b === 'hold') return -1;
     const [x, y] = pos(e);
-    const d0 = Math.hypot(toX(b[0]) - x, toY(b[1]) - y), d1 = Math.hypot(toX(b[2]) - x, toY(b[3]) - y);
-    return Math.min(d0, d1) > 16 ? -1 : d0 < d1 ? 0 : 1;
+    let best = -1, bd = 12;
+    for (const k of pairs(b)) {
+      const d = Math.hypot(toX(b[k]) - x, toY(b[k + 1]) - y) - (k % 6 === 4 ? 3 : 0); // points win a near tie
+      if (d < bd) { bd = d; best = k; }
+    }
+    if (best >= 0) return best;
+    const u = (x - L) / (R - L);
+    return u > 0.01 && u < 0.99 && Math.abs(toY(bezier(b, u)) - y) < 7 ? -2 : -1;
   };
+  const cursorFor = (i) => (i === -2 ? 'copy' : i < 0 ? '' : 'grab');
+  function finish(b) {
+    const name = easeName(b);
+    if (name === 'custom') remember(b);
+    commit(name !== 'custom' ? name : b);
+  }
+  function removePoint(k) {
+    const tg = target(); if (!tg || k % 6 !== 4) return;
+    dragging = -1; live = null; hover = -1; cv.style.cursor = '';
+    finish(removeEasePoint(resolveEase(tg.ease), (k + 2) / 6));
+  }
   cv.addEventListener('pointerdown', (e) => {
-    const i = nearest(e); if (i < 0) return;
-    dragging = i; live = [...resolveEase(target().ease)];
+    if (e.button !== 0) return;
+    let i = nearest(e); if (i === -1) return;
+    const b = [...resolveEase(target().ease)];
+    if (i === -2) {
+      // a new point on the curve, split so the shape stays the same; keep dragging it
+      const { ease, point } = splitEase(b, fromX(pos(e)[0]));
+      live = ease; i = 6 * point - 2;
+    } else live = b;
+    dragging = i;
     cv.setPointerCapture(e.pointerId);
     cv.style.cursor = 'grabbing';
+    showName();
     draw();
   });
   cv.addEventListener('pointermove', (e) => {
     if (dragging < 0) {
       const i = nearest(e);
-      if (i !== hover) { hover = i; cv.style.cursor = i < 0 ? '' : 'grab'; draw(); }
+      if (i !== hover) { hover = i; cv.style.cursor = cursorFor(i); draw(); }
       return;
     }
     const [x, y] = pos(e);
-    live[dragging * 2] = +fromX(x).toFixed(3);
-    live[dragging * 2 + 1] = +fromY(y).toFixed(3);
+    moveTo(dragging, fromX(x), fromY(y), e.altKey);
     showName();
     draw();
   });
-  cv.addEventListener('pointerleave', () => { if (dragging < 0 && hover >= 0) { hover = -1; draw(); } });
+  cv.addEventListener('pointerleave', () => { if (dragging < 0 && hover !== -1) { hover = -1; draw(); } });
   cv.addEventListener('pointerup', (e) => {
     if (dragging < 0) return;
     dragging = -1;
     const b = live; live = null;
     showName();
-    hover = nearest(e); cv.style.cursor = hover < 0 ? '' : 'grab';
-    const name = easeName(b);
-    if (name === 'custom') remember(b);
-    commit(name !== 'custom' ? name : b);
+    hover = nearest(e); cv.style.cursor = cursorFor(hover);
+    finish(b);
   });
+  // double-click or right-click a point to remove it
+  cv.addEventListener('dblclick', (e) => { const i = nearest(e); if (i >= 0 && i % 6 === 4) removePoint(i); });
+  cv.addEventListener('contextmenu', (e) => { const i = nearest(e); if (i >= 0 && i % 6 === 4) { e.preventDefault(); removePoint(i); } });
 
   const showName = () => {
     const tg = target();
@@ -1173,7 +1308,10 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     // while dragging: the bezier numbers; hovering a preset: its name; otherwise the current ease
     nameEl.classList.toggle('cc-mono', !!live);
     const pn = Array.isArray(preview) ? 'your custom' : preview;
-    nameEl.textContent = live ? live.map((n) => n.toFixed(2)).join(', ') : pn && pn !== current ? pn : current + (tg?.kind === 'segment' && tg.key.shudder && !isCut(tg.key) ? ' + shudder' : '');
+    const points = (b) => (Array.isArray(b) && b.length > 4 ? ` · ${(b.length - 4) / 6} point${b.length === 10 ? '' : 's'}` : '');
+    nameEl.textContent = live ? (live.length === 4 ? live.map((n) => n.toFixed(2)).join(', ') : `custom${points(live)}`)
+      : pn && pn !== current ? pn : current + (current === 'custom' ? points(tg.ease) : '')
+      + (!live && !(pn && pn !== current) && tg?.kind === 'segment' && tg.key.shudder && !isCut(tg.key) ? ' + shudder' : '');
     nameEl.classList.toggle('is-preview', !live && !!pn && pn !== current);
   };
 
@@ -1184,7 +1322,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   function remembered() {
     try {
       const b = JSON.parse(localStorage.getItem(CUSTOM_KEY));
-      if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite)) return b;
+      if (Array.isArray(b) && Array.isArray(resolveEase(b))) return b;
     } catch {}
     for (const s of shotList(store.doc).length ? shotList(store.doc) : [{ timeline: store.doc.timeline }]) {
       for (const k of s.timeline.keys) if (Array.isArray(k.ease) && easeName(k.ease) === 'custom') return k.ease;
@@ -1198,12 +1336,12 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     const own = current === 'custom';
     const b = own ? tg.ease : remembered();
     if (!b) return h('button.cc-btn.cc-btn--ghost.curve-preset.is-empty', {
-      type: 'button', title: 'Drag the handles for a custom curve. It stays here for next time.', 'aria-label': 'custom', disabled: true,
+      type: 'button', title: 'Drag the handles or add points for a custom curve. It stays here for next time.', 'aria-label': 'custom', disabled: true,
       html: '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"><path d="M2 13C7 13 9 3 14 3"/></svg>',
     });
     return h('button.cc-btn.cc-btn--ghost.curve-preset', {
       type: 'button', 'aria-label': 'custom', html: easeSvg(b, 18),
-      title: own ? 'custom (drag the handles)' : 'Your last custom curve: click to use it here',
+      title: own ? 'custom (drag the handles, click the curve to add a point)' : 'Your last custom curve: click to use it here',
       class: own ? 'is-active' : 'is-custom',
       onClick: () => { if (!own) commit(b); },
       onPointerenter: () => { if (!own) { preview = b; showName(); draw(); } },
@@ -1257,7 +1395,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     if (room > 0 && pop.style.maxHeight !== `${room}px`) pop.style.maxHeight = `${room}px`;
     help.textContent = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
-      : 'Drag the orange handles. The strip shows how fast the camera moves.';
+      : 'Drag the orange handles. Click the curve to add a point, double-click a point to remove it. Alt breaks a point\'s handles apart.';
     draw();
   }
 
@@ -1278,7 +1416,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
 
 
 /** Popover from the "5.00 s · 24 fps" chip: duration (with retime), frame rate (any value, presets), export size, shot speed. */
-function mountShotSettings(root, { anchor, keys, openSpeed }) {
+function mountShotSettings(root, { anchor, keys, openSpeed, extra = [] }) {
   let retime = true;
   try { retime = localStorage.getItem(RETIME_KEY) !== '0'; } catch {}
   const tlOp = (patch, label) => store.op({ op: 'timeline', ...patch }, label).catch(() => {});
@@ -1306,6 +1444,7 @@ function mountShotSettings(root, { anchor, keys, openSpeed }) {
     rowEl('Frame rate', affix(fpsNum, 'fps')),
     rowEl('Size', sizeSel),
     rowEl('Playback', speedBtn),
+    ...extra,
     h('div.cc-divider.cc-divider--h'),
     foot,
   );

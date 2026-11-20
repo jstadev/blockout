@@ -16,18 +16,57 @@ export const EASES = {
   hold: 'hold',                   // stay on this key until the next one, then cut
 };
 
-/** Normalise an ease spec (preset name, bezier array, or undefined) to a bezier array or 'hold'. */
+/**
+ * Normalise an ease spec (preset name, bezier array, or undefined) to a bezier array or 'hold'.
+ *
+ * A bezier array is CSS cubic-bezier [x1, y1, x2, y2] from (0,0) to (1,1), optionally followed by more
+ * points, each with its handles: [x1, y1, x2, y2, px, py, x3, y3, x4, y4, ...]. Every 6 extra numbers add a
+ * point (px, py) that the curve passes through; the 2 numbers before a point are its incoming handle and
+ * the 2 after it its outgoing handle. So the length is 4 + 6 × (number of points). Point x grows from 0 to 1
+ * and every x stays within 0–1; keep each handle's x within its own segment and the curve is a function of time.
+ */
 export function resolveEase(spec) {
   if (spec == null) return EASES.easeInOut;
   if (typeof spec === 'string') {
     if (!(spec in EASES)) throw new Error(`unknown ease "${spec}" (known: ${Object.keys(EASES).join(', ')})`);
     return EASES[spec];
   }
-  if (Array.isArray(spec) && spec.length === 4 && spec.every(Number.isFinite)) {
-    // x must stay within [0,1] for the curve to be a function of time.
-    return [clamp(spec[0], 0, 1), spec[1], clamp(spec[2], 0, 1), spec[3]];
+  if (Array.isArray(spec) && spec.length >= 4 && (spec.length - 4) % 6 === 0 && spec.every(Number.isFinite)) {
+    if (spec.length === 4) return [clamp(spec[0], 0, 1), spec[1], clamp(spec[2], 0, 1), spec[3]];
+    // x must keep moving forward for the curve to be a function of time.
+    const segs = easeSegments(spec, false);
+    let x0 = 0;
+    for (const g of segs) {
+      g[6] = clamp(g[6], x0, 1); // end point
+      g[0] = x0; x0 = g[6];
+    }
+    for (const g of segs) { g[2] = clamp(g[2], 0, 1); g[4] = clamp(g[4], 0, 1); }
+    return easeFromSegments(segs);
   }
-  throw new Error(`bad ease ${JSON.stringify(spec)}: use a preset name or [x1,y1,x2,y2]`);
+  throw new Error(`bad ease ${JSON.stringify(spec)}: use a preset name, [x1,y1,x2,y2], or that plus [px,py,x3,y3,x4,y4] per extra point`);
+}
+
+/**
+ * Split a bezier ease into its cubic segments, each [p0x, p0y, c1x, c1y, c2x, c2y, p3x, p3y].
+ * A plain [x1, y1, x2, y2] is one segment from (0,0) to (1,1).
+ */
+export function easeSegments(b, check = true) {
+  if (check) b = resolveEase(b);
+  const segs = [];
+  let p = [0, 0];
+  for (let i = 0; i < b.length; i += 6) {
+    const end = i + 4 < b.length ? [b[i + 4], b[i + 5]] : [1, 1];
+    segs.push([p[0], p[1], b[i], b[i + 1], b[i + 2], b[i + 3], end[0], end[1]]);
+    p = end;
+  }
+  return segs;
+}
+
+/** The flat bezier array for a list of segments (the inverse of easeSegments). */
+export function easeFromSegments(segs) {
+  const out = [];
+  segs.forEach((g, i) => { out.push(g[2], g[3], g[4], g[5]); if (i < segs.length - 1) out.push(g[6], g[7]); });
+  return out;
 }
 
 /** The preset name for a bezier, if it matches one. */
@@ -35,26 +74,37 @@ export function easeName(spec) {
   if (typeof spec === 'string') return spec;
   const b = resolveEase(spec);
   for (const [k, v] of Object.entries(EASES)) {
-    if (Array.isArray(v) && v.every((n, i) => Math.abs(n - b[i]) < 1e-4)) return k;
+    if (Array.isArray(v) && v.length === b.length && v.every((n, i) => Math.abs(n - b[i]) < 1e-4)) return k;
   }
   return 'custom';
 }
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-/** Evaluate cubic-bezier easing y(x) for x in [0,1]. */
+/** Evaluate a bezier ease y(x) for x in [0,1]: one cubic-bezier, or several joined at points. */
 export function bezier(b, x) {
   if (b === 'hold') return x >= 1 ? 1 : 0;
-  const [x1, y1, x2, y2] = b;
   if (x <= 0) return 0;
   if (x >= 1) return 1;
-  if (x1 === y1 && x2 === y2) return x; // linear
-  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
-  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
-  const sx = (t) => ((ax * t + bx) * t + cx) * t;
+  if (b.length === 4) {
+    const [x1, y1, x2, y2] = b;
+    if (x1 === y1 && x2 === y2) return x; // linear
+    return cubicAt(0, 0, x1, y1, x2, y2, 1, 1, x);
+  }
+  const segs = easeSegments(b, false);
+  const g = segs.find((s) => x <= s[6]) ?? segs[segs.length - 1];
+  return cubicAt(...g, x);
+}
+
+// y at x on the cubic bezier (p0, c1, c2, p3), with x growing from p0 to p3.
+function cubicAt(x0, y0, x1, y1, x2, y2, x3, y3, x) {
+  if (x3 - x0 < 1e-9) return y3;
+  const cx = 3 * (x1 - x0), bx = 3 * (x2 - x1) - cx, ax = x3 - x0 - cx - bx;
+  const cy = 3 * (y1 - y0), by = 3 * (y2 - y1) - cy, ay = y3 - y0 - cy - by;
+  const sx = (t) => x0 + ((ax * t + bx) * t + cx) * t;
   const dsx = (t) => (3 * ax * t + 2 * bx) * t + cx;
   // Newton, then bisection fallback.
-  let t = x;
+  let t = (x - x0) / (x3 - x0);
   for (let i = 0; i < 8; i++) {
     const e = sx(t) - x;
     if (Math.abs(e) < 1e-7) break;
@@ -64,15 +114,49 @@ export function bezier(b, x) {
   }
   if (!(t >= 0 && t <= 1) || Math.abs(sx(t) - x) > 1e-5) {
     let lo = 0, hi = 1;
-    t = x;
-    for (let i = 0; i < 40; i++) {
+    t = (x - x0) / (x3 - x0);
+    for (let i = 0; i < 50; i++) {
       const v = sx(t);
       if (Math.abs(v - x) < 1e-7) break;
       if (v < x) lo = t; else hi = t;
       t = (lo + hi) / 2;
     }
   }
-  return ((ay * t + by) * t + cy) * t;
+  return y0 + ((ay * t + by) * t + cy) * t;
+}
+
+/**
+ * Add a point to a bezier ease at x without changing its shape (the segment there is split in two).
+ * Returns the new flat array and the index of the new point (1 = the first point after the start).
+ */
+export function splitEase(b, x) {
+  const segs = easeSegments(b);
+  const j = Math.max(0, segs.findIndex((s) => x <= s[6]));
+  const [x0, y0, x1, y1, x2, y2, x3, y3] = segs[j];
+  // the curve parameter at x, by bisection on the (monotonic) x polynomial
+  const bx = (t) => { const u = 1 - t; return u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3; };
+  let lo = 0, hi = 1, t = 0.5;
+  for (let i = 0; i < 50; i++) { t = (lo + hi) / 2; if (bx(t) < x) lo = t; else hi = t; }
+  const L = (a, c) => [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t];
+  const P0 = [x0, y0], P1 = [x1, y1], P2 = [x2, y2], P3 = [x3, y3];
+  const A = L(P0, P1), B = L(P1, P2), C = L(P2, P3), D = L(A, B), E = L(B, C), F = L(D, E);
+  segs.splice(j, 1, [...P0, ...A, ...D, ...F], [...F, ...E, ...C, ...P3]);
+  return { ease: easeFromSegments(segs).map((n) => +n.toFixed(4)), point: j + 1 };
+}
+
+/** Remove point i (1-based, as splitEase returns) from a bezier ease: its neighbours join with their outer handles. */
+export function removeEasePoint(b, i) {
+  const segs = easeSegments(b);
+  if (i < 1 || i >= segs.length) return resolveEase(b);
+  const a = segs[i - 1], c = segs[i];
+  // Stretch the outer handles back by where the point sat along the joined curve. For a point that was only
+  // added, its handle lengths split as t : (1 - t), so this gives back the curve it came from.
+  const din = Math.hypot(a[6] - a[4], a[7] - a[5]), dout = Math.hypot(c[2] - c[0], c[3] - c[1]);
+  const f = clamp(din + dout > 1e-6 ? din / (din + dout) : (a[6] - a[0]) / Math.max(1e-6, c[6] - a[0]), 0.05, 0.95);
+  const c1 = [clamp(a[0] + (a[2] - a[0]) / f, 0, 1), a[1] + (a[3] - a[1]) / f];
+  const c2 = [clamp(c[6] + (c[4] - c[6]) / (1 - f), 0, 1), c[7] + (c[5] - c[7]) / (1 - f)];
+  segs.splice(i - 1, 2, [a[0], a[1], ...c1, ...c2, c[6], c[7]].map((n) => +n.toFixed(3)));
+  return resolveEase(easeFromSegments(segs));
 }
 
 /** Relative speed (dy/dx) of an easing curve at x, 1 = constant speed. */

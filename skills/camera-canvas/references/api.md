@@ -62,7 +62,7 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `key.remove` | `id` or `index` | `{ removed }` |
 | `key.clear` | | `{ removed }` |
 | `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot, from the shot's start, so `start` + `duration` + `retime` together stretch the shot from its left end), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
-| `audio` | The scene's one track (`doc.audio`, shared by every shot). `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (action time where the file starts; negative skips into it), `in` / `out` (trim: seconds into the file, `null` clears), `volume` (0–4), `muted`, `length` (set by the tab), `fit` (the active shot ends where the audio ends), `clear` | `{ audio, duration }` |
+| `audio` | The scene's one track (`doc.audio`, shared by every shot). `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (action time where the file starts; negative skips into it), `in` / `out` (trim: seconds into the file, `null` clears), `volume` (0–4), `muted`, `beats` (show the beat grid on the audio lane), `length` (set by the tab), `fit` (the active shot ends where the audio ends), `clear` | `{ audio, duration }` |
 | `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends), `duration?` (its length; default the copied shot's), `frame?` (one key instead of a copy: the copied shot's framing at the moment it picks up, what the canvas's "+ New shot" row does). Inserted after the active shot | `{ id, name, start, shots, active }` |
 | `shot.split` | `t` (shot time, snapped to a frame, inside the shot), `name?`, `id?`, `switch?` (default true). The active shot ends at `t`; a new shot after it gets the same framing at its first key, the later keys, the rest of the length, `start` = this shot's start + t. Needs a linear shot speed | `{ id, name, at, shots, active }` |
 | `shot.use` | `id` (id, name or 1-based position) — make it the active shot | `{ id, name }` |
@@ -96,7 +96,10 @@ shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot 
 ### Eases
 
 `linear ease easeIn easeOut easeInOut slowIn slowOut snap anticipate overshoot hold`, or `[x1, y1, x2, y2]`
-(CSS cubic-bezier; x in 0–1, y may overshoot). `hold` = no motion until the next key, then a hard cut
+(CSS cubic-bezier; x in 0–1, y may overshoot). For finer shapes add points: each extra
+`px, py, x3, y3, x4, y4` adds a point (px, py) the curve passes through, after the incoming handle
+before it (x2, y2) and with its outgoing handle (x3, y3), so the array is 4 + 6 × points long; point x
+increases from 0 to 1. The curve editor writes these when you click the curve. `hold` = no motion until the next key, then a hard cut
 to it. On camera keys a hold also splits the smooth path: the moves before and after the cut don't
 bend toward each other. For a cut between two moving shots, put shot B's first key one frame after
 shot A's last (hold) key.
@@ -124,7 +127,7 @@ shot A's last (hold) key.
 (every shot in order in one mp4); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
-`canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--fit]` uploads and sets the audio track;
+`canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
 
 ## Shots

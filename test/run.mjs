@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
-import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, shudderOffset } from '../core/curves.js';
+import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments, shudderOffset } from '../core/curves.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,6 +66,44 @@ test('bezier easing', () => {
   assert.ok(bezier(EASES.overshoot, 0.6) > 1);
   assert.equal(bezier('hold', 0.99), 0);
   assert.throws(() => resolveEase('wobble'), /unknown ease/);
+});
+
+test('multi-point eases: add points without changing the shape, pass through them, remove them', () => {
+  const near = (b, c) => { let m = 0; for (let i = 0; i <= 200; i++) m = Math.max(m, Math.abs(bezier(b, i / 200) - bezier(c, i / 200))); return m; };
+  for (const [name, b] of Object.entries(EASES)) {
+    if (b === 'hold') continue;
+    let e = b;
+    for (const x of [0.37, 0.8, 0.1]) e = splitEase(e, x).ease;
+    assert.equal(e.length, 4 + 6 * 3, name);
+    assert.ok(near(b, e) < 1e-3, `${name} keeps its shape after adding points`);
+    assert.equal(easeName(e), 'custom');
+  }
+  const { ease, point } = splitEase('linear', 0.5);
+  assert.equal(point, 1);
+  // move the point up: the curve passes through it and still starts at 0 and ends at 1
+  const up = [...ease]; up[5] = 0.8;
+  assert.ok(Math.abs(bezier(resolveEase(up), 0.5) - 0.8) < 1e-6);
+  assert.equal(bezier(resolveEase(up), 0), 0); assert.equal(bezier(resolveEase(up), 1), 1);
+  assert.equal(easeSegments(up).length, 2);
+  // removing the only point gives back a one-segment curve
+  assert.equal(removeEasePoint(up, 1).length, 4);
+  // removing a point that was only added gives back the curve it came from
+  for (const [name, x] of [['easeInOut', 0.5], ['easeIn', 0.3], ['snap', 0.8], ['overshoot', 0.2]]) {
+    assert.equal(easeName(removeEasePoint(splitEase(name, x).ease, 1)), name, `${name} comes back`);
+  }
+  assert.throws(() => resolveEase([0.1, 0, 0.2, 1, 0.5]), /bad ease/);
+  // point x is kept moving forward
+  const r = resolveEase([0.2, 0, 0.3, 0.4, 1.5, 0.5, 0.2, 0.6, 0.9, 1]);
+  assert.equal(r[4], 1);
+  // a camera key and the speed curve take them, and an old 4-number curve still loads
+  let { doc } = applyOps(createDoc(), [{ op: 'key.update', id: 'k1', ease: up }, { op: 'timeline', speed: up }]);
+  assert.deepEqual(doc.timeline.keys[0].ease, up);
+  const mid = sampleCamera({ ...doc.timeline, speed: 'linear' }, doc.timeline.keys[1].t / 2);
+  assert.ok(Math.abs(mid.local - 0.8) < 1e-6);
+  ({ doc } = applyOps(doc, { op: 'key.easeAll', from: 'k1', allShots: true }));
+  assert.deepEqual(doc.timeline.keys[0].ease, up);
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', ease: [0.2, 0, 0.3, 1] }));
+  assert.deepEqual(doc.timeline.keys[0].ease, [0.2, 0, 0.3, 1]);
 });
 
 test('camera sampling hits keys and respects ease and speed', () => {
@@ -272,6 +310,12 @@ test('audio op: load, offset, volume, fit, replace, clear', () => {
   assert.equal(doc.audio.in, undefined); assert.equal(doc.audio.out, undefined);
   assert.equal(doc.audio.volume, 0.5);
   assert.equal(migrate(doc).audio.file, 'other.wav');
+  ({ doc } = applyOps(doc, { op: 'audio', beats: true }));
+  assert.equal(doc.audio.beats, true, 'beats shown');
+  ({ doc } = applyOps(doc, { op: 'audio', file: 'third.wav' }));
+  assert.equal(doc.audio.beats, true, 'showing beats survives replacing the file');
+  ({ doc } = applyOps(doc, { op: 'audio', beats: false }));
+  assert.equal('beats' in doc.audio, false, 'hiding beats leaves no field');
   ({ doc } = applyOps(doc, { op: 'audio', clear: true }));
   assert.equal(doc.audio, undefined);
 });

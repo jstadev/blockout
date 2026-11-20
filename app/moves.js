@@ -44,7 +44,9 @@ const MOVES = [
   { id: 'roll', label: 'Dutch', help: 'Tilt the horizon.', amount: { field: 'angle', unit: '°', value: 15, step: 5, min: -180, max: 180, title: 'Degrees; positive rolls clockwise' } },
 ];
 
-export function mountMoves({ anchor, viewport, onApplied }) {
+export function mountMoves({ anchor: anchorEl, viewport, onApplied }) {
+  // the button it opens from: an element, or a function returning one
+  const anchorOf = () => (typeof anchorEl === 'function' ? anchorEl() : anchorEl);
   let cur = MOVES[2];
   const amounts = Object.fromEntries(MOVES.map((m) => [m.id, m.amount.value]));
   let over = 3, ease = 'easeInOut', rise = 0, around = '';
@@ -103,12 +105,12 @@ export function mountMoves({ anchor, viewport, onApplied }) {
 
   const api = { open: false, toggle, refresh };
   function place() {
-    const r = anchor.getBoundingClientRect();
+    const r = anchorOf().getBoundingClientRect();
     p.style.left = `${Math.max(12, Math.min(r.left, innerWidth - 300))}px`;
   }
   function toggle(on = p.hidden) {
     api.open = on; p.hidden = !on;
-    anchor.classList.toggle('is-open', on);
+    anchorOf().classList.toggle('is-open', on);
     if (on) {
       // orbit round the selected object by default
       if (store.state.selection && store.object(store.state.selection)) around = store.state.selection;
@@ -202,7 +204,7 @@ export function mountMoves({ anchor, viewport, onApplied }) {
       onApplied?.(r);
     } catch {}
   }
-  addEventListener('pointerdown', (e) => { if (api.open && !p.contains(e.target) && !anchor.contains(e.target)) toggle(false); }, true);
+  addEventListener('pointerdown', (e) => { if (api.open && !p.contains(e.target) && !anchorOf().contains(e.target)) toggle(false); }, true);
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && api.open) { e.stopPropagation(); toggle(false); } }, true);
   addEventListener('resize', () => { if (api.open) place(); });
   return api;
