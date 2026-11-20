@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
-import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments } from '../core/curves.js';
+import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments, shudderOffset } from '../core/curves.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -644,4 +644,49 @@ test('camera moves remember their settings and can be edited in place', () => {
   ({ doc } = applyOps(doc, { op: 'key.update', id: a, path: 'orbit' }));
   assert.equal(k().path.move, undefined);
   assert.throws(() => applyOps(doc, { op: 'cam.move', edit: 'k1' }), /no move to edit/);
+});
+
+test('shudder: exact jerks along the segment, keys still land, set / change / clear', () => {
+  let { doc } = applyOps(createDoc(), { op: 'key.update', id: 'k1', ease: 'linear', shudder: { jerks: 4, amount: 10 } });
+  const k1 = () => doc.timeline.keys[0];
+  assert.deepEqual(k1().shudder, { jerks: 4, amount: 10, shape: 'jerk', over: 'even' });
+  const tl = doc.timeline, [a, b] = tl.keys, T = b.t - a.t;
+  // jerk: each beat snaps back by the full amount at 12% of the beat, then recovers by the next beat
+  assert.ok(Math.abs(shudderOffset(k1().shudder, 0.03) - 0.1) < 1e-9);
+  for (const u of [0, 0.25, 0.5, 0.75, 1]) assert.ok(shudderOffset(k1().shudder, u) < 1e-9, `on the beat at ${u}`);
+  // the camera is back where a plain linear move would be on each beat, and behind it just after
+  assert.ok(Math.abs(sampleCamera(tl, a.t + T * 0.5).local - 0.5) < 1e-9);
+  assert.ok(Math.abs(sampleCamera(tl, a.t + T * 0.28).local - (0.28 - 0.1)) < 1e-9);
+  assert.deepEqual(sampleCamera(tl, b.t).position, b.position);
+  // the shudder never pulls the camera back past the start key
+  assert.ok(sampleCamera(tl, a.t + T * 0.01).local >= 0);
+  // partial settings change only what is given; fade dies out towards the end
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', shudder: { shape: 'wobble', over: 'fade' } }));
+  assert.deepEqual(k1().shudder, { jerks: 4, amount: 10, shape: 'wobble', over: 'fade' });
+  assert.ok(shudderOffset(k1().shudder, 0.125) > shudderOffset(k1().shudder, 0.875));
+  assert.throws(() => applyOps(doc, { op: 'key.update', id: 'k1', shudder: { shape: 'zigzag' } }), /shape/);
+  assert.throws(() => applyOps(doc, { op: 'key.update', id: 'k1', shudder: { jerks: 0 } }), /jerks/);
+  doc = migrate(JSON.parse(JSON.stringify(doc)));
+  assert.equal(k1().shudder.shape, 'wobble');
+  // other key edits keep it; off removes it
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', ease: 'snap' }));
+  assert.equal(k1().shudder.jerks, 4);
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', shudder: 'off' }));
+  assert.equal(k1().shudder, undefined);
+  // a cut has no shudder to play
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', ease: 'hold', shudder: {} }));
+  assert.equal(sampleCamera(doc.timeline, a.t + T * 0.28).local, 0);
+});
+
+test('shudder from / to: only plays in that section of the segment', () => {
+  let { doc } = applyOps(createDoc(), { op: 'key.update', id: 'k1', ease: 'linear', shudder: { jerks: 2, amount: 10, from: 0.5, to: 0.9 } });
+  const sh = doc.timeline.keys[0].shudder;
+  assert.deepEqual(sh, { jerks: 2, amount: 10, shape: 'jerk', over: 'even', from: 0.5, to: 0.9 });
+  for (const u of [0.1, 0.3, 0.5, 0.7, 0.9, 0.95]) assert.ok(shudderOffset(sh, u) < 1e-9, `quiet at ${u}`);
+  // first jerk peaks 12% into its beat: the beat is 0.2 of the segment, so at 0.524
+  assert.ok(Math.abs(shudderOffset(sh, 0.524) - 0.1) < 1e-9);
+  assert.throws(() => applyOps(doc, { op: 'key.update', id: 'k1', shudder: { from: 0.95 } }), /from/);
+  // back to the whole segment
+  ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', shudder: { from: 0, to: 1 } }));
+  assert.equal(doc.timeline.keys[0].shudder.from, undefined);
 });

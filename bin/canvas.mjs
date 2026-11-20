@@ -76,6 +76,10 @@ Camera timeline
   canvas key-set <keyId|index> [same flags] change a key (e.g. --ease snap, --t 3)
   canvas ease-all <name|x1,y1,x2,y2[,px,py,x3,y3,x4,y4…]>  give every camera segment that ease (cuts stay cuts; --from <keyId> copies a key's; --all-shots: every shot)
   canvas key-set <keyId|index> --path smooth|straight|orbit|turn|dollyZoom   how the camera travels to the next key
+  canvas key-set <keyId|index> --shudder [jerks,amount%] [--jerks 6] [--amount 4] [--shape jerk|wobble|stutter]
+                 [--over even|fade|build] [--shudder-from 0 --shudder-to 1]   the camera judders back and forth
+                 along the segment after the key, on top of its ease (amount: how far each jerk pulls back, % of
+                 the move; from / to: only in that section, as shares of the segment); --shudder off removes it
   canvas key-rm <keyId|index>
   canvas keys-clear
 
@@ -240,8 +244,25 @@ function keyFields(flags) {
   if (flags.roll != null) k.roll = num(flags.roll);
   if (flags.ease != null) k.ease = easeArg(flags.ease);
   if (flags.path != null) k.path = String(flags.path);
+  if (['shudder', 'jerks', 'amount', 'shape', 'over', 'shudder-from', 'shudder-to'].some((f) => flags[f] != null)) {
+    k.shudder = flags.shudder === false || /^(off|none|false|0)$/i.test(String(flags.shudder)) ? 'off' : shudderArg(flags);
+  }
   for (const f of ['position', 'target']) if (typeof k[f] === 'number') throw new Error(`--${f === 'position' ? 'pos' : f} needs x,y,z`);
   return k;
+}
+/** --shudder [jerks,amount] plus --jerks --amount --shape --over: only what was given, so the rest keeps. */
+function shudderArg(flags) {
+  const sh = {};
+  const [j, a] = typeof flags.shudder === 'string' ? flags.shudder.split(',') : [];
+  if (j) sh.jerks = num(j);
+  if (a) sh.amount = num(a.replace('%', ''));
+  if (flags.jerks != null) sh.jerks = num(flags.jerks);
+  if (flags.amount != null) sh.amount = num(String(flags.amount).replace('%', ''));
+  if (flags.shape != null) sh.shape = String(flags.shape);
+  if (flags.over != null) sh.over = String(flags.over);
+  if (flags['shudder-from'] != null) sh.from = num(flags['shudder-from']);
+  if (flags['shudder-to'] != null) sh.to = num(flags['shudder-to']);
+  return sh;
 }
 const keyRef = (s) => (/^\d+$/.test(s) ? { index: Number(s) } : { id: s });
 
