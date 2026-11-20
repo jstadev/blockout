@@ -1,0 +1,138 @@
+{
+  "4": {
+    "inputs": {
+      "image": "REPLACE-image-2.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "image": "REPLACE-image-1.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "9": {
+    "inputs": {
+      "audio": "REPLACE-audio.mp3"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "rv_load": {
+    "inputs": {
+      "file": "REPLACE-blockout.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "Load Video"
+    }
+  },
+  "rv_cut": {
+    "inputs": {
+      "start_time": 0,
+      "duration": 10,
+      "strict_duration": false,
+      "video": [
+        "rv_load",
+        0
+      ]
+    },
+    "class_type": "Video Slice",
+    "_meta": {
+      "title": "Trim Video"
+    }
+  },
+  "rv_parts": {
+    "inputs": {
+      "video": [
+        "rv_cut",
+        0
+      ]
+    },
+    "class_type": "GetVideoComponents",
+    "_meta": {
+      "title": "Get Video Components"
+    }
+  },
+  "rv_mute": {
+    "inputs": {
+      "fps": [
+        "rv_parts",
+        2
+      ],
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "chroma_subsampling": "auto",
+      "codec": "none",
+      "images": [
+        "rv_parts",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "seedance": {
+    "inputs": {
+      "model": "Seedance 2.5",
+      "model.prompt": "References: Follow the blocking, camera path, speed and timing of @video_1 exactly. @image_1 defines [WHO OR WHAT IMAGE 1 SHOWS]. @image_2 defines [WHAT IMAGE 2 SHOWS]. Use @audio_1 as the soundtrack.\n\nSummary: [ONE OR TWO SENTENCES: THE TAKE, ITS LENGTH, WHAT THE CAMERA DOES, HOW IT ENDS].\n\nSubject: [WHO IS IN THE SHOT AND WHAT THEY WEAR, FROM THE IMAGES].\n\nCamera path and sync (single continuous shot, no cuts):\n[ONE LINE PER MOVE FROM CANVAS BRIEF, e.g. \"0-1.2s: Wide shot, pushing in slowly.\" \"1.2-1.5s: Hold.\"]\n\nCamera: Exactly replicate the camera trajectory, speed, heights, distances and roll of @video_1. No cuts, no fades, no speed ramps or zooms that are not in @video_1.\n\nStyle: [THE LOOK, MATCHING THE IMAGES].\n\nAudio: [WHAT IS HEARD AND WHEN].\n\nConsistency: [WHAT MUST STAY THE SAME FROM EVERY ANGLE]. No subtitles, no on-screen text, no watermark.",
+      "model.resolution": "720p",
+      "model.ratio": "9:16",
+      "model.duration": 10,
+      "model.generate_audio": true,
+      "model.task_type": "reference",
+      "model.output_format": "mp4",
+      "model.auto_downscale": true,
+      "model.auto_upscale": true,
+      "seed": 1,
+      "watermark": false,
+      "model.reference_images.image_1": [
+        "5",
+        0
+      ],
+      "model.reference_images.image_2": [
+        "4",
+        0
+      ],
+      "model.reference_videos.video_1": [
+        "rv_mute",
+        0
+      ],
+      "model.reference_audios.audio_1": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "ByteDance2ReferenceNodeV2",
+    "_meta": {
+      "title": "ByteDance Seedance 2.5 Reference to Video"
+    }
+  },
+  "save": {
+    "inputs": {
+      "filename_prefix": "blockout/render",
+      "format": "auto",
+      "format.codec": "auto",
+      "codec": "auto",
+      "video": [
+        "seedance",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  }
+}

@@ -259,8 +259,20 @@ export function mountPrompt(root, { viewport, corner }) {
     const cls = ['chat-msg', 'chat-msg--agent'];
     if (m.kind === 'error') cls.push('is-error');
     if (m.kind === 'working') cls.push('is-working');
-    return h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` }, h('div.chat-text', {}, m.text));
+    return h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` },
+      ...(m.text ? [h('div.chat-text', {}, m.text)] : []),
+      ...(m.files?.length ? [h('div.chat-files', {}, ...m.files.map(fileEl))] : []));
   }
+  // A file on a reply: a video plays in place, an image opens in a new tab.
+  function fileEl(f) {
+    if (f.type === 'video') {
+      return h('figure.chat-video', {},
+        h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name }),
+        h('figcaption', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.path || 'Open video' }, f.name)));
+    }
+    return h('a.chat-img', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }));
+  }
+  const peekText = (m) => m.text || (m.files?.length ? `Sent ${m.files.length === 1 ? `a ${m.files[0].type === 'video' ? 'video' : 'file'}` : `${m.files.length} files`}` : '');
   // Prompts and replies in the order they happened.
   const merge = (ps = [], ms = []) => [...ps.map((p) => ({ at: p.at, p })), ...ms.map((m) => ({ at: m.at, m }))].sort((a, b) => a.at - b.at);
 
@@ -283,7 +295,7 @@ export function mountPrompt(root, { viewport, corner }) {
     hidePeek();
     const el = h('div.cc-panel.chat-peek', { role: 'status', title: 'Open chat', onClick: () => { setOpen(true); input.focus(); } },
       h('div.chat-peek-who', {}, h('span.cc-dot.cc-dot--ok'), m.from === 'system' ? 'Canvas' : 'Agent replied'),
-      h('div.chat-peek-text', {}, m.text));
+      h('div.chat-peek-text', {}, peekText(m)));
     document.body.append(el);
     const timer = setTimeout(() => { if (!peek) return; el.classList.add('is-leaving'); peek.timer = setTimeout(hidePeek, 450); }, 4000);
     peek = { el, timer };

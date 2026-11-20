@@ -252,6 +252,15 @@ canvas export --shot close-up # another shot;  canvas export --sequence  every s
 Exports land in `scenes/exports/`. Give the user the path. Grid lines are kept by default because
 they help the video model read ground motion; `--grid off` removes them.
 
+`canvas brief` puts the shot's camera work into words: each move with its exact times, pace and ease, the
+framing it lands on, the objects that move, and the part of the audio it plays (`--beats` adds the beat
+times, `--all` covers every shot, `--json` has the numbers). Use it whenever you describe a shot, for
+example when the user wants a prompt for the video model to go with the export: take the times from the
+brief instead of estimating them.
+
+Rendering the export into a finished shot with ComfyUI (Seedance and other reference-to-video workflows) is
+a separate, optional skill: `blockout-render`. Load it when the user asks to render a shot.
+
 ## 6. Prompts typed in the canvas
 
 The canvas has a chat sidebar. Prompts queue on the server and come back to **this session** with the
@@ -264,7 +273,8 @@ canvas say --reply <promptId> "Raised the tower to 10 m and keyed a slower push-
 ```
 
 `canvas say` shows the reply in the canvas and marks the prompt done. Use `--working` for progress
-notes that should not close it, and **always finish with a final `say`** (without `--working`):
+notes that should not close it, `--attach file.mp4` (or an image) to show a video in the reply, where it
+plays in place, and **always finish with a final `say`** (without `--working`):
 otherwise the user sees "no reply yet". Then call `canvas wait` again straight away; a prompt is
 only delivered to an agent that is waiting. Calling `wait` also marks any prompt you already took
 as done and turns listen mode on. "this", "it" or "here" in a prompt refer to the `selected:` object and

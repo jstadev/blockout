@@ -51,7 +51,7 @@ const pathNote = (k) => {
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
-  '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.md': 'text/markdown; charset=utf-8',
+  '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.md': 'text/markdown; charset=utf-8',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
   '.opus': 'audio/ogg', '.flac': 'audio/flac', '.woff2': 'font/woff2',
 };
@@ -298,14 +298,29 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   const readJson = async (req) => { const b = await readBody(req, 50 * 1024 * 1024); return b.length ? JSON.parse(b.toString('utf8')) : {}; };
   const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
 
-  async function serveFile(res, file) {
+  // Files are served whole, or in part for a Range request: video players need ranges to seek (Safari to play at all).
+  async function serveFile(res, file, req) {
     try {
+      const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+      const m = /^bytes=(\d*)-(\d*)$/.exec(req?.headers.range || '');
+      if (m && (m[1] || m[2])) {
+        const { size } = await fsp.stat(file);
+        let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        let end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        if (start >= size || start > end) { res.writeHead(416, { 'content-range': `bytes */${size}` }); return res.end(); }
+        res.writeHead(206, { 'content-type': type, 'cache-control': 'no-cache', 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 });
+        return fs.createReadStream(file, { start, end }).pipe(res);
+      }
       const data = await fsp.readFile(file);
-      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache', 'accept-ranges': 'bytes' });
       res.end(data);
     } catch { res.writeHead(404); res.end('not found'); }
   }
   const within = (base, rel) => { const f = path.resolve(base, '.' + path.sep + rel); return f.startsWith(base + path.sep) || f === base ? f : null; };
+
+  // What a chat reply can carry, and how the chat shows it.
+  const CHAT_FILE = { '.mp4': 'video', '.webm': 'video', '.mov': 'video', '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.webp': 'image', '.gif': 'image' };
+  const chatFile = (file, name) => ({ file, name: name || file.replace(/^[a-z0-9]+-[a-f0-9]{6}-/, ''), type: CHAT_FILE[path.extname(file).toLowerCase()], url: `/uploads/${file}`, path: path.join(uploadsDir, file) });
 
   const STATIC = [
     ['/vendor/three/', path.join(ROOT, 'node_modules', 'three')],
@@ -460,6 +475,20 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       fs.writeFileSync(path.join(uploadsDir, file), Buffer.from(m[2], 'base64'));
       json(res, 200, { ok: true, file, url: `/uploads/${file}`, path: path.join(uploadsDir, file) });
     },
+    // A file the agent attaches to a chat reply (canvas say --attach): a video or an image, kept with the
+    // chat's uploads so it plays in the thread and in past chats.
+    'POST /api/chat/file': async (req, res, url) => {
+      const orig = path.basename(url.searchParams.get('name') || 'file');
+      const ext = path.extname(orig).toLowerCase();
+      if (!CHAT_FILE[ext]) return json(res, 400, { ok: false, error: `cannot attach "${ext || orig}" (videos: mp4, webm, mov; images: png, jpg, webp, gif)` });
+      const body = await readBody(req, 1024 * 1024 * 1024);
+      if (!body.length) return json(res, 400, { ok: false, error: 'empty file' });
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      const stem = orig.slice(0, orig.length - ext.length).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'file';
+      const file = `${Date.now().toString(36)}-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 6)}-${stem}${ext}`;
+      fs.writeFileSync(path.join(uploadsDir, file), body);
+      json(res, 200, { ok: true, ...chatFile(file, orig) });
+    },
     'POST /api/prompt': async (req, res) => {
       const { text, context, images } = await readJson(req);
       const imgs = (Array.isArray(images) ? images : [])
@@ -529,12 +558,16 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     },
     // ----- messages: agent -> canvas -----
     'POST /api/say': async (req, res) => {
-      const { text, reply: replyTo, kind = 'info', done = true } = await readJson(req);
+      const { text, reply: replyTo, kind = 'info', done = true, files } = await readJson(req);
       touchAgent();
       // A reply without --reply answers the prompt the agent is working on, if there is exactly one.
       const taken = prompts.filter((x) => x.status === 'taken');
       const reply = replyTo || (taken.length === 1 ? taken[0].id : undefined);
       const entry = { from: 'agent', text: String(text || ''), reply, kind, at: Date.now() };
+      const attached = (Array.isArray(files) ? files : []).map((f) => ({ file: path.basename(String(f?.file || f)), name: f?.name && path.basename(String(f.name)) }))
+        .filter((f) => CHAT_FILE[path.extname(f.file).toLowerCase()] && fs.existsSync(path.join(uploadsDir, f.file))).slice(0, 8).map((f) => chatFile(f.file, f.name));
+      if (attached.length) entry.files = attached;
+      if (!entry.text && !attached.length) return json(res, 400, { ok: false, error: 'empty message' });
       appendLog(entry);
       broadcast('say', entry);
       const p = reply && prompts.find((x) => x.id === reply);
@@ -555,7 +588,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         let rel = decodeURIComponent(url.pathname.slice(prefix.length));
         if (!rel || rel.endsWith('/')) rel += 'index.html';
         const file = within(dir, rel);
-        if (file) return serveFile(res, file);
+        if (file) return serveFile(res, file, req);
       }
       res.writeHead(404); res.end('not found');
     } catch (e) {

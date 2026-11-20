@@ -130,6 +130,19 @@ shot A's last (hold) key.
 `canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
 
+## Brief and chat attachments
+
+`canvas brief [--shot id | --all] [--beats] [--json]` describes a shot's camera work from the scene doc (no tab
+needed, except `--beats`): one line per segment between keys with its times in the exported video (the speed
+curve applied), what the camera does (push in, truck, orbit, pan, tilt, zoom, roll, hold, cut), pace and ease,
+and the framing it lands on (shot size and side when the aim is a person, camera height and angle, distance,
+lens). Also the objects that move during the shot and which seconds of the audio file the shot plays.
+`--json` gives `{ shot, start, segments: [{ from, to, kind: move|hold|cut, text, pace, ease, keys, move, end }], objects, audio, beats? }`
+(the code is `core/brief.js`).
+
+`canvas say "text" --attach file[,file…]` puts videos (mp4, webm, mov) or images on a reply; a video plays in
+the chat. The text is optional with a file. Files are copied to `.canvas/uploads/`.
+
 ## Shots
 
 `canvas shots`, `canvas shot <id|name|n>` (switch), `canvas shot-add [--name] [--from id] [--blank] [--stay] [--start s] [--length s] [--frame]`,
@@ -155,7 +168,8 @@ shot A's last (hold) key.
 | `POST /api/audio?name=song.mp3` | raw audio bytes | `{ file, name, path, url }`: stored in the scene folder's `audio/`; then set it with the `audio` op |
 | `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |
-| `POST /api/say` | `{ text, reply?, done? }` | |
+| `POST /api/chat/file?name=render.mp4` | raw bytes of a video or image | `{ file, name, type, url, path }`: for `files` on `/api/say` |
+| `POST /api/say` | `{ text, reply?, done?, files?: [{ file, name? }] }` | the reply, with any attached files |
 | `POST /api/chat/new` | | archives the open chat to `.canvas/chats/<id>.json`; `{ kept, archived }` |
 | `GET /api/chats` | | past chats, newest first: `{ chats: [{ id, title, startedAt, endedAt, count }] }` |
 | `GET /api/chats/get?id=<id>` | | `{ chat: { id, title, startedAt, endedAt, prompts, messages } }` |

@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
+import { shotBrief, briefText, describeMove, ratioOf } from '../core/brief.js';
+import { findSlots, fillRecipe, listRecipes, BUILTIN } from '../skills/blockout-render/scripts/recipe.mjs';
 import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments, shudderOffset } from '../core/curves.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -150,11 +152,15 @@ test('every primitive has a geometry builder', () => {
   for (const t of Object.keys(PRIMITIVES)) assert.match(src, new RegExp(`\\b${t}[:(]`), t);
 });
 
-test('skill copies for Claude and Codex are identical', () => {
-  const a = path.join(ROOT, '.claude/skills/camera-canvas'), b = path.join(ROOT, '.agents/skills/camera-canvas');
+test('skill copies for Claude and Codex match the canonical skills', () => {
   const list = (d) => fs.readdirSync(d, { recursive: true }).filter((f) => fs.statSync(path.join(d, f)).isFile()).sort();
-  assert.deepEqual(list(a), list(b));
-  for (const f of list(a)) assert.equal(fs.readFileSync(path.join(a, f), 'utf8'), fs.readFileSync(path.join(b, f), 'utf8'), f);
+  for (const skill of ['camera-canvas', 'blockout-render']) {
+    const src = path.join(ROOT, 'skills', skill);
+    for (const copy of [path.join(ROOT, '.claude/skills', skill), path.join(ROOT, '.agents/skills', skill)]) {
+      assert.deepEqual(list(copy), list(src), `${copy}: run npm run skills:sync`);
+      for (const f of list(src)) assert.equal(fs.readFileSync(path.join(copy, f), 'utf8'), fs.readFileSync(path.join(src, f), 'utf8'), `${skill}/${f}: run npm run skills:sync`);
+    }
+  }
 });
 
 test('frame rate defaults to 24 and accepts decimals', () => {
@@ -689,4 +695,127 @@ test('shudder from / to: only plays in that section of the segment', () => {
   // back to the whole segment
   ({ doc } = applyOps(doc, { op: 'key.update', id: 'k1', shudder: { from: 0, to: 1 } }));
   assert.equal(doc.timeline.keys[0].shudder.from, undefined);
+});
+
+test('brief: a shot\'s camera work in words, with times, framings, moving objects and its audio', () => {
+  let { doc } = applyOps(createDoc(), [
+    { op: 'meta', width: 720, height: 1280 },
+    { op: 'add', type: 'person', name: 'hero' },
+    { op: 'key.clear' },
+    { op: 'key.add', t: 0, position: [0, 1.6, 8], target: [0, 1.3, 0], fov: lensToFov(24) },
+    { op: 'cam.move', move: 'push', t: 0, over: 1.2, by: 3, ease: 'easeIn' },
+    { op: 'cam.move', move: 'orbit', t: 1.5, over: 0.25, angle: 90, around: 'hero' },
+    { op: 'key.add', t: 3, position: [0.5, 0.3, 2], target: [0, 1.4, 0], fov: lensToFov(35), ease: 'hold' },
+    { op: 'key.add', t: 4, position: [0, 6, 0.1], target: [0, 0, 0], fov: lensToFov(35) },
+    { op: 'anim.move', id: 'hero', to: [0, 0, -2], at: 1, over: 2 },
+    { op: 'audio', file: 'song-12345678.mp3', name: 'song.mp3', offset: -3 },
+  ]);
+  const b = shotBrief(doc);
+  assert.equal(b.shot.ratio.nearest, '9:16');
+  assert.equal(b.shot.frames, 120);
+  assert.match(b.start.text, /^wide of hero · front · eye level \(1\.6 m\) · 8 m away · 24mm$/);
+  const [push, hold, orbit, , cut, end] = b.segments;
+  assert.deepEqual([push.from, push.to, push.kind, push.ease, push.move.preset], [0, 1.2, 'move', 'easeIn', 'push']);
+  assert.match(push.text, /^push in 3 m/);
+  assert.equal(push.end.size, 'full shot');
+  assert.deepEqual([hold.from, hold.to, hold.kind], [1.2, 1.5, 'hold']);
+  assert.equal(orbit.move.orbit, 90);
+  assert.equal(orbit.pace, 'snap');
+  assert.match(orbit.text, /^orbit 90° to the right around hero/);
+  assert.match(orbit.end.side, /^side, their left$/);
+  assert.equal(cut.kind, 'cut');
+  assert.equal(cut.end.height, 'top-down');
+  assert.deepEqual([end.from, end.to, end.kind], [4, 5, 'hold']);
+  assert.deepEqual(b.objects.map((o) => [o.id, o.from, o.to, o.moved]), [['hero', 1, 3, 2]]);
+  // the audio starts 3 s before the action, so the shot plays 3–8 s of the file
+  assert.deepEqual([b.audio.from, b.audio.to, b.audio.fileFrom, b.audio.fileTo], [0, 5, 3, 8]);
+  const text = briefText(b, { tempo: 120, beat: 0.5, beats: [0.5, 1], onsets: [0.5] });
+  assert.match(text, /^shot 1\/1 shot-1 "Shot 1": 5s @ 24fps \(120 frames\), 720x1280 \(9:16\)/);
+  assert.match(text, /1\.50–1\.75s {2}orbit 90° to the right around hero \[snap, ease easeInOut\]/);
+  assert.match(text, /tempo: 120 bpm/);
+
+  // a second shot picks up later in the action and sits after the first in the sequence
+  ({ doc } = applyOps(doc, [{ op: 'shot.add', name: 'two', start: 2, duration: 2 }]));
+  const two = shotBrief(doc, 'two');
+  assert.deepEqual(two.shot.sequence, [5, 7]);
+  assert.deepEqual([two.audio.fileFrom, two.audio.fileTo], [5, 7]);
+  assert.deepEqual(two.objects.map((o) => [o.from, o.to, o.moved]), [[0, 1, 1]]);
+  assert.equal(shotBrief(doc, 'shot-1').shot.active, false);
+
+  // the speed curve moves the times: with ease-in, the half-way key is reached after the half-way point
+  ({ doc } = applyOps(createDoc(), [{ op: 'key.clear' }, { op: 'key.add', t: 0, position: [0, 1, 5], target: [0, 1, 0] }, { op: 'key.add', t: 2, position: [2, 1, 5], target: [2, 1, 0] }, { op: 'key.add', t: 4, position: [2, 1, 5], target: [2, 1, 0] }, { op: 'timeline', duration: 4, speed: 'easeIn' }]));
+  const sp = shotBrief(doc).segments;
+  assert.ok(sp[0].to > 2.2 && sp[0].to < 4, `truck ends at ${sp[0].to}`);
+  assert.match(sp[0].text, /^truck right 2 m$/);
+  assert.equal(describeMove({ position: [0, 1, 5], target: [0, 1, 0], fov: 40 }, { position: [0, 1, 5], target: [0, 1, 0], fov: 40 }, 1).text, 'hold');
+  assert.deepEqual(ratioOf(1366, 768), { exact: '683:384', nearest: '16:9' });
+});
+
+test('render recipes: slots are found by node type, a fill never touches the recipe, and mismatches are flagged', () => {
+  const file = path.join(BUILTIN, 'seedance-2.5-reference.json');
+  const recipe = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const before = JSON.stringify(recipe);
+  const s = findSlots(recipe);
+  assert.equal(s.model.class, 'ByteDance2ReferenceNodeV2');
+  assert.deepEqual([s.video.node, s.video.input, s.video.ref, s.video.direct], ['rv_load', 'file', 'model.reference_videos.video_1', false]);
+  assert.deepEqual(s.images.map((i) => [i.n, i.node, i.ref]), [[1, '5', 'model.reference_images.image_1'], [2, '4', 'model.reference_images.image_2']]);
+  assert.deepEqual([s.audio.node, s.trim.node, s.save.node, s.prompt.input], ['9', 'rv_cut', 'save', 'model.prompt']);
+  assert.deepEqual(Object.keys(s.settings), ['duration', 'ratio', 'resolution', 'seed', 'generateAudio']);
+
+  const r = fillRecipe(recipe, { video: 'shot.mp4', images: ['a.png', 'b.png', 'c.png'], audio: 'none', prompt: 'Follow @video_1. @image_1 her, @image_2 the room, @image_4 x. @audio_1 plays.', duration: 6, ratio: '16:9', seed: 'new', prefix: 'blockout/s/shot-1', set: { 'seedance.watermark': true } });
+  assert.equal(JSON.stringify(recipe), before, 'the recipe is not changed');
+  const w = r.workflow, m = w.seedance.inputs;
+  assert.equal(w.rv_load.inputs.file, 'shot.mp4');
+  assert.deepEqual([w['5'].inputs.image, w['4'].inputs.image, w.image_3.inputs.image], ['a.png', 'b.png', 'c.png']);
+  assert.deepEqual(m['model.reference_images.image_3'], ['image_3', 0]);
+  assert.ok(!w['9'] && !('model.reference_audios.audio_1' in m), 'audio: none removes the loader and its input');
+  assert.deepEqual([m['model.duration'], w.rv_cut.inputs.duration, m['model.ratio'], m.watermark, w.save.inputs.filename_prefix], [6, 6, '16:9', true, 'blockout/s/shot-1']);
+  assert.notEqual(m.seed, recipe.seedance.inputs.seed);
+  assert.deepEqual(r.warnings, ['the prompt mentions @image_4 but there are 3 images', 'image 3 is loaded but the prompt never mentions @image_3', 'the prompt mentions @audio_1 but there is no audio']);
+
+  // fewer images than slots: the spare one goes; untouched placeholders are called out
+  const one = fillRecipe(recipe, { images: ['only.png'] });
+  assert.ok(!one.workflow['4'] && !('model.reference_images.image_2' in one.workflow.seedance.inputs));
+  assert.ok(one.warnings.some((x) => /placeholder "REPLACE-blockout.mp4"/.test(x)) && one.warnings.some((x) => /\[PLACEHOLDER\]/.test(x)));
+
+  // title tags win over the guess; the editor format is refused with a way out
+  const tagged = structuredClone(recipe);
+  tagged.extra = { class_type: 'LoadVideo', inputs: { file: 'other.mp4' }, _meta: { title: 'the real one @video' } };
+  assert.equal(findSlots(tagged).video.node, 'extra');
+  assert.throws(() => findSlots({ nodes: [], links: [] }), /Export \(API\)/);
+  assert.throws(() => fillRecipe({ a: { class_type: 'SaveVideo', inputs: { filename_prefix: 'x' } } }, { video: 'v.mp4' }), /no video slot/);
+  assert.deepEqual(listRecipes(BUILTIN).map((x) => [x.name, x.images, !!x.notes]), [['seedance-2.5-reference', 2, true]]);
+});
+
+test('say --attach: a reply carries a video, served with byte ranges so it can be played and seeked', async () => {
+  const os = await import('node:os');
+  const { spawn, execFileSync } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-attach-'));
+  const port = 5392;
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) { try { await fetch(`${base}/api/status`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env: { ...process.env, CANVAS_PORT: String(port) }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const video = path.join(dir, 'my render.mp4');
+    fs.writeFileSync(video, Buffer.from('0123456789'));
+    assert.match(cli('say', '--attach', video, 'Render done'), /sent with 1 attachment/);
+    assert.match(cli('say', '--attach', video), /sent with 1 attachment/); // text is optional with a file
+    const log = fs.readFileSync(path.join(dir, '.canvas', 'log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const f = log[0].files[0];
+    assert.deepEqual([log[0].text, f.type, f.name, log[1].text], ['Render done', 'video', 'my render.mp4', '']);
+    assert.ok(fs.existsSync(f.path) && f.url.startsWith('/uploads/'));
+    const whole = await fetch(base + f.url);
+    assert.deepEqual([whole.status, whole.headers.get('content-type'), whole.headers.get('accept-ranges'), await whole.text()], [200, 'video/mp4', 'bytes', '0123456789']);
+    const part = await fetch(base + f.url, { headers: { range: 'bytes=2-5' } });
+    assert.deepEqual([part.status, part.headers.get('content-range'), await part.text()], [206, 'bytes 2-5/10', '2345']);
+    const tail = await fetch(base + f.url, { headers: { range: 'bytes=-3' } });
+    assert.equal(await tail.text(), '789');
+    assert.equal((await fetch(base + f.url, { headers: { range: 'bytes=50-' } })).status, 416);
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'x');
+    assert.throws(() => cli('say', '--attach', path.join(dir, 'notes.txt'), 'hi'), /cannot attach/);
+    assert.throws(() => cli('say'), /usage/);
+    assert.match(cli('brief'), /^shot 1\/1 shot-1/);
+    assert.equal(JSON.parse(cli('brief', '--all', '--json')).length, 1);
+  } finally { srv.kill(); }
 });
