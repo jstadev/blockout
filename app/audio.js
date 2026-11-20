@@ -5,13 +5,14 @@
 // The file is served from the scene folder's audio/.
 
 import { store } from './store.js';
+import { shotList } from '/core/doc.js';
 
 const RATE = 48000;      // decode and mix at this sample rate
 const PEAK_RATE = 200;   // waveform buckets per second of audio
 
 let ctx = null;          // realtime AudioContext, made on first play (browsers want a user gesture)
 let cur = { file: null, buffer: null, peaks: null, loading: null, error: null, grid: null };
-let voice = null;        // what is playing: { src, gain, at (ctx time), t (timeline time at `at`) }
+let voice = null;        // what is playing: { srcs, gain, at (ctx time), t (active shot's time at `at`), shot }
 const listeners = new Set();
 const changed = () => listeners.forEach((fn) => fn());
 
@@ -124,11 +125,31 @@ async function load(a) {
 }
 
 function stopVoice() {
-  if (voice?.src) { try { voice.src.stop(); } catch {} voice.src.disconnect(); }
+  for (const src of voice?.srcs || []) { try { src.stop(); } catch {} src.disconnect(); }
+  voice?.gain?.disconnect();
   voice = null;
 }
 
-/** Start the track so that shot time t plays now. Keeps a clock even when nothing is audible. */
+/**
+ * What plays from shot time t of the active shot, as spans of the action back to back: the rest of this shot,
+ * then (Play all) the shots after it, wrapping round with loop, or this shot again with loop alone. Scheduled
+ * up front so the sound runs straight through the cuts instead of restarting at each one.
+ */
+function plan(t) {
+  const list = shotList(store.doc), i = Math.max(0, list.findIndex((s) => s.active));
+  const all = !!store.state.playAll && list.length > 1, loop = !!store.state.loop;
+  const out = [];
+  for (let k = i, total = 0; out.length < 200 && total < 1800;) {
+    const tl = list[k].timeline, D = tl.duration, from = out.length ? 0 : Math.min(Math.max(0, t), D);
+    if (D - from > 1e-6) out.push({ a0: (tl.start || 0) + from, len: D - from });
+    total += D - from;
+    if (all) { if (++k >= list.length) { if (!loop) break; k = 0; } } else if (!loop) break;
+    if (!(D > 0)) break;
+  }
+  return out;
+}
+
+/** Start the track so that shot time t plays now, on through the cuts that follow. */
 function play(t) {
   stopVoice();
   const a = track();
@@ -136,17 +157,37 @@ function play(t) {
   ctx ??= new AudioContext({ latencyHint: 'interactive' });
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const at = ctx.currentTime + 0.02;
-  voice = { src: null, at, t };
-  const pos = shotStart() + t - a.offset; // where in the file this moment of the action is
-  const { inT, outT } = trimOf(a, cur.buffer.duration);
-  if (pos >= outT - 1e-4) return;
-  const src = ctx.createBufferSource();
   const gain = ctx.createGain();
-  src.buffer = cur.buffer; gain.gain.value = a.volume ?? 1;
-  src.connect(gain).connect(ctx.destination);
-  const from = Math.max(pos, inT);
-  src.start(at + (from - pos), from, outT - from);
-  voice.src = src; voice.gain = gain;
+  gain.gain.value = a.volume ?? 1;
+  gain.connect(ctx.destination);
+  voice = { srcs: [], gain, at, t, shot: store.doc.shot };
+  const { inT, outT } = trimOf(a, cur.buffer.duration);
+  // each span's audible part of the file, and when it starts; spans that carry straight on in the file merge
+  const runs = [];
+  let when = at;
+  for (const p of plan(t)) {
+    const pos = p.a0 - a.offset, from = Math.max(pos, inT), to = Math.min(pos + p.len, outT);
+    if (to - from > 1e-4) {
+      const w = when + (from - pos), last = runs[runs.length - 1];
+      if (last && Math.abs(last.from + (w - last.when) - from) < 1e-4 && Math.abs(last.to - from) < 1e-4) last.to = to;
+      else runs.push({ when: w, from, to });
+    }
+    when += p.len;
+  }
+  for (const r of runs) {
+    const src = ctx.createBufferSource();
+    src.buffer = cur.buffer;
+    src.connect(gain);
+    src.start(r.when, r.from, r.to - r.from);
+    voice.srcs.push(src);
+  }
+}
+
+/** Playback crossed a cut into `shot` (or looped): the sound carries on, its clock now counts from that shot's start. */
+function cut(D, shot = store.doc?.shot) {
+  if (!voice) return;
+  voice.t -= D;
+  voice.shot = shot;
 }
 
 export const audio = {
@@ -177,7 +218,7 @@ export const audio = {
     }
     return cur.grid || null;
   },
-  play, stop: stopVoice,
+  play, stop: stopVoice, cut,
 
   /** Timeline time from the audio clock while it plays (so picture and sound stay locked), else null. */
   now() {
@@ -189,14 +230,17 @@ export const audio = {
   attach() {
     let sig = '';
     store.on('state', (c) => {
-      if (!c.playing) return;
-      if (store.state.playing) play(store.state.time); else stopVoice();
+      if (!c.playing && !c.playAll && !c.loop) return; // Play all and loop change what comes after the cut
+      if (store.state.playing) play(store.state.time); else if (c.playing) stopVoice();
     });
     store.on('doc', () => {
       const a = track();
       load(a);
-      const s = a ? JSON.stringify([a.file, a.offset, a.in, a.out, a.volume, a.muted, store.doc.shot, shotStart()]) : '';
-      if (s !== sig) { sig = s; if (store.state.playing) play(store.state.time); changed(); }
+      const shots = shotList(store.doc).map((s) => [s.id, s.timeline.start || 0, s.timeline.duration]);
+      const s = a ? JSON.stringify([a.file, a.offset, a.in, a.out, a.volume, a.muted, shots]) : '';
+      // a switch the playing sound already crossed into (Play all) keeps going; any other switch restarts it
+      const moved = voice && voice.shot !== store.doc.shot;
+      if (s !== sig || moved) { sig = s; if (store.state.playing) play(store.state.time); changed(); }
     });
   },
 

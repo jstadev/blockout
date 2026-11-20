@@ -234,8 +234,16 @@ function frame(now) {
     if (t >= D && store.state.playAll && store.doc.shots.length > 1) {
       // Play all: hold the last frame while the next shot comes in, then carry on from its start
       t = D;
-      if (!switching) { switching = true; audio.stop(); timeline.shots.playOn().then((on) => { if (!on) store.set({ playing: false }); }).finally(() => { switching = false; }); }
-    } else if (t >= D) { if (store.state.loop) { t %= D; audio.play(t); } else { t = D; store.set({ playing: false }); } }
+      // (the sound was scheduled through the cut, so it carries on: its clock now counts in the next shot)
+      if (!switching) {
+        switching = true;
+        const s = store.doc.shots, i = s.findIndex((x) => x.id === store.doc.shot);
+        audio.cut(D, (s[i + 1] ?? (store.state.loop ? s[0] : null))?.id);
+        timeline.shots.playOn()
+          .then((on) => { if (!on) store.set({ playing: false }); else if (audio.now() != null) store.set({ time: audio.now() }); lastT = store.state.time; })
+          .finally(() => { switching = false; });
+      }
+    } else if (t >= D) { if (store.state.loop) { t %= D; audio.cut(D); } else { t = D; store.set({ playing: false }); } }
     if (!switching) store.set({ time: t, camDirty: false });
     lastT = store.state.time;
   } else lastT = null;
