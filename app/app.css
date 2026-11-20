@@ -248,9 +248,13 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .audio-pop .cc-row > .cc-slider { flex: 1; }
 .audio-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--cc-text); }
 .audio-actions { gap: 4px; }
+.audio-pop .cc-row > .audio-bpm { width: auto; margin-left: auto; }
 
 .curve-pop { position: fixed; bottom: calc(124px + var(--stack-h, 0px)); left: 12px; width: 292px; padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 25; }
 .curve-pop[hidden] { display: none; }
+/* never taller than the room above the timeline: scroll inside instead of running off the top */
+.curve-pop { overflow-y: auto; overscroll-behavior: contain; }
+.curve-pop > * { flex-shrink: 0; }
 .curve-canvas { border-radius: var(--cc-radius); background: var(--cc-surface-sunk); align-self: center; touch-action: none; }
 /* the row's flex: 1 split the tabs, spacer and close button in thirds, so the tabs overflowed their track */
 .curve-pop .cc-row > :is(.cc-seg, .cc-btn) { flex: none; }
@@ -271,6 +275,12 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .curve-all .curve-all__count { margin-left: auto; color: var(--cc-text-faint); font-size: var(--cc-size-sm); font-variant-numeric: tabular-nums; }
 .curve-all[hidden] { display: none; }
 .curve-help { white-space: normal; line-height: 1.4; }
+.curve-shudder { display: flex; flex-direction: column; gap: 4px; }
+.curve-shudder[hidden], .curve-shudder__body[hidden] { display: none; }
+.curve-shudder__body { display: flex; flex-direction: column; gap: 4px; }
+.curve-pop .curve-shudder .cc-row > .cc-seg { flex: 1; }
+.curve-shudder .cc-seg > button { flex: 1; justify-content: center; padding: 0 4px; }
+.curve-shudder .cc-row > .cc-label.curve-shudder__back { width: auto; }
 
 #offline { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); padding: 8px 12px; color: var(--cc-danger); z-index: 40; }
 #offline[hidden] { display: none; }

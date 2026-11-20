@@ -56,13 +56,13 @@ Send one op or an array (applied atomically: all or nothing, one undo step).
 | `anim.key` | `id`, `t`, `position?`, `rotation?`, `scale?`, `ease?`. Missing fields keep where it is at `t`; a key already at `t` is replaced | `{ id, t, keys }` |
 | `anim.remove` | `id`, `t?` (omit to remove all of its animation) | `{ id, keys }` |
 | `key.add` | `t`, `position`, `target`, `fov?`, `roll?`, `ease?`. A key already at `t` is updated instead | `{ id, replaced? }` |
-| `key.update` | `id` or `index` (by time order), any key field. `path`: a type name, an object, or `"smooth"` to clear | `{ id }` |
+| `key.update` | `id` or `index` (by time order), any key field. `path`: a type name, an object, or `"smooth"` to clear. `shudder`: `{ jerks (1–60), amount (% of the move each jerk pulls back, 0–50), shape (jerk, wobble, stutter), over (even, fade, build), from?, to? (0–1: only that section of the segment) }` makes the camera judder back and forth along the segment after the key, on top of its ease; partial settings keep the rest, `"off"` removes it | `{ id }` |
 | `key.easeAll` | `ease` or `from` (a key id), `cuts?` (also overwrite holds), `allShots?` (every shot, not just the active one) | `{ updated, shots, ease }` |
 | `cam.move` | `move` (`pan` `tilt` `orbit` `push` `pull-out` `truck` `pedestal` `crane` `zoom` `dollyZoom` `roll`; aliases `push-in` `dolly` `dolly-zoom` `vertigo` `dutch` `arc` `boom`), `t?` (default 0), `over?` (s, default 3), `ease?`, `from?` ({ position, target, fov?, roll? }; default the camera at `t`), and the move's own: `angle` (pan + right, tilt + up, orbit + right, roll), `by` (m: push/dollyZoom + in, truck + right, crane/pedestal + up), `around` (orbit: object id or [x,y,z]; default the aim), `rise` (orbit, m), `lens` or `fov` (zoom). Keys a path + ease at `t` and the end framing at `t + over`, replacing keys in between. The path keeps `move` and `params`. `edit: <keyId|index>` redoes the move starting at that key from its framing, replacing its end key; settings left out keep their values | `{ move, keys: [start, end], from, to, path }` |
 | `key.remove` | `id` or `index` | `{ removed }` |
 | `key.clear` | | `{ removed }` |
 | `timeline` | `duration`, `retime?` (scale key times; object keys too when there is only one shot, from the shot's start, so `start` + `duration` + `retime` together stretch the shot from its left end), `start` (s into the shared action where this shot begins; 0 clears it), `fps` (1–120, decimals allowed e.g. 23.976; default 24), `interp` (`smooth`/`linear`), `speed` (ease, whole shot), `ease` (set every key) | `{ timeline }` |
-| `audio` | The scene's one track (`doc.audio`, shared by every shot). `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (action time where the file starts; negative skips into it), `in` / `out` (trim: seconds into the file, `null` clears), `volume` (0–4), `muted`, `length` (set by the tab), `fit` (the active shot ends where the audio ends), `clear` | `{ audio, duration }` |
+| `audio` | The scene's one track (`doc.audio`, shared by every shot). `file` (name in the scene's `audio/`, from `POST /api/audio`), `name?`, `offset` (action time where the file starts; negative skips into it), `in` / `out` (trim: seconds into the file, `null` clears), `volume` (0–4), `muted`, `beats` (show the beat grid on the audio lane), `length` (set by the tab), `fit` (the active shot ends where the audio ends), `clear` | `{ audio, duration }` |
 | `shot.add` | `name?`, `id?`, `from?` (shot to copy; default the active one), `blank?` (default two-key move instead of a copy), `switch?` (default true), `start?` (action time it picks up at; default where the active shot ends), `duration?` (its length; default the copied shot's), `frame?` (one key instead of a copy: the copied shot's framing at the moment it picks up, what the canvas's "+ New shot" row does). Inserted after the active shot | `{ id, name, start, shots, active }` |
 | `shot.split` | `t` (shot time, snapped to a frame, inside the shot), `name?`, `id?`, `switch?` (default true). The active shot ends at `t`; a new shot after it gets the same framing at its first key, the later keys, the rest of the length, `start` = this shot's start + t. Needs a linear shot speed | `{ id, name, at, shots, active }` |
 | `shot.use` | `id` (id, name or 1-based position) — make it the active shot | `{ id, name }` |
@@ -127,7 +127,7 @@ shot A's last (hold) key.
 (every shot in order in one mp4); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
-`canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--fit]` uploads and sets the audio track;
+`canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
 
 ## Shots

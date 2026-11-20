@@ -76,6 +76,10 @@ Camera timeline
   canvas key-set <keyId|index> [same flags] change a key (e.g. --ease snap, --t 3)
   canvas ease-all <name|x1,y1,x2,y2[,px,py,x3,y3,x4,y4…]>  give every camera segment that ease (cuts stay cuts; --from <keyId> copies a key's; --all-shots: every shot)
   canvas key-set <keyId|index> --path smooth|straight|orbit|turn|dollyZoom   how the camera travels to the next key
+  canvas key-set <keyId|index> --shudder [jerks,amount%] [--jerks 6] [--amount 4] [--shape jerk|wobble|stutter]
+                 [--over even|fade|build] [--shudder-from 0 --shudder-to 1]   the camera judders back and forth
+                 along the segment after the key, on top of its ease (amount: how far each jerk pulls back, % of
+                 the move; from / to: only in that section, as shares of the segment); --shudder off removes it
   canvas key-rm <keyId|index>
   canvas keys-clear
 
@@ -93,10 +97,11 @@ keys in between are replaced. Both stay ordinary keys you can drag, re-key and e
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
-  canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--fit]
+  canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--show-beats on|off] [--fit]
                   load a music / dialogue track onto the timeline (mixed into the export). One track spans
                   every shot, on the shared action time. --offset: action time where the file starts
                   (negative skips into it); --in / --out: trim, seconds into the file (none = untrimmed);
+                  --show-beats: mark the beat grid on the audio lane in the tab;
                   --fit: the active shot ends where the audio ends
   canvas audio --beats [--json]             tempo and onset times inside the shot (needs the tab), to key/cut on
   canvas audio --clear                      remove the audio track
@@ -196,7 +201,7 @@ const audioLine = (a) => {
   const len = a.length, i = a.in || 0, o = a.out ?? len;
   const trim = a.in || a.out != null ? `, trimmed to ${i}–${o ?? 'end'}s of the file` : '';
   const span = o != null ? `, plays ${fmtS(+(a.offset + i).toFixed(3))}–${fmtS(+(a.offset + o).toFixed(3))} of the action` : '';
-  return `audio (all shots): ${a.name} at ${a.offset}s${len ? `, ${len}s long` : ''}${trim}${span}, volume ${a.volume}${a.muted ? ', muted' : ''}`;
+  return `audio (all shots): ${a.name} at ${a.offset}s${len ? `, ${len}s long` : ''}${trim}${span}, volume ${a.volume}${a.muted ? ', muted' : ''}${a.beats ? ', beats shown' : ''}`;
 };
 const shotLine = (s, i) => `${s.active ? '*' : ' '} ${i + 1} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps, ${s.keys} camera key${s.keys === 1 ? '' : 's'}${s.start ? `, action from ${s.start}s` : ''}`;
 const rpc = (method, params = {}, timeout) => api('POST', '/api/rpc', { method, params, timeout }).then((d) => d.result);
@@ -239,8 +244,25 @@ function keyFields(flags) {
   if (flags.roll != null) k.roll = num(flags.roll);
   if (flags.ease != null) k.ease = easeArg(flags.ease);
   if (flags.path != null) k.path = String(flags.path);
+  if (['shudder', 'jerks', 'amount', 'shape', 'over', 'shudder-from', 'shudder-to'].some((f) => flags[f] != null)) {
+    k.shudder = flags.shudder === false || /^(off|none|false|0)$/i.test(String(flags.shudder)) ? 'off' : shudderArg(flags);
+  }
   for (const f of ['position', 'target']) if (typeof k[f] === 'number') throw new Error(`--${f === 'position' ? 'pos' : f} needs x,y,z`);
   return k;
+}
+/** --shudder [jerks,amount] plus --jerks --amount --shape --over: only what was given, so the rest keeps. */
+function shudderArg(flags) {
+  const sh = {};
+  const [j, a] = typeof flags.shudder === 'string' ? flags.shudder.split(',') : [];
+  if (j) sh.jerks = num(j);
+  if (a) sh.amount = num(a.replace('%', ''));
+  if (flags.jerks != null) sh.jerks = num(flags.jerks);
+  if (flags.amount != null) sh.amount = num(String(flags.amount).replace('%', ''));
+  if (flags.shape != null) sh.shape = String(flags.shape);
+  if (flags.over != null) sh.over = String(flags.over);
+  if (flags['shudder-from'] != null) sh.from = num(flags['shudder-from']);
+  if (flags['shudder-to'] != null) sh.to = num(flags['shudder-to']);
+  return sh;
 }
 const keyRef = (s) => (/^\d+$/.test(s) ? { index: Number(s) } : { id: s });
 
@@ -574,6 +596,7 @@ const commands = {
     for (const k of ['in', 'out']) if (flags[k] != null) o[k] = /^(none|off|null)$/i.test(String(flags[k])) ? null : num(flags[k]);
     if (flags.volume != null) o.volume = num(flags.volume);
     if (flags.mute != null) o.muted = bool(flags.mute);
+    if (flags['show-beats'] != null) o.beats = bool(flags['show-beats']);
     if (Object.keys(o).length > 1) await op(o, pos[0] ? 'load audio' : 'edit audio');
     let info = null;
     if ((flags.fit || flags.beats) && SHOT) {

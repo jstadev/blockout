@@ -189,6 +189,7 @@ export function mountAudioTrack(root, { xA, aAt, axisEnd, scrubTo, marks, spans,
         ctx.fillRect(x, mid - hh, 1, hh * 2);
       }
       ctx.globalAlpha = 1;
+      drawBeats(v, left, right, H);
       // trim handles: where the clip starts and ends (on the lane's edge when it runs past the axis)
       const hl = (x, side, on) => {
         ctx.fillStyle = on ? accent : text; ctx.globalAlpha = on ? 1 : 0.55;
@@ -227,6 +228,32 @@ export function mountAudioTrack(root, { xA, aAt, axisEnd, scrubTo, marks, spans,
       ctx.fillStyle = text; ctx.fillText(label, lx + 5, mid);
     }
   }
+  /**
+   * The beat grid, when the track shows it: an accent tick at the top and bottom of the lane on each beat,
+   * a longer one where a bar starts. Ticks outside the clip are faint; when the beats are too close to
+   * read, only the bars are drawn.
+   */
+  function drawBeats(v, left, right, H) {
+    if (!v.a.beats) return;
+    const g = audio.grid();
+    if (!g || !g.times.length) return;
+    const step = xA(v.offset + g.beat) - xA(v.offset);
+    if (step * 4 < 8) return;
+    const every = step < 6 ? 4 : 1;
+    ctx.fillStyle = css('--cc-accent');
+    const k0 = Math.max(0, Math.floor((aAt(left) - v.offset - g.times[0]) / g.beat) - 1);
+    for (let k = k0; k < g.times.length; k++) {
+      const t = g.times[k], x = Math.round(xA(v.offset + t));
+      if (x > right) break;
+      const bar = (((k - g.bar) % 4) + 4) % 4 === 0;
+      if (x < left || (!bar && every > 1)) continue;
+      const inClip = t >= v.inT - 1e-3 && t <= v.outT + 1e-3;
+      const len = bar ? 7 : 4;
+      ctx.globalAlpha = (inClip ? 1 : 0.3) * (bar ? 0.9 : 0.6);
+      ctx.fillRect(x, 0, bar ? 1.5 : 1, len); ctx.fillRect(x, H - len, bar ? 1.5 : 1, len);
+    }
+    ctx.globalAlpha = 1;
+  }
   new ResizeObserver(draw).observe(lane);
   audio.on(() => { draw(); pop.refresh(); });
 
@@ -255,6 +282,8 @@ function mountAudioSettings({ anchor, replace, op, live }) {
   const untrimBtn = button({ label: 'Untrim', title: 'Clear the trim: play the whole file', onClick: () => op({ in: null, out: null }, 'clear audio trim') });
   const vol = slider({ min: 0, max: 2, step: 0.05, value: 1, precision: 2, onChange: (v) => op({ volume: v }, 'audio volume') });
   const mute = onOff({ title: 'Mute in playback and the export', onChange: (v) => op({ muted: v }, v ? 'mute audio' : 'unmute audio') });
+  const beats = onOff({ title: 'Mark the beats on the audio lane (a tick per beat, a longer one per bar), found from the file\'s tempo', onChange: (v) => op({ beats: v }, v ? 'show beats' : 'hide beats') });
+  const bpm = h('span.cc-label.cc-mono.audio-bpm');
   const fitBtn = button({ label: 'Fit shot', title: 'Make this shot end where the audio ends', onClick: () => op({ fit: true }, 'fit shot to audio') });
   const replaceBtn = button({ label: 'Replace', title: 'Load another audio file', onClick: () => replace() });
   const removeBtn = button({ icon: 'trash', kind: 'ghost', title: 'Remove the audio track', onClick: () => op({ clear: true }, 'remove audio') });
@@ -271,6 +300,7 @@ function mountAudioSettings({ anchor, replace, op, live }) {
     rowEl('Trim end', affix(outNum, 's')),
     rowEl('Volume', vol),
     rowEl('Mute', mute),
+    rowEl('Beats', beats, bpm),
     h('div.cc-row.audio-actions', {}, fitBtn, untrimBtn, replaceBtn, h('span.cc-spacer'), removeBtn),
     h('div.cc-divider.cc-divider--h'),
     foot,
@@ -296,6 +326,9 @@ function mountAudioSettings({ anchor, replace, op, live }) {
     untrimBtn.disabled = !(a.in > 0 || a.out != null);
     vol.set(a.volume ?? 1);
     mute.set(!!a.muted);
+    beats.set(!!a.beats);
+    const g = a.beats ? audio.grid() : null;
+    bpm.textContent = !a.beats ? '' : g ? `${Math.round(g.tempo)} bpm` : audio.gridFound === false ? 'no steady beat' : audio.error ? '' : 'finding…';
     fitBtn.disabled = !len;
     const n = store.doc.shots.length;
     const s2 = (t) => `${t < 0 ? '−' : ''}${Math.abs(t).toFixed(2)}`;

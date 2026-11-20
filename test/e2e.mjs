@@ -596,6 +596,10 @@ try {
   await page.locator('.tl-audiobtn').click();
   ok(await page.locator('.audio-pop').isVisible() && /−0\.25–5\.75 s of the action/.test(await page.locator('.audio-pop .audio-foot').textContent()), 'Audio menu shows where the clip plays in the action');
   await page.screenshot({ path: path.join(dir, 'audio.png') });
+  await page.locator('.audio-pop .cc-row:has(.audio-bpm) .cc-toggle').click();
+  await page.waitForFunction(() => window.canvas.store.doc.audio.beats === true && /bpm/.test(document.querySelector('.audio-pop .audio-bpm').textContent));
+  ok(/^12\d bpm|^11[89] bpm/.test(await page.locator('.audio-pop .audio-bpm').textContent()) && cli('ls').includes('beats shown'), `Beats toggle marks the beat grid (${await page.locator('.audio-pop .audio-bpm').textContent()})`);
+  await page.screenshot({ path: path.join(dir, 'audio-beats.png') });
   await page.keyboard.press('Escape');
   // slide the audio by dragging the waveform
   const lb = await page.locator('.tl-audio').boundingBox();
@@ -627,6 +631,24 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 2 && window.canvas.store.doc.shot !== 'shot-1');
   ok(await page.evaluate(() => !!window.canvas.store.doc.audio && !document.querySelector('.tl-audio').hidden), 'the audio track stays on the timeline in the next shot');
   await page.screenshot({ path: path.join(dir, 'audio-shots.png') });
+  { // Play all runs the sound straight through the cut: one scheduled source, no restart at the next shot
+    cli('audio', '--offset', '0', '--in', 'none', '--out', 'none');
+    await page.waitForFunction(() => window.canvas.store.doc.audio.offset === 0 && !window.canvas.store.doc.audio.out);
+    await page.evaluate(() => {
+      const P = AudioBufferSourceNode.prototype, start = P.start;
+      window.__starts = [];
+      P.start = function (...a) { window.__starts.push(a); return start.apply(this, a); };
+    });
+    await page.evaluate(async () => {
+      const { store } = window.canvas;
+      await store.op({ op: 'shot.use', id: 'shot-1' }, 'switch shot', { amend: true });
+      store.set({ playAll: true, loop: false, time: store.doc.timeline.duration - 0.3 });
+      store.set({ playing: true });
+    });
+    await page.waitForFunction(() => window.canvas.store.doc.shot !== 'shot-1' && window.canvas.store.state.time > 0.2, null, { timeout: 5000 });
+    const r = await page.evaluate(() => { const { store } = window.canvas; store.set({ playing: false, playAll: false }); return { starts: window.__starts.length, t: store.state.time }; });
+    ok(r.starts === 1, `Play all keeps the audio going across the cut (${r.starts} source start${r.starts === 1 ? '' : 's'}, now ${r.t.toFixed(2)} s into the next shot)`);
+  }
   cli('shot-rm', await page.evaluate(() => window.canvas.store.doc.shot));
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
   cli('audio', '--offset', '-0.25', '--in', 'none', '--out', 'none');
