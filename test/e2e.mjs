@@ -649,6 +649,15 @@ try {
     const r = await page.evaluate(() => { const { store } = window.canvas; store.set({ playing: false, playAll: false }); return { starts: window.__starts.length, t: store.state.time }; });
     ok(r.starts === 1, `Play all keeps the audio going across the cut (${r.starts} source start${r.starts === 1 ? '' : 's'}, now ${r.t.toFixed(2)} s into the next shot)`);
   }
+  { // Export with two shots: the whole timeline in one mp4, the audio running under the cut for its full length
+    const tx = cli('export', '--width', '160', '--height', '90');
+    ok(/2 shots/.test(tx) && /audio/.test(tx), `export renders both shots with the audio (${tx.split('\n')[1]})`);
+    try {
+      const d = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,duration', '-of', 'csv=p=0', tx.split('\n')[0]], { encoding: 'utf8' }).trim().split('\n').map((l) => l.split(','));
+      const v = +d.find((x) => x[0] === 'video')[1], a = +d.find((x) => x[0] === 'audio')[1];
+      ok(Math.abs(a - v) < 0.1, `the audio lasts as long as the whole cut (video ${v.toFixed(2)} s, audio ${a.toFixed(2)} s)`);
+    } catch { console.log('     (ffprobe not available, skipped)'); }
+  }
   cli('shot-rm', await page.evaluate(() => window.canvas.store.doc.shot));
   await page.waitForFunction(() => window.canvas.store.doc.shots.length === 1);
   cli('audio', '--offset', '-0.25', '--in', 'none', '--out', 'none');
@@ -739,8 +748,9 @@ try {
   await page.waitForFunction(() => window.canvas.store.doc.shot === 'close', null, { timeout: 5000 });
   ok(true, 'Play all carries playback into the next shot');
   await page.evaluate(() => window.canvas.store.set({ playing: false, playAll: false, loop: true }));
-  const sq = cli('export', '--sequence', '--width', '160', '--height', '90');
-  ok(/2 shots \(shot-1 6f, close 12f\), 18 frames/.test(sq), `export --sequence cuts every shot together (${sq.split('\n')[1]})`);
+  const sq = cli('export', '--width', '160', '--height', '90');
+  ok(/2 shots \(shot-1 6f, close 12f\), 18 frames/.test(sq) && !/-shot-1-|-close-/.test(sq.split('\n')[0]), `export renders the whole timeline, every shot cut together (${sq.split('\n')[1]})`);
+  ok(/2 shots/.test(cli('export', '--sequence', '--width', '160', '--height', '90')), 'export --sequence still works');
   const one = cli('export', '--shot', 'shot-1', '--width', '160', '--height', '90');
   ok(/-shot-1-.*\.mp4/.test(one.split('\n')[0]) && /6 frames/.test(one), 'export --shot renders just that shot');
   // reorder by dragging the active shot's name (header column) up a lane, then pick the other shot and press Delete

@@ -113,8 +113,9 @@ Render (needs the canvas tab open)
           [--from x,y,z --target x,y,z [--lens 35]]           ...or from a camera of your own (the user's view is untouched)
   canvas storyboard [--frames 8] [--cols 4]                     contact sheet across the shot
   canvas export [--fps 24] [--width 1280 --height 720] [--grid on|off] [--name shot]
-                                                                 blockout video (mp4) of the active shot; prints its path
-  canvas export --sequence [same flags]                          every shot in order, cut together in one mp4
+                                                                 blockout video (mp4) of the whole timeline: every shot in
+                                                                 order, cut together, with the audio; prints its path
+  canvas export --shot <id> [same flags]                         just that one shot
 
 Prompts from the canvas
   canvas wait [--timeout 600] [--json]      block until the user types a prompt in the canvas; prints it.
