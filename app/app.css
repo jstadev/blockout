@@ -328,6 +328,11 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .moves-at { margin-left: 6px; color: var(--cc-text-faint); font-weight: 400; text-transform: none; }
 .moves-pop .cc-panel__head .moves-new { height: 20px; padding: 0 7px; font-size: var(--cc-size-sm); text-transform: none; letter-spacing: 0; }
 
+/* Export and its caret (Render with Comfy) read as one split button */
+.tl-bar > .tl-exportbtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-bar > .tl-exportcaret, .tl-bar.is-fit2 > .tl-exportcaret { margin-left: -4px; width: 20px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--cc-surface-solid) 28%, transparent); }
+.tl-bar > .tl-exportcaret svg { width: 10px; height: 10px; }
+.tl-export-pop { min-width: 0; }
 /* Key and its caret (preset moves) read as one split button */
 .tl-bar > .tl-keybtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .tl-bar > .tl-keycaret { margin-left: -3px; width: 18px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: transparent; }

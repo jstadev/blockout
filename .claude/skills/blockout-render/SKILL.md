@@ -31,7 +31,7 @@ workflow JSON and never talks to ComfyUI.
 
 ### 1. Gather
 
-The request usually comes from the **Render** button next to Export in the timeline bar. It opens the chat
+The request usually comes from **Render with Comfy**, in the menu on the Export button's caret. It opens the chat
 with "Render this shot with ComfyUI (blockout-render skill)." started, and the user adds their reference
 images and what each is for before sending. A request typed by hand is the same thing.
 
