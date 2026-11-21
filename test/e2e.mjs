@@ -584,6 +584,23 @@ try {
   if (!chatWasOpen) await page.click('.chat-toggle');
   ok(/^shot 1\/\d+ .*\n(opens on|no camera keys)/.test(cli('brief')), 'canvas brief describes the active shot');
 
+  // the Render button starts a request in the chat (it sends nothing by itself)
+  {
+    const wasOpen = await page.isVisible('.chat');
+    if (wasOpen) await page.click('.chat-toggle');
+    const queued = () => JSON.parse(JSON.stringify(cli('inbox')));
+    const before = queued();
+    await page.click('.tl-render');
+    await page.waitForSelector('.chat-hint:not([hidden])');
+    const st = await page.evaluate(() => ({ text: document.querySelector('.chat-input').value, focus: document.activeElement === document.querySelector('.chat-input'), send: !document.querySelector('.chat-send').disabled }));
+    ok(/^Render this shot with ComfyUI/.test(st.text) && st.focus && st.send && (await page.isVisible('.chat')), 'Render opens the chat with the request started and a note on what to add');
+    await page.click('.tl-render');
+    ok((await page.$eval('.chat-input', (e) => e.value)) === st.text && queued() === before, 'pressing Render again does not repeat the text, and nothing is sent');
+    await page.fill('.chat-input', '');
+    ok(await page.$eval('.chat-hint', (e) => e.hidden), 'clearing the message removes the note');
+    if (!wasOpen) await page.click('.chat-toggle');
+  }
+
   // --- audio track: load from the CLI, waveform lane, beats, slide, mixed into the export ---
   const wav = path.join(dir, 'Click Track.wav');
   { // 6 s of clicks every 0.5 s (120 bpm), 44.1 kHz mono 16-bit

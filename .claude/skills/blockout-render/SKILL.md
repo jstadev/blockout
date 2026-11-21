@@ -31,6 +31,11 @@ workflow JSON and never talks to ComfyUI.
 
 ### 1. Gather
 
+The request usually comes from the **Render** button next to Export in the timeline bar. It opens the chat
+with "Render this shot with ComfyUI (blockout-render skill)." started, and the user adds their reference
+images and what each is for before sending. A request typed by hand is the same thing.
+
+
 - The shot: the one the prompt came from (`shot:` in the canvas prompt), the one the user names, or the
   active one. One render per shot. Render a whole sequence as one video only if the user asks for that.
 - The reference images: the files attached to the canvas prompt (their paths are in the prompt), or paths

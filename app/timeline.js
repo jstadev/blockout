@@ -97,6 +97,15 @@ export function mountTimeline(root, { viewport, exporter }) {
   const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)',
     onClick: (e) => exporter.exportVideo({ sequence: !e.shiftKey }).catch((err) => toast(err.message, { kind: 'error' })) });
 
+  // Render: the optional step after the export, done by the agent (the blockout-render skill). The button only
+  // opens the chat with a request started, so the user can add reference images and send it.
+  const renderBtn = button({ icon: 'sparkle', label: 'Render', title: 'Render this shot into a finished video with your agent and ComfyUI. Opens the chat with the request started: add your reference images and send',
+    onClick: () => store.emit('compose', {
+      text: 'Render this shot with ComfyUI (blockout-render skill). ',
+      hint: 'Attach your reference images and say what each one is for, then send. Your agent shows a render plan and waits for your go before anything costs credits.',
+    }) });
+  renderBtn.classList.add('tl-render');
+
   // audio: a waveform lane under the track, an Audio button in the bar (functions below are hoisted)
   // (one track for the whole sequence, on the shots' shared action-time axis)
   const audioTrack = mountAudioTrack(root, {
@@ -109,7 +118,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   const shots = mountShots();
   const bar = h('div.tl-bar', {}, playBtn, timeEl, h('span.cc-divider'), viewSeg, keyBtn, keyCaret, lensField, rollField,
-    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
+    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn, renderBtn);
 
   // The bar keeps play, the camera and output. The selected key's settings open in a card above that key
   // (placeKeyCard), Loop and Play all are switches in the shot popover, and the object's Key button sits in

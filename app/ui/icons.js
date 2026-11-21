@@ -16,6 +16,7 @@ export const ICONS = {
   trash: s('<path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4"/>'),
   copy: s('<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M11 5V3.5A1 1 0 0 0 10 2.5H3.5a1 1 0 0 0-1 1V10a1 1 0 0 0 1 1H5"/>'),
   curve: s('<path d="M2 13.5C7 13.5 9 2.5 14 2.5"/><circle cx="2" cy="13.5" r="1" fill="currentColor"/><circle cx="14" cy="2.5" r="1" fill="currentColor"/>'),
+  sparkle: s('<path d="M7 2.5 8.3 6.2 12 7.5 8.3 8.8 7 12.5 5.7 8.8 2 7.5 5.7 6.2z"/><path d="M12.5 10.5v3M11 12h3"/>'),
   film: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M5 2.5v11M11 2.5v11M2 6h3M2 10h3M11 6h3M11 10h3"/>'),
   frame: s('<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/>'),
   send: s('<path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/>'),
