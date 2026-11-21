@@ -208,7 +208,7 @@ canvas shot-set close-up --name "CU hero" --to 1           # rename / move to po
 canvas shot-set close-up --start 2            # this shot picks up the action 2 s in
 canvas shot-rm reverse
 canvas storyboard --shot close-up             # render any shot without switching
-canvas export --sequence                      # every shot in order, cut together, one mp4
+canvas export                                 # the whole timeline: every shot in order, cut together, one mp4
 ```
 
 - The user asks for "another angle", "a close-up of this", "cut to", "coverage": add a shot rather than
@@ -221,8 +221,9 @@ canvas export --sequence                      # every shot in order, cut togethe
   `move`, `okey` and `okey-rm` take shot time (like the playhead); `ls` prints object keys in action time.
 - Stretching a shot with `timeline --duration --retime` only stretches that shot's camera keys when there
   are several shots (the shared action keeps its timing).
-- Exports are named `<scene>-<shot>-<time>.mp4` once there are several shots; `export --sequence` uses
-  `--fps` or the active shot's fps for every shot, with the audio under each shot's span of the action.
+- `export` renders the whole timeline into one mp4 (`<scene>-<time>.mp4`) at `--fps` or the active shot's fps,
+  each shot through its own camera, with the audio running under the cuts (each shot's span of the action).
+  `export --shot <id>` renders one shot on its own, named `<scene>-<shot>-<time>.mp4`.
 - The user's key track stacks the shots, one row per shot on the action-time axis
   (clicking or scrubbing anywhere switches to the shot covering that moment; dragging a bar sideways sets
   `--start`, up or down reorders; dragging a bar's left or right end retimes the shot, stretching its camera
@@ -231,7 +232,7 @@ canvas export --sequence                      # every shot in order, cut togethe
   Play all plays through the cuts).
   They add a shot from the "+ New shot" row under the shots (click = next shot, drag = any span; same as
   `shot-add --frame [--start s] [--length s]`) or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
-  Shift-click Export for the whole sequence.
+  Export renders the whole timeline; Shift-click Export renders just the active shot.
   Canvas prompts carry `shot:` (the active shot) when there are several.
 
 ## 4b. Save and load versions
@@ -244,9 +245,9 @@ prefer a new name such as `street-v2`.
 ## 5. Export
 
 ```bash
-canvas export                 # mp4 (H.264) of the active shot at the doc's size/fps; prints the path
+canvas export                 # mp4 (H.264) of the whole timeline (every shot) at the doc's size/fps; prints the path
 canvas export --fps 24 --width 1920 --height 1080 --grid off --name street-chase
-canvas export --shot close-up # another shot;  canvas export --sequence  every shot in order
+canvas export --shot close-up # just that one shot
 ```
 
 Exports land in `scenes/exports/`. Give the user the path. Grid lines are kept by default because

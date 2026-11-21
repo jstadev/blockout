@@ -32,8 +32,9 @@ export function createRenderer(viewport) {
     const s = findShot(store.doc, shot ?? store.doc.shot);
     return shotList(store.doc).find((x) => x.id === s.id);
   };
-  // File stem: the scene name, plus the shot when the scene has more than one.
+  // File stem: the scene name, plus the shot when one shot of several is exported on its own.
   const stem = (name, s) => safeName(name || (store.doc.shots.length > 1 ? `${store.doc.meta.name}-${s.id}` : store.doc.meta.name));
+  const fileStem = (name, seq, s) => seq ? safeName(name || store.doc.meta.name) : stem(name, s);
 
   async function snapshot({ t = store.state.time, view = 'shot', name, width, height, grid, from, target, fov, shot } = {}) {
     const [w, hh] = size({ width, height });
@@ -68,31 +69,29 @@ export function createRenderer(viewport) {
   }
 
   /**
-   * Render the active shot (or { shot }) to mp4. With { sequence: true }, every shot in order, cut
-   * together into one video at one frame rate (fps, else the active shot's) with the audio under each shot.
+   * Render the whole timeline to one mp4: every shot in order, each through its own camera, cut together at
+   * one frame rate (fps, else the active shot's) with the audio track running under the cuts. { shot } (or
+   * { sequence: false } for the active shot) renders just that one shot.
    */
   async function exportVideo({ fps, width, height, grid, name, shot, sequence } = {}) {
     if (store.state.exporting) throw new Error('an export is already running');
-    const shots = sequence ? shotList(store.doc) : [pick(shot)];
+    const all = shotList(store.doc);
+    const seq = all.length > 1 && (sequence ?? shot == null);
+    const shots = seq ? all : [pick(shot)];
     const empty = shots.find((s) => !s.timeline.keys.length);
-    if (empty) throw new Error(`add at least one camera key${sequence ? ` to shot ${empty.id}` : ''} before exporting`);
-    if (typeof VideoEncoder === 'undefined') {
-      if (sequence) throw new Error('exporting the whole sequence needs a browser with WebCodecs (Chrome, Edge or Safari 17+)');
-      return exportRealtime({ fps, width, height, grid, name, s: shots[0] });
-    }
-    const M = await import('/vendor/mediabunny.mjs');
-    const rate = fps || (sequence ? store.doc.timeline.fps : shots[0].timeline.fps);
-    const [w, hh] = size({ width, height });
+    if (empty) throw new Error(seq ? `shot "${empty.name || empty.id}" has no camera keys: add one before exporting the timeline` : 'add at least one camera key before exporting');
+    const rate = fps || (seq ? store.doc.timeline.fps : shots[0].timeline.fps);
     const parts = shots.map((s) => ({ s, frames: Math.max(1, Math.round(s.timeline.duration * rate)) }));
+    const realtime = () => exportRealtime({ rate, width, height, grid, name, parts, seq });
+    if (typeof VideoEncoder === 'undefined') return realtime();
+    const M = await import('/vendor/mediabunny.mjs');
+    const [w, hh] = size({ width, height });
     const total = parts.reduce((n, p) => n + p.frames, 0);
     const codec = await M.getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], { width: w, height: hh });
-    if (!codec) {
-      if (sequence) throw new Error('this browser cannot encode video for a sequence export');
-      return exportRealtime({ fps, width, height, grid, name, s: shots[0] });
-    }
+    if (!codec) return realtime();
 
     store.set({ exporting: true });
-    const what = sequence ? `${shots.length} shots` : 'blockout';
+    const what = seq ? `${shots.length} shots` : 'blockout';
     const progress = toast(`Rendering ${what}… 0%`, { ms: 30 * 60 * 1000 });
     try {
       const target = new M.BufferTarget();
@@ -120,10 +119,10 @@ export function createRenderer(viewport) {
       }
       await output.finalize();
       const blob = new Blob([target.buffer], { type: 'video/mp4' });
-      const file = `${sequence ? safeName(name || `${store.doc.meta.name}-sequence`) : stem(name, shots[0])}-${stamp()}.mp4`;
+      const file = `${fileStem(name, seq, shots[0])}-${stamp()}.mp4`;
       const r = await upload(blob, file, codec !== 'avc' ? '&transcode=h264' : aCodec && aCodec !== 'aac' ? '&transcode=aac' : '');
       const result = { path: r.path, url: r.url, frames: total, fps: rate, width: w, height: hh, codec: codec === 'avc' ? 'h264' : `${codec} (transcoded to h264 if ffmpeg was available)`, bytes: blob.size };
-      if (sequence) result.shots = parts.map(({ s, frames }) => ({ id: s.id, name: s.name, frames }));
+      if (seq) result.shots = parts.map(({ s, frames }) => ({ id: s.id, name: s.name, frames }));
       else result.shot = shots[0].id;
       if (aCodec) result.audio = aCodec === 'aac' ? 'aac' : `${aCodec} (transcoded to aac if ffmpeg was available)`;
       progress.remove();
@@ -153,14 +152,18 @@ export function createRenderer(viewport) {
     return out;
   }
 
-  // Fallback for browsers without WebCodecs: real-time capture with MediaRecorder.
-  async function exportRealtime({ fps, width, height, grid, name, s = pick() } = {}) {
-    const tl = s.timeline;
-    const rate = fps || tl.fps;
+  // Fallback for browsers without WebCodecs: real-time capture with MediaRecorder, the parts played back to back.
+  async function exportRealtime({ rate, width, height, grid, name, parts, seq }) {
     const [w, hh] = size({ width, height });
-    const canvas = viewport.renderShot(0, w, hh, { grid, timeline: tl });
+    const ends = []; let D = 0;
+    for (const p of parts) ends.push(D += p.frames / rate);
+    const at = (t) => { // the part playing at time t of the video, and the time inside it
+      let i = ends.findIndex((e) => t < e); if (i < 0) i = parts.length - 1;
+      return [parts[i].s.timeline, Math.min(t - (ends[i] - parts[i].frames / rate), parts[i].s.timeline.duration)];
+    };
+    const canvas = viewport.renderShot(0, w, hh, { grid, timeline: parts[0].s.timeline });
     const stream = canvas.captureStream(rate);
-    const mix = await audio.mixdown(tl.start || 0, tl.duration);
+    const mix = await mixParts(parts, rate);
     let mixCtx = null, mixSrc = null;
     if (mix) { // play the mixdown into the recording, in real time alongside the frames
       mixCtx = new AudioContext({ sampleRate: mix.sampleRate });
@@ -181,8 +184,9 @@ export function createRenderer(viewport) {
       await new Promise((resolve) => {
         const step = () => {
           const t = (performance.now() - t0) / 1000;
-          viewport.renderShot(Math.min(t, tl.duration), w, hh, { grid, timeline: tl });
-          if (t >= tl.duration) return resolve();
+          const [timeline, local] = at(Math.min(t, D));
+          viewport.renderShot(local, w, hh, { grid, timeline });
+          if (t >= D) return resolve();
           requestAnimationFrame(step);
         };
         step();
@@ -191,8 +195,11 @@ export function createRenderer(viewport) {
       await done;
       const blob = new Blob(chunks, { type: rec.mimeType });
       const ext = rec.mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const r = await upload(blob, `${stem(name, s)}-${stamp()}.${ext}`, '&transcode=h264');
-      return { path: r.path, url: r.url, frames: Math.round(tl.duration * rate), fps: rate, width: w, height: hh, codec: `${rec.mimeType} (realtime)`, bytes: blob.size };
+      const r = await upload(blob, `${fileStem(name, seq, parts[0].s)}-${stamp()}.${ext}`, '&transcode=h264');
+      const result = { path: r.path, url: r.url, frames: parts.reduce((n, p) => n + p.frames, 0), fps: rate, width: w, height: hh, codec: `${rec.mimeType} (realtime)`, bytes: blob.size };
+      if (seq) result.shots = parts.map(({ s, frames }) => ({ id: s.id, name: s.name, frames }));
+      else result.shot = parts[0].s.id;
+      return result;
     } finally { store.set({ exporting: false }); mixCtx?.close(); }
   }
 

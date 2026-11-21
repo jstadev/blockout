@@ -93,8 +93,9 @@ export function mountTimeline(root, { viewport, exporter }) {
   const shotDur = h('span'), shotFps = h('span');
   const shotBtn = h('button.cc-btn.tl-shot', { type: 'button', title: 'Shot length, frame rate and size', onClick: () => shot.toggle() },
     icon('frame'), h('span.tl-shot-name', {}, 'Shot'), h('span.cc-mono', {}, shotDur, h('span.cc-affix__unit', {}, ' s')), h('span.tl-faint.tl-shot-fps', {}, '·'), h('span.cc-mono.tl-shot-fps', {}, shotFps, h('span.cc-affix__unit', {}, ' fps')), icon('chevronDown'));
+  // the whole timeline (every shot in order, one mp4); Shift-click for just the active shot
   const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)',
-    onClick: (e) => exporter.exportVideo({ sequence: e.shiftKey && store.doc.shots.length > 1 }).catch((err) => toast(err.message, { kind: 'error' })) });
+    onClick: (e) => exporter.exportVideo({ sequence: !e.shiftKey }).catch((err) => toast(err.message, { kind: 'error' })) });
 
   // audio: a waveform lane under the track, an Audio button in the bar (functions below are hoisted)
   // (one track for the whole sequence, on the shots' shared action-time axis)
@@ -967,7 +968,7 @@ export function mountTimeline(root, { viewport, exporter }) {
     rollField.title = rollNum.disabled ? 'Select a key to change its roll (or hold the right mouse button and press Z / X)' : k ? 'Roll (Dutch tilt) of the selected key; the free view uses it too' : 'Roll (Dutch tilt) of the view; new keys get it';
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
-    exportBtn.title = store.doc.shots.length > 1 ? 'Render this shot (mp4). Shift-click: every shot in order, cut together into one video' : 'Render the blockout video (mp4)';
+    exportBtn.title = store.doc.shots.length > 1 ? 'Render the whole timeline: every shot in order, cut together into one video (mp4). Shift-click: just this shot' : 'Render the blockout video (mp4)';
     draw();
     audioTrack.refresh();
     curve.refresh();

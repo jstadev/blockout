@@ -123,8 +123,8 @@ shot A's last (hold) key.
 
 `seek <s>`, `play`, `pause`, `view shot|free`, `select <id|none>`, `frame [id]`, `key --from-view`,
 `snapshot [--t s] [--view shot|free] [--out file]`, `storyboard [--frames n] [--cols n]`,
-`export [--fps] [--width --height] [--grid on|off] [--name]` (mixes in the audio track), `export --sequence`
-(every shot in order in one mp4); `snapshot`, `storyboard` and `export` take `--shot <id>`,
+`export [--fps] [--width --height] [--grid on|off] [--name]` (the whole timeline, every shot in order in one mp4,
+with the audio track mixed in; `--shot <id>` for one shot); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
 
 `canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
@@ -179,4 +179,4 @@ the chat. The text is optional with a file. Files are copied to `.canvas/uploads
 Prompt objects: `{ id, text, status: pending|taken|done, context: { selection: [..], time, duration, shot?, view, key, camera: { position, target, fov } } }`
 (`shot` is set when the scene has more than one).
 
-RPC `snapshot`, `storyboard` and `export` take `shot`; `export` also takes `sequence: true` and then returns `shots: [{ id, name, frames }]`.
+RPC `snapshot`, `storyboard` and `export` take `shot`; `export` renders every shot in order unless given `shot` (or `sequence: false` for the active shot), and then returns `shots: [{ id, name, frames }]`.
