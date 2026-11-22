@@ -48,7 +48,10 @@ export function progressCard(m) {
   function render() {
     el.dataset.state = p.state;
     title.textContent = p.title;
-    mark.replaceChildren(p.state === 'running' ? h('span.cc-spin') : icon(p.state === 'done' ? 'check' : 'close'));
+    // A finished card carries no mark: the settled line says it. Only a failure keeps one.
+    mark.hidden = p.state === 'done';
+    mark.replaceChildren(...(p.state === 'running' ? [h('span.cc-spin')] : p.state === 'failed' ? [icon('close')] : []));
+    if (p.auto) el.dataset.auto = ''; // a "still working" note: once answered it is just that note, dimmed
     const f = fraction();
     bar.hidden = p.state !== 'running';
     bar.classList.toggle('is-unknown', f == null);

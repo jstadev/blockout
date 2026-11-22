@@ -31,7 +31,7 @@ export function askCard(m, { answered = null, upload, post, context = () => ({})
     el.classList.add('is-done');
     fill(prompt.cancelled
       ? h('div.chat-ask-head', {}, h('span.chat-ask-title', {}, title), h('span.chat-ask-step', {}, 'Closed'))
-      : h('div.chat-ask-head', {}, h('span.chat-ask-check', {}, icon('check')), h('span.chat-ask-title', {}, title)),
+      : h('div.chat-ask-head', {}, h('span.chat-ask-title', {}, title)),
     ...(prompt.cancelled ? [] : [h('dl.chat-ask-sum', {}, ...ask.questions.filter((q) => a[q.id]).flatMap((q) => [
       h('dt', {}, q.q),
       h('dd', {}, q.type === 'images' && a[q.id].images?.length
