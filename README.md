@@ -127,9 +127,10 @@ the people and their moves are shared, so moving a prop updates every shot; each
 length, fps and audio.
 Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.
 
-**Export:** the Export button (or `canvas export`) renders every frame through the shot camera at
-the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Export** (or
-`canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
+**Export:** the Export button opens a menu: **Export full video** (or `canvas export`) renders every
+shot in order into one video, and **Export shot** (or `canvas export --shot <id>`) renders just the current
+shot. Frames go through the shot camera at the scene size and fps and are encoded as H.264 MP4 in the
+browser. Files land in `scenes/exports/`. The same menu has **Render with Comfy**.
 
 ## Rendering with ComfyUI (optional)
 

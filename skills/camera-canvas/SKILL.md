@@ -232,7 +232,7 @@ canvas export                                 # the whole timeline: every shot i
   Play all plays through the cuts).
   They add a shot from the "+ New shot" row under the shots (click = next shot, drag = any span; same as
   `shot-add --frame [--start s] [--length s]`) or Shift+N, switch with `[` / `]`, move one with Shift+`[` / `]`, and
-  Export renders the whole timeline; Shift-click Export renders just the active shot.
+  the Export menu has Export full video (the whole timeline), Export shot (the active shot) and Render with Comfy.
   Canvas prompts carry `shot:` (the active shot) when there are several.
 
 ## 4b. Save and load versions

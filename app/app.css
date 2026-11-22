@@ -358,11 +358,18 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .moves-at { margin-left: 6px; color: var(--cc-text-faint); font-weight: 400; text-transform: none; }
 .moves-pop .cc-panel__head .moves-new { height: 20px; padding: 0 7px; font-size: var(--cc-size-sm); text-transform: none; letter-spacing: 0; }
 
-/* Export and its caret (Render with Comfy) read as one split button */
-.tl-bar > .tl-exportbtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.tl-bar > .tl-exportcaret, .tl-bar.is-fit2 > .tl-exportcaret { margin-left: -4px; width: 20px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--cc-surface-solid) 28%, transparent); }
-.tl-bar > .tl-exportcaret svg { width: 10px; height: 10px; }
-.tl-export-pop { min-width: 0; }
+/* Export opens a menu just below it, in the primary color (Export full video, Export shot, Render with Comfy) */
+.tl-bar > .tl-exportbtn { gap: 5px; }
+.tl-bar > .tl-exportbtn > svg:last-child { width: 10px; height: 10px; margin-left: -1px; }
+.tl-bar > .tl-exportbtn.is-open { opacity: .88; }
+.tl-bar.is-fit2 > .tl-exportbtn > svg:last-child { display: none; }
+.tl-export-pop { position: fixed; z-index: 25; min-width: 172px; padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--cc-text); color: var(--cc-surface-solid); border-radius: var(--cc-radius-lg); box-shadow: var(--cc-shadow); }
+.tl-export-pop[hidden] { display: none; }
+.tl-export-pop > .cc-btn { justify-content: flex-start; gap: 8px; width: 100%; max-width: none; height: 28px; padding: 0 8px; color: inherit; background: transparent; border-color: transparent; }
+.tl-export-pop > .cc-btn:hover, .tl-export-pop > .cc-btn:focus-visible { background: color-mix(in srgb, var(--cc-surface-solid) 14%, transparent); }
+.tl-export-pop > .cc-btn svg { opacity: .8; }
+.tl-export-sep { height: 1px; margin: 2px 4px; background: color-mix(in srgb, var(--cc-surface-solid) 18%, transparent); }
 /* Key and its caret (preset moves) read as one split button */
 .tl-bar > .tl-keybtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .tl-bar > .tl-keycaret { margin-left: -3px; width: 18px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: transparent; }
