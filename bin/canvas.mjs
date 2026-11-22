@@ -887,8 +887,8 @@ const commands = {
       if (!r?.prompt && st.jobs) {
         const jobs = (await api('GET', '/api/jobs', undefined, { quietFail: true }))?.jobs || [];
         if (jobs.length) {
-          const list = jobs.map((j) => `${j.id} "${j.title}" (started ${Math.round((Date.now() - j.startedAt) / 60000)} min ago)`).join('; ');
-          out({ decision: 'block', reason: `You started a job that the canvas still shows as running: ${list}. Do not stop yet. Check the job now; if it is still running, wait about 20 seconds and check again, and keep the card current (canvas progress --id <id> --step n). When it has finished, save and show the result (canvas say --attach <file> "…") and end the card (canvas progress --id <id> --done "…"); if it failed or was cancelled, say why (canvas progress --id <id> --fail "…" and canvas say). Only then end your turn.` });
+          const list = jobs.map((j) => `${j.id} "${j.auto ? j.note : j.title}" (started ${Math.round((Date.now() - j.startedAt) / 60000)} min ago)`).join('; ');
+          out({ decision: 'block', reason: `The canvas chat still shows you as working: ${list}. The user is watching that card and nothing else will tell them when the work finishes, so do not stop yet. Check on it now (for a render: the job's status); if it is still running, wait about 20 seconds and check again. When it has finished, save and show the result (canvas say --attach <file> "…"); if it failed or was cancelled, say why (canvas say "…"). A card you started with canvas progress also needs ending (canvas progress --id <id> --done "…" or --fail "…"); a "Working" card ends with your reply. Only then end your turn.` });
           return;
         }
       }

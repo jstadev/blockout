@@ -682,6 +682,10 @@ try {
     ok(JSON.parse(held).decision === 'block' && held.includes(job) && /Rendering test/.test(held), 'Stop hook will not let the session go idle while a job card is running');
     cli('progress', '--id', job, '--done', 'Rendered in 2m');
     await page.waitForSelector('.chat-prog[data-state="done"]');
+    cli('say', '--working', 'Running on Comfy Cloud');
+    await page.waitForFunction(() => [...document.querySelectorAll('.chat-prog[data-state="running"] .chat-prog-line')].some((l) => l.textContent.includes('Running on Comfy Cloud')));
+    const held2 = execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'hook', 'stop'], { env, input: JSON.stringify({ session_id: 'e2e-session', cwd: ROOT }), encoding: 'utf8' });
+    ok(JSON.parse(held2).decision === 'block' && /Running on Comfy Cloud/.test(held2), 'a "still working" reply shows as a running card and holds the session until the real reply');
     ok((await page.textContent('.chat-prog-line')) === 'Rendered in 2m' && !(await page.isVisible('.chat-prog-bar')), 'a finished job settles into one line');
     cli('say', 'Rendering now.');
     cli('secret', 'rm', 'E2E_TEST_KEY');

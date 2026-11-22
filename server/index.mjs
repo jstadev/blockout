@@ -252,8 +252,25 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   for (const m of readTail(logPath, Infinity)) if (m.kind === 'progress' && m.progress) progress.set(m.progress.id, m.progress);
   // Jobs the agent started and has not ended. The Stop hook uses this so a session cannot go idle on a
   // running job and leave its result unreported. One with no update for two hours is taken as abandoned.
+  const postProgress = (p) => {
+    progress.set(p.id, p);
+    const entry = { from: 'agent', kind: 'progress', text: p.title, progress: p, at: p.updatedAt };
+    appendLog(entry);
+    broadcast('say', entry);
+  };
+  // "Still working" (canvas say --working) is a promise to come back. It becomes a card with a clock, and
+  // counts as a running job until the agent's next real reply or question, so the Stop hook holds it to that.
+  const autoCards = () => [...progress.values()].filter((p) => p.auto && p.state === 'running');
+  const stillWorking = (text) => {
+    const now = Date.now(), note = String(text).trim().slice(0, 200);
+    const mine = autoCards()[0];
+    if (!mine && runningJobs().length) return false; // the agent keeps its own card: leave the message as it is
+    postProgress(mine ? { ...mine, note, updatedAt: now } : { id: `g${now.toString(36)}${crypto.randomBytes(2).toString('hex')}`, title: 'Working', note, state: 'running', auto: true, startedAt: now, updatedAt: now });
+    return true;
+  };
+  const endAutoCards = () => { const now = Date.now(); for (const p of autoCards()) postProgress({ ...p, state: 'done', endedAt: now, updatedAt: now }); };
   const runningJobs = () => [...progress.values()].filter((p) => p.state === 'running' && Date.now() - (p.updatedAt || p.startedAt) < 2 * 3600000)
-    .map((p) => ({ id: p.id, title: p.title, startedAt: p.startedAt, updatedAt: p.updatedAt || p.startedAt }));
+    .map((p) => ({ id: p.id, title: p.title, ...(p.auto ? { auto: true, note: p.note } : {}), startedAt: p.startedAt, updatedAt: p.updatedAt || p.startedAt }));
   function appendLog(entry) { fs.appendFileSync(logPath, JSON.stringify(entry) + '\n'); }
 
   // ---------- chat history ----------
@@ -591,10 +608,8 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       }
       p.updatedAt = now;
       for (const k of Object.keys(p)) if (p[k] === undefined) delete p[k];
-      progress.set(p.id, p);
-      const entry = { from: 'agent', kind: 'progress', text: p.title, progress: p, at: now };
-      appendLog(entry);
-      broadcast('say', entry);
+      if (!prev) endAutoCards(); // the agent's own card replaces the one made from "still working"
+      postProgress(p);
       json(res, 200, { ok: true, id: p.id, progress: p });
     },
 
@@ -610,6 +625,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       const entry = { from: 'agent', kind: 'ask', text: ask.title || ask.questions[0].q, ask, reply, at: Date.now() };
       appendLog(entry);
       broadcast('say', entry);
+      endAutoCards();
       // Asking hands the turn to the user: the prompt it answers is no longer being worked on.
       const p = reply && prompts.find((x) => x.id === reply);
       if (p) { p.status = 'done'; p.doneAt = Date.now(); savePrompts(); broadcast('prompt', p); }
@@ -663,6 +679,8 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         .filter((f) => CHAT_FILE[path.extname(f.file).toLowerCase()] && fs.existsSync(path.join(uploadsDir, f.file))).slice(0, 8).map((f) => chatFile(f.file, f.name));
       if (attached.length) entry.files = attached;
       if (!entry.text && !attached.length) return json(res, 400, { ok: false, error: 'empty message' });
+      if (kind === 'working' && !attached.length && stillWorking(entry.text)) return json(res, 200, { ok: true });
+      if (kind !== 'working') endAutoCards();
       appendLog(entry);
       broadcast('say', entry);
       const p = reply && prompts.find((x) => x.id === reply);

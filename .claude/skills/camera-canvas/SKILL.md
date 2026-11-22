@@ -274,7 +274,8 @@ canvas say --reply <promptId> "Raised the tower to 10 m and keyed a slower push-
 ```
 
 `canvas say` shows the reply in the canvas and marks the prompt done. Use `--working` for progress
-notes that should not close it, `--attach file.mp4` (or an image) to show a video in the reply, where it
+notes that should not close it (the chat shows a "Working" card with a clock, and you cannot go idle
+until your final reply or a question card ends it), `--attach file.mp4` (or an image) to show a video in the reply, where it
 plays in place, and **always finish with a final `say`** (without `--working`):
 otherwise the user sees "no reply yet". When you need something from the user (a choice, an image, a
 confirmation, an API key), ask with a question card, `canvas ask` (references/api.md, "Question cards and

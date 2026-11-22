@@ -924,6 +924,16 @@ test('canvas ask: a question card goes to the chat, the answers come back as one
     cli('progress', '--id', failed, '--fail', 'Out of credits');
     assert.deepEqual([log().at(-1).progress.state, log().at(-1).progress.note], ['failed', 'Out of credits']);
 
+    // "still working" is a promise to come back: it shows as a card with a clock and counts as a running job
+    const jobs = async () => (await (await fetch(`${base}/api/jobs`)).json()).jobs;
+    const before = (await jobs()).length;
+    cli('say', '--working', 'Running on Comfy Cloud, job 171d');
+    const auto = log().at(-1);
+    assert.deepEqual([auto.kind, auto.progress.title, auto.progress.note, auto.progress.auto, (await jobs()).length], ['progress', 'Working', 'Running on Comfy Cloud, job 171d', true, before + 1]);
+    cli('say', '--working', 'Still in the queue');
+    assert.deepEqual([log().at(-1).progress.id, log().at(-1).progress.note, (await jobs()).length], [auto.progress.id, 'Still in the queue', before + 1]);
+    cli('say', 'Here is the render.');
+    assert.deepEqual([log().at(-2).progress.state, log().at(-1).text, (await jobs()).length], ['done', 'Here is the render.', before]);
     // one quick question, closed without an answer
     assert.match(cli('ask', 'Run it?', '--options', 'Run|Not yet'), /asked 1 question /);
     const quick = log().at(-1).ask;

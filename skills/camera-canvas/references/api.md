@@ -142,6 +142,8 @@ lens). Also the objects that move during the shot and which seconds of the audio
 renders: a `timeline:` line (shots, length, size, cut times), then each shot with a `CUT at <t>s` line and
 every time in seconds of that video; `--json` gives `{ timeline: { shots, duration, fps, width, height, ratio, cuts }, shots: [brief + at] }`.
 
+`canvas say --working "text"` shows a "Working" card with a running clock (one card, its line updated by each later `--working`). It counts as a running job: the Stop hook keeps the session going until a final `canvas say` or a `canvas ask` ends it.
+
 `canvas say "text" --attach file[,file…]` puts videos (mp4, webm, mov) or images on a reply; a video plays in
 the chat. The text is optional with a file. Files are copied to `.canvas/uploads/`.
 
