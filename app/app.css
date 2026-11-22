@@ -440,3 +440,22 @@ body.has-audio .tl-playmenu { bottom: calc(156px + var(--stack-h, 0px)); }
 .chat-ask-edited { color: var(--cc-accent); font-weight: 600; }
 .chat-ask-edited[hidden], .chat-ask-reset[hidden] { display: none; }
 .chat-ask-reset { height: 18px; font-size: 10.5px; padding: 0 5px; }
+/* progress cards (canvas progress): a long job the agent is waiting on */
+.chat-prog { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 7px; padding: 10px; border: 1px solid var(--cc-line); border-radius: 12px; background: var(--cc-surface-solid); }
+.chat-prog-head { display: flex; align-items: center; gap: 7px; min-height: 16px; }
+.chat-prog-mark { flex: none; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.chat-prog-mark svg { width: 9px; height: 9px; }
+.chat-prog[data-state="done"] .chat-prog-mark { background: var(--cc-ok); color: #fff; }
+.chat-prog[data-state="failed"] .chat-prog-mark { background: var(--cc-danger); color: #fff; }
+.chat-prog-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-prog-time { flex: none; font-family: var(--cc-mono); font-size: 11px; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+.chat-prog-bar { position: relative; height: 3px; border-radius: 2px; background: var(--cc-line); overflow: hidden; }
+.chat-prog-bar[hidden], .chat-prog-line[hidden] { display: none; }
+.chat-prog-fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--cc-accent); transition: width 400ms var(--cc-ease); }
+.chat-prog-bar.is-unknown .chat-prog-fill { width: 35%; animation: chat-prog-slide 1.4s ease-in-out infinite; }
+@keyframes chat-prog-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.chat-prog.is-quiet .chat-prog-fill { background: var(--cc-text-faint); animation: none; }
+.chat-prog-line { font-size: 11.5px; line-height: 1.4; color: var(--cc-text-dim); overflow-wrap: anywhere; }
+.chat-prog[data-state="failed"] .chat-prog-line { color: var(--cc-danger); }
+.chat-prog[data-state="done"], .chat-prog[data-state="failed"] { gap: 3px; background: transparent; }
+@media (prefers-reduced-motion: reduce) { .chat-prog-bar.is-unknown .chat-prog-fill { animation: none; width: 100%; opacity: .4; } }

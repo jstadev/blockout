@@ -143,6 +143,11 @@ Prompts from the canvas
                                             back as one prompt (canvas wait / the Stop hook). See references/api.md
   canvas ask "Question?" --options "A|B|C" [--multi] [--other] | --images | --secret NAME | --review file.txt [--optional]
                                             the same for one quick question
+  canvas progress "title" [--steps "A|B|C"] [--eta seconds] [--note "…"]
+                                            show a progress card in the chat for a long job (a render); prints its id.
+                                            It counts the time by itself between updates
+  canvas progress --id <id> [--step n] [--pct 0-100] [--note "…"] [--eta s] | --done ["note"] | --fail "why"
+                                            update that card in place, or end it
   canvas secret list | rm NAME              API keys the user saved through a key block (names only)
   canvas secret run NAME[,NAME2] -- <command …>   run a command with those keys as environment variables;
                                             the values are never printed (they are masked in its output)
@@ -773,6 +778,23 @@ const commands = {
     const r = await api('POST', '/api/ask', { ...card, reply: flags.reply });
     out(`asked ${r.questions} question${r.questions === 1 ? '' : 's'} (${r.id}). The answers arrive as the next canvas prompt: end your turn, or run "canvas wait".`);
   },
+  async progress({ pos, flags }) {
+    const body = {};
+    const title = pos.join(' ');
+    if (flags.id && flags.id !== true) body.id = String(flags.id);
+    if (title && !body.id) body.title = title; else if (title) body.note = title; // on an update, loose words are the note
+    if (flags.title && flags.title !== true) body.title = String(flags.title);
+    if (flags.steps && flags.steps !== true) body.steps = String(flags.steps).split('|').map((x) => x.trim()).filter(Boolean);
+    if (flags.step != null && flags.step !== true) body.step = num(flags.step);
+    if (flags.pct != null && flags.pct !== true) body.pct = num(flags.pct);
+    if (flags.eta != null && flags.eta !== true) body.eta = num(flags.eta);
+    if (flags.note != null && flags.note !== true) body.note = String(flags.note);
+    if (flags.done) { body.state = 'done'; if (flags.done !== true) body.note = String(flags.done); }
+    if (flags.fail) { body.state = 'failed'; if (flags.fail !== true) body.note = String(flags.fail); }
+    if (!body.id && !body.title) throw new Error('usage: canvas progress "Rendering on Comfy Cloud" [--steps "Upload|Queue|Render|Download"] [--eta 240]   then: canvas progress --id <id> --step 2 | --pct 40 | --done | --fail "why"');
+    const r = await api('POST', '/api/progress', body);
+    out(body.id ? `${r.id} ${r.progress.state}${r.progress.steps ? ` (${r.progress.steps[r.progress.step - 1]}, ${r.progress.step} of ${r.progress.steps.length})` : ''}` : r.id);
+  },
   async secret() {
     const argv = process.argv.slice(3);
     const sub = argv[0];
@@ -860,6 +882,16 @@ const commands = {
     if (which === 'stop') {
       // Stop: if the user prompted in the canvas, keep going in this same thread.
       let r = await api('GET', '/api/prompt/next', undefined, { quietFail: true });
+      // A job this session started (a render) is still shown as running: it may not go idle on it. The
+      // user is watching that card, and nothing else would tell them when it finishes.
+      if (!r?.prompt && st.jobs) {
+        const jobs = (await api('GET', '/api/jobs', undefined, { quietFail: true }))?.jobs || [];
+        if (jobs.length) {
+          const list = jobs.map((j) => `${j.id} "${j.title}" (started ${Math.round((Date.now() - j.startedAt) / 60000)} min ago)`).join('; ');
+          out({ decision: 'block', reason: `You started a job that the canvas still shows as running: ${list}. Do not stop yet. Check the job now; if it is still running, wait about 20 seconds and check again, and keep the card current (canvas progress --id <id> --step n). When it has finished, save and show the result (canvas say --attach <file> "…") and end the card (canvas progress --id <id> --done "…"); if it failed or was cancelled, say why (canvas progress --id <id> --fail "…" and canvas say). Only then end your turn.` });
+          return;
+        }
+      }
       if (!r?.prompt && st.listen) {
         // Long-poll in short slices: Node's fetch gives up on a response after 300 s, which used to end
         // the wait (and the session) after five idle minutes. Re-check listen mode between slices.

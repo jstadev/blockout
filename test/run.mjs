@@ -1,3 +1,4 @@
+import http from 'node:http';
 // Fast checks: core document ops, easing math, and that the skill copies are in sync. Run: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -897,6 +898,31 @@ test('canvas ask: a question card goes to the chat, the answers come back as one
     assert.equal(ran.trim(), `len ${KEY.length} key [COMFY_API_KEY hidden]`);
     assert.throws(() => cli('secret', 'run', 'OTHER_KEY', '--', 'true'), /no key named OTHER_KEY/);
     assert.throws(() => cli('secret', 'run', 'COMFY_API_KEY', '--', process.execPath, '-e', 'process.exit(3)'), (e) => e.status === 3);
+
+    // a progress card for a long job: one card, updated in place, that ends done or failed
+    const job = cli('progress', 'Rendering on Comfy Cloud', '--steps', 'Upload|Queue|Render|Download', '--eta', '240').trim();
+    assert.match(job, /^g\w+$/);
+    assert.equal(cli('progress', '--id', job, '--step', '3', '--pct', '40', '--note', 'Seedance 2.5').trim(), `${job} running (Render, 3 of 4)`);
+    const mid = log().at(-1);
+    assert.deepEqual([mid.kind, mid.progress.state, mid.progress.step, mid.progress.pct, mid.progress.note, mid.progress.eta, mid.progress.steps.length], ['progress', 'running', 3, 40, 'Seedance 2.5', 240, 4]);
+    cli('progress', '--id', job, '--step', '4');
+    assert.equal(log().at(-1).progress.pct, undefined); // a percentage belongs to the stage it was given for
+    assert.throws(() => cli('progress', '--id', job, '--step', '9'), /step must be 1 to 4/);
+    assert.throws(() => cli('progress', '--id', 'gnope', '--pct', '5'), /no progress card/);
+    assert.throws(() => cli('progress'), /usage/);
+    assert.equal(cli('progress', '--id', job, '--done', 'Rendered in 3m 40s').trim(), `${job} done (Download, 4 of 4)`);
+    const fin = log().at(-1).progress;
+    assert.deepEqual([fin.state, fin.note, fin.startedAt === mid.progress.startedAt, fin.endedAt >= fin.startedAt], ['done', 'Rendered in 3m 40s', true, true]);
+    // the open chat gets the card once, in its latest state, where it first appeared
+    const hist = await new Promise((resolve, reject) => {
+      const req = http.get(`${base}/api/events`, (res) => { let buf = ''; res.on('data', (d) => { buf += d; const m = buf.match(/event: history\ndata: (.*)\n/); if (m) { req.destroy(); resolve(JSON.parse(m[1])); } }); });
+      req.on('error', (e) => { if (e.code !== 'ECONNRESET') reject(e); });
+    });
+    const cards = hist.messages.filter((m) => m.kind === 'progress');
+    assert.deepEqual([cards.length, cards[0].progress.state, cards[0].at < mid.at], [1, 'done', true]);
+    const failed = cli('progress', 'Second job').trim();
+    cli('progress', '--id', failed, '--fail', 'Out of credits');
+    assert.deepEqual([log().at(-1).progress.state, log().at(-1).progress.note], ['failed', 'Out of credits']);
 
     // one quick question, closed without an answer
     assert.match(cli('ask', 'Run it?', '--options', 'Run|Not yet'), /asked 1 question /);

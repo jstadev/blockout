@@ -138,7 +138,7 @@ and choose **Render with Comfy** (it opens the chat with the request started), o
 `blockout-render` skill has the agent fit one of your saved ComfyUI workflows ("recipes") to the timeline: it
 uploads the export as the motion reference, wires in your images and audio, writes a timed prompt from the
 shot's camera moves (`canvas brief`), and shows you the full prompt to review (edit it in place or say what to change), then a short confirm card with the cost. Nothing that costs credits runs until
-you press Render. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
+you press Render. While the job runs, a progress card in the chat shows its stage and the time so far. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
 and prompt that made it.
 
 It runs on [Comfy Cloud](https://docs.comfy.org/agent-tools/mcp) or your own ComfyUI, through whichever

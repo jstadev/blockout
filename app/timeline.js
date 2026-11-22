@@ -107,7 +107,7 @@ export function mountTimeline(root, { viewport, exporter }) {
   const renderBtn = button({ icon: 'sparkle', label: 'Render with Comfy', kind: 'ghost', title: 'Render the whole timeline into a finished video with your agent and ComfyUI. Opens the chat with the request started: send it and your agent asks for what it needs',
     onClick: () => store.emit('compose', {
       text: 'Render this timeline with ComfyUI (blockout-render skill). ',
-      hint: 'Send this and your agent renders the whole timeline, every shot, as one video. It asks for what it needs, one question at a time. Nothing costs credits until you confirm.',
+      hint: 'Send to start. Nothing costs credits until you confirm.',
     }) });
   renderBtn.classList.add('tl-render');
   renderBtn.setAttribute('role', 'menuitem');
