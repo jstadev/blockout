@@ -1116,7 +1116,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor, keepOpen })
   // shudder: exact jerks back and forth along this segment, on top of its ease
   let liveSh = null; // settings being scrubbed, drawn before they are committed
   const shPatch = (patch) => { const tg = target(); return { ...SHUDDER_DEFAULT, ...tg?.key.shudder, ...patch }; };
-  const shPreview = (patch) => { liveSh = shPatch(patch); draw(); };
+  const shPreview = (patch) => { liveSh = shPatch(patch); paintRange(liveSh); draw(); };
   const shCommit = (patch) => {
     const tg = target();
     liveSh = null;
@@ -1130,8 +1130,8 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor, keepOpen })
   // where in the segment it plays, in seconds from the segment's first key (stored as shares of the segment)
   const span = () => { const tg = target(); return tg?.kind === 'segment' ? Math.max(1e-3, tg.next.t - tg.key.t) : 1; };
   const shFrac = (sec) => Math.min(1, Math.max(0, sec / span()));
-  const shFrom = number({ value: 0, step: 0.05, min: 0, precision: 2, title: 'Where the shudder starts, in seconds after this key', onInput: (v) => shPreview({ from: shFrac(v) }), onChange: (v) => shCommit({ from: shFrac(v) }) });
-  const shTo = number({ value: 1, step: 0.05, min: 0, precision: 2, title: 'Where the shudder stops, in seconds after this key', onInput: (v) => shPreview({ to: shFrac(v) }), onChange: (v) => shCommit({ to: shFrac(v) }) });
+  const shFrom = number({ value: 0, step: 0.05, min: 0, precision: 2, width: 44, title: 'Where the shudder starts, in seconds after this key', onInput: (v) => shPreview({ from: shFrac(v) }), onChange: (v) => shCommit({ from: shFrac(v) }) });
+  const shTo = number({ value: 1, step: 0.05, min: 0, precision: 2, width: 44, title: 'Where the shudder stops, in seconds after this key', onInput: (v) => shPreview({ to: shFrac(v) }), onChange: (v) => shCommit({ to: shFrac(v) }) });
   const shShape = segmented({ value: SHUDDER_DEFAULT.shape, onChange: (v) => shCommit({ shape: v }), options: [
     { value: 'jerk', label: 'Jerk', title: 'Snaps back, then eases forward again' },
     { value: 'wobble', label: 'Wobble', title: 'A smooth back and forth' },
@@ -1140,16 +1140,51 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor, keepOpen })
     { value: 'even', label: 'Even', title: 'The same all the way' },
     { value: 'fade', label: 'Fade out', title: 'Strong at the start, gone by the end' },
     { value: 'build', label: 'Build', title: 'Grows towards the end' }] });
+  // timing: a strip spanning the segment (key to key) with the shudder's section on it; drag an edge to
+  // move that end, drag the middle to slide it, click outside it to bring the nearer end there
+  const rangeFill = h('div.curve-range__fill', {}, h('span.curve-range__edge.is-from'), h('span.curve-range__edge.is-to'));
+  const range = h('div.curve-range', { title: 'Where the shudder plays: drag an edge to move it, the middle to slide it' }, rangeFill);
+  const rangeA = h('span.curve-range__key'), rangeB = h('span.curve-range__key');
+  let rangeDrag = null;
+  const rangeAt = (e) => { const r = range.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+  const snapF = (f) => { const tl = store.doc.timeline, d = 1 / (tl.fps || 24) / span(); return Math.min(1, Math.max(0, Math.round(f / d) * d)); };
+  range.addEventListener('pointerdown', (e) => {
+    const tg = target();
+    if (!tg || tg.kind !== 'segment') return;
+    e.preventDefault();
+    const v = { ...SHUDDER_DEFAULT, ...tg.key.shudder }, x = rangeAt(e), w = range.getBoundingClientRect().width, near = 8 / w;
+    let edge = Math.abs(x - v.from) <= near ? 'from' : Math.abs(x - v.to) <= near ? 'to' : x > v.from && x < v.to ? 'move' : x < v.from ? 'from' : 'to';
+    rangeDrag = { edge, x0: x, from: v.from, to: v.to, cur: { from: v.from, to: v.to } };
+    if (edge !== 'move') { rangeDrag.cur[edge] = snapF(x); shPreview(rangeDrag.cur); }
+    range.setPointerCapture(e.pointerId);
+  });
+  range.addEventListener('pointermove', (e) => {
+    if (!rangeDrag) return;
+    const x = rangeAt(e), d = rangeDrag, gap = 0.02;
+    if (d.edge === 'move') { const len = d.to - d.from; const f = Math.min(1 - len, Math.max(0, snapF(d.from + x - d.x0))); d.cur = { from: f, to: f + len }; }
+    else if (d.edge === 'from') d.cur = { from: Math.min(snapF(x), d.to - gap), to: d.to };
+    else d.cur = { from: d.from, to: Math.max(snapF(x), d.from + gap) };
+    shPreview(d.cur); paintRange(d.cur);
+  });
+  const endRange = () => { if (!rangeDrag) return; const c = rangeDrag.cur; rangeDrag = null; shCommit({ from: +c.from.toFixed(4), to: +c.to.toFixed(4) }); };
+  range.addEventListener('pointerup', endRange);
+  range.addEventListener('pointercancel', endRange);
+  function paintRange(v) {
+    rangeFill.style.left = `${v.from * 100}%`;
+    rangeFill.style.right = `${(1 - v.to) * 100}%`;
+  }
   const shBody = h('div.curve-shudder__body', {},
-    h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Back'), affix(shAmount, '%')),
-    h('div.cc-row', {}, h('span.cc-label', {}, 'From'), affix(shFrom, 's'), h('span.cc-label.curve-shudder__back', {}, 'To'), affix(shTo, 's')),
     h('div.cc-row', {}, h('span.cc-label', {}, 'Shape'), shShape),
-    h('div.cc-row', {}, h('span.cc-label', {}, 'Over move'), shOver));
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Strength'), shOver),
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Amount'), affix(shAmount, '%')),
+    h('div.curve-shudder__sec', {}, 'Timing'),
+    range,
+    h('div.curve-range__axis', {}, rangeA, h('span.curve-range__fields', {}, affix(shFrom, 's'), h('span.curve-range__dash', {}, '–'), affix(shTo, 's')), rangeB));
   const shWrap = h('div.curve-shudder', {}, h('div.cc-row', {}, h('span.cc-label', {}, 'Shudder'), h('span.cc-spacer'), shOn), shBody);
   // the header stays put while the body scrolls on short screens, so close is always in reach
   const pop = h('div.cc-panel.curve-pop', { hidden: true },
     h('div.curve-pop__head', {},
-      h('div.cc-row', {}, tabs, h('span.cc-spacer'), copyBtn, pasteBtn, helpWrap, closeBtn),
+      h('div.cc-row', {}, tabs, h('span.cc-spacer'), h('div.curve-pop__tools', {}, copyBtn, pasteBtn, helpWrap, closeBtn)),
       h('div.cc-row.curve-head', {}, title, nameEl)),
     h('div.curve-pop__body', {}, cv, presets, h('div.curve-sep'), shWrap, allBtn, allConfirm));
   document.body.append(pop); // outside #timeline: its blurred panel would become the box `position: fixed` measures from
@@ -1492,6 +1527,9 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor, keepOpen })
       shJerks.set(v.jerks); shAmount.set(v.amount); shShape.value = v.shape; shOver.value = v.over;
       const len = tg.next.t - tg.key.t;
       shFrom.set(+(v.from * len).toFixed(2)); shTo.set(+(v.to * len).toFixed(2));
+      if (!rangeDrag) paintRange(v);
+      rangeFill.dataset.over = v.over;
+      rangeA.textContent = `${tg.key.id} 0 s`; rangeB.textContent = `${tg.next.id} ${+len.toFixed(2)} s`;
     }
     // never taller than the room above it (it sits on its bottom edge): the body scrolls inside instead
     const room = Math.floor(pop.getBoundingClientRect().bottom - 12);

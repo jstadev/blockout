@@ -303,6 +303,23 @@ body.has-audio :is(.shot-pop, .audio-pop), body.has-audio .curve-pop { bottom: c
 .curve-pop .curve-shudder .cc-row > .cc-seg { flex: 1; }
 .curve-shudder .cc-seg > button { flex: 1; justify-content: center; padding: 0 4px; }
 .curve-shudder .cc-row > .cc-label.curve-shudder__back { width: auto; }
+.curve-shudder__sec { margin-top: 4px; font-size: var(--cc-size-sm); letter-spacing: .08em; text-transform: uppercase; color: var(--cc-text-faint); }
+/* timing strip: the segment from key to key, the shudder's section on it (shaded by its strength over time) */
+.curve-range { position: relative; height: 24px; border-radius: var(--cc-radius); background: var(--cc-surface-sunk); cursor: pointer; touch-action: none; }
+.curve-range__fill { position: absolute; top: 3px; bottom: 3px; left: 0; right: 0; border-radius: 3px; cursor: grab;
+  background: color-mix(in srgb, var(--cc-accent) 28%, transparent); }
+.curve-range__fill[data-over="fade"] { background: linear-gradient(90deg, color-mix(in srgb, var(--cc-accent) 50%, transparent), color-mix(in srgb, var(--cc-accent) 6%, transparent)); }
+.curve-range__fill[data-over="build"] { background: linear-gradient(90deg, color-mix(in srgb, var(--cc-accent) 6%, transparent), color-mix(in srgb, var(--cc-accent) 50%, transparent)); }
+.curve-range__edge { position: absolute; top: -1px; bottom: -1px; width: 3px; border-radius: 2px; background: var(--cc-accent); cursor: ew-resize; }
+.curve-range__edge.is-from { left: -1px; }
+.curve-range__edge.is-to { right: -1px; }
+.curve-range__axis { display: flex; align-items: center; gap: 6px; font-family: var(--cc-mono); font-size: var(--cc-size-sm); color: var(--cc-text-faint); }
+.curve-range__axis > .curve-range__key { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.curve-range__axis > .curve-range__key:last-child { text-align: right; }
+.curve-range__fields { display: flex; align-items: center; gap: 4px; flex: none; }
+.curve-range__dash { color: var(--cc-text-faint); }
+/* header icons: one evenly spaced group */
+.curve-pop__head .cc-row > .curve-pop__tools { flex: none; display: flex; align-items: center; gap: 2px; }
 
 #offline { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); padding: 8px 12px; color: var(--cc-danger); z-index: 40; }
 #offline[hidden] { display: none; }

@@ -864,6 +864,14 @@ try {
     await page.waitForFunction((id) => { const k = window.canvas.store.doc.timeline.keys.find((x) => x.id === id); return k.ease === 'snap' && k.shudder?.jerks === 5 && k.shudder.shape === 'wobble'; }, k1);
     ok(true, 'paste copies the curve and the shudder onto another segment');
   }
+  // the timing strip: drag its right edge in to end the shudder earlier
+  {
+    const r = await page.locator('.curve-range').boundingBox();
+    await page.mouse.move(r.x + r.width - 2, r.y + r.height / 2); await page.mouse.down();
+    await page.mouse.move(r.x + r.width * 0.6, r.y + r.height / 2, { steps: 4 }); await page.mouse.up();
+    await page.waitForFunction(() => { const s = window.canvas.store, k = s.doc.timeline.keys.find((x) => x.id === s.state.key); return k?.shudder && k.shudder.to < 0.7 && k.shudder.to > 0.5; });
+    ok(true, 'dragging the timing strip\'s edge sets where the shudder ends');
+  }
   const allVisible = await page.locator('.curve-all').isVisible();
   if (allVisible && !(await page.locator('.curve-all').isDisabled())) {
     const before = JSON.stringify(JSON.parse(cli('doc')).timeline.keys.map((k) => k.ease));
