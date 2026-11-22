@@ -8,7 +8,7 @@ workflow. A paid partner node: it spends Comfy credits on cloud and on a local C
   node has numbered image inputs, so `fill` can add `image_3` and up or remove spares. `@audio_1` is the
   soundtrack.
 - **Settings in the example**: 720p, 9:16, 11 seconds for a 10.5 second shot, `generate_audio` on,
-  `task_type` reference, watermark off. Duration is whole seconds: round the shot length up, and set the
+  `task_type` reference, watermark off. Duration is whole seconds: round the length of the video (the whole timeline) up, and set the
   trim to the same number (`fill --duration` does both).
 - **Limits**: not recorded here. Before the first render, read the node's options
   (`get_node ByteDance2ReferenceNodeV2`, or `comfy nodes show ByteDance2ReferenceNodeV2`) for the allowed

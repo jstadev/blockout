@@ -23,11 +23,11 @@ you need the API JSON (`get_saved_workflow`, or export it from ComfyUI).
 | video | a `LoadVideo`-like node (class matches "load video") | the uploaded blockout export |
 | trim | `Video Slice` / trim-video node with a `duration` | the same seconds as the model duration |
 | images | `LoadImage` nodes, ordered by the model input they feed (`…image_1`, `…image_2`) | the reference images, in prompt order |
-| audio | a `LoadAudio`-like node | the shot's part of the audio track, or removed |
+| audio | a `LoadAudio`-like node | the export's audio track (the whole timeline), or removed |
 | model | the node with a prompt that draws on the most loaders | (not filled; it holds the next four) |
 | prompt | the model's `prompt` / `text` input | `prompt.txt` |
 | duration, ratio, resolution, seed | inputs of the model ending in those names | from the brief and the user |
-| save | the node with `filename_prefix` | `blockout/<scene>/<shot>` |
+| save | the node with `filename_prefix` | `blockout/<scene>/timeline` |
 
 "→ model.reference_images.image_1" in the output is the model input a loader feeds. "(through other
 nodes)" means there are nodes in between, such as the trim and mute chain on the blockout video: those are

@@ -597,7 +597,7 @@ try {
     ok(!(await page.isVisible('.tl-export-pop')), 'choosing it closes the menu');
     await page.waitForSelector('.chat-hint:not([hidden])');
     const st = await page.evaluate(() => ({ text: document.querySelector('.chat-input').value, focus: document.activeElement === document.querySelector('.chat-input'), send: !document.querySelector('.chat-send').disabled }));
-    ok(/^Render this shot with ComfyUI/.test(st.text) && st.focus && st.send && (await page.isVisible('.chat')), 'Render with Comfy opens the chat with the request started and a note on what to add');
+    ok(/^Render this timeline with ComfyUI/.test(st.text) && st.focus && st.send && (await page.isVisible('.chat')), 'Render with Comfy opens the chat with the request started and a note on what to add');
     await page.click('.tl-exportcaret'); await page.click('.tl-render');
     ok((await page.$eval('.chat-input', (e) => e.value)) === st.text && queued() === before, 'choosing it again does not repeat the text, and nothing is sent');
     await page.fill('.chat-input', '');

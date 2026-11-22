@@ -1,8 +1,10 @@
 # Writing the timed prompt
 
 The model sees the blockout video as a motion reference and the images as look references. The prompt
-tells it which is which, then walks the shot in time so the result follows the blockout move for move.
-The camera facts come from `canvas brief`; the look, subject and action come from the user's message and
+tells it which is which, then walks the video in time so the result follows the blockout move for move.
+The blockout is the whole timeline: every shot, cut together, as one video. The prompt covers all of it,
+with every time in seconds of that video and every cut named. The camera facts come from
+`canvas brief --timeline`; the look, subject and action come from the user's message and
 the reference images, which you open and look at.
 
 Write it to `<render folder>/prompt.txt`. Plain text, sections in this order, each starting with its label.
@@ -75,6 +77,12 @@ its time range:
   lands on (the text after `→`: shot size, side of the subject, height, angle).
 - A `hold` is a line too: "Hold to 2.34s" can be folded into the end of the move before it.
 - A `cut` is a hard cut: say so, and give the framing the new angle starts on.
+- A timeline with several shots: the brief's `CUT at <t>s` lines are hard cuts between shots. Give each its
+  own line ("5.00s: Hard cut to a low close-up from her left.") using the next shot's `opens on` framing,
+  then carry on with that shot's moves. Times keep counting through the cuts; never restart at 0 for a
+  new shot. In the Summary and Camera sections say how many shots and cuts there are ("three shots, two
+  hard cuts, at 2.50s and 5.00s") and that there are no others, in place of the example's "one continuous
+  take". Say that the people, clothes and set are the same in every shot.
 - Shudder on a segment: say the camera judders or stutters through that move, and how many times.
 - Meters and degrees help you; the model reads pictures. Prefer "a short push in" plus the landing framing
   over "push in 1.2 m", but keep angles for big orbits ("a quarter turn", "half way round").
@@ -102,9 +110,9 @@ expression, and the usual exclusions: no subtitles, no on-screen text, no waterm
   camera line says how the camera moves, where it lands, what is in frame and what the subject does.
 - Nothing from the example's own shot is left (search for its nouns).
 
-- Every time range in the prompt is inside the shot and matches a segment of the brief. The last line ends
-  at the shot's length.
-- The length in the Summary is the shot's real length, even when the model's duration is rounded up.
+- Every time range in the prompt is inside the video and matches a segment of the timeline brief. Every cut
+  in the brief is in the prompt, at its time. The last line ends at the timeline's length.
+- The length in the Summary is the timeline's real length, even when the model's duration is rounded up.
 - Every `@image_n` in the prompt has an image, and every image is named. `recipe.mjs fill` warns about both.
 - Nothing describes the blockout's grey boxes and mannequins as the look.
 - If the user wrote their own prompt, keep their words and only add or correct the timed path and the

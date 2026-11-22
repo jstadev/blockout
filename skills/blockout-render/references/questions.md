@@ -6,6 +6,8 @@ at a time and sends the answers back as one prompt.
 
 ## Writing a card
 
+- Never ask which shot to render or how to split or join shots: the whole timeline is one render
+  (SKILL.md step 1).
 - Ask only what you could not work out. A request that already names the images, the model or the place to
   run skips those questions. `renders/settings.json` answers "where" and "which recipe" after the first render.
 - One card for the open questions, then one confirm card (the prompt to review, then Render: SKILL.md
