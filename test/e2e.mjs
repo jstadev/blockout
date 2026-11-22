@@ -851,7 +851,33 @@ try {
   await page.mouse.dblclick(px, py + 3);
   await page.waitForFunction(() => { const e = [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t)[0].ease; return !Array.isArray(e) || e.length === 4; });
   ok(true, 'double-clicking a point removes it');
-  await page.locator('.curve-pop button[title="Close"]').click();
+  // copy this segment (curve + shudder), paste onto the next one; Apply to all asks first; a click away closes it
+  cli('key-set', '0', '--ease', 'snap', '--shudder', '5,3', '--shape', 'wobble');
+  await page.waitForFunction(() => !!window.canvas.store.doc.timeline.keys.find((k) => k.shudder));
+  await page.locator('.curve-pop__head button[title^="Copy"]').click();
+  const k1 = await page.evaluate(() => { const ks = [...window.canvas.store.doc.timeline.keys].sort((a, b) => a.t - b.t); return ks.length > 2 ? ks[1].id : null; });
+  if (k1) {
+    await page.evaluate((id) => window.canvas.store.set({ key: id }), k1);
+    await page.waitForTimeout(100);
+    ok(await page.locator('.curve-pop').isVisible(), 'picking another segment keeps the editor open');
+    await page.locator('.curve-pop__head button[title^="Paste"]').click();
+    await page.waitForFunction((id) => { const k = window.canvas.store.doc.timeline.keys.find((x) => x.id === id); return k.ease === 'snap' && k.shudder?.jerks === 5 && k.shudder.shape === 'wobble'; }, k1);
+    ok(true, 'paste copies the curve and the shudder onto another segment');
+  }
+  const allVisible = await page.locator('.curve-all').isVisible();
+  if (allVisible && !(await page.locator('.curve-all').isDisabled())) {
+    const before = JSON.stringify(JSON.parse(cli('doc')).timeline.keys.map((k) => k.ease));
+    await page.locator('.curve-all').click();
+    ok(await page.locator('.curve-confirm').isVisible() && JSON.stringify(JSON.parse(cli('doc')).timeline.keys.map((k) => k.ease)) === before, 'Apply to all asks before changing anything');
+    await page.locator('.curve-confirm button', { hasText: 'Cancel' }).click();
+    ok(!(await page.locator('.curve-confirm').isVisible()), 'Cancel leaves the segments alone');
+  }
+  cli('key-set', '0', '--ease', 'easeInOut', '--shudder', 'off');
+  if (k1) cli('key-set', k1, '--ease', 'easeInOut', '--shudder', 'off');
+  ok(await page.locator('.curve-tip').evaluate((el) => /orange handles/.test(el.textContent)), 'the help text lives in the header tooltip');
+  await page.mouse.click(5, 300);
+  await page.waitForTimeout(100);
+  ok(!(await page.locator('.curve-pop').isVisible()), 'a click away closes the curve editor');
   // --- toolbar: the key card, Key's caret, the object chip, Loop in the shot popover ---
   await page.evaluate(() => { const s = window.canvas.store; s.set({ key: null, selection: null }); });
   await page.waitForTimeout(150);
