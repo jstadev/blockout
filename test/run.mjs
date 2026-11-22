@@ -785,6 +785,9 @@ test('render recipes: slots are found by node type, a fill never touches the rec
   assert.throws(() => findSlots({ nodes: [], links: [] }), /Export \(API\)/);
   assert.throws(() => fillRecipe({ a: { class_type: 'SaveVideo', inputs: { filename_prefix: 'x' } } }, { video: 'v.mp4' }), /no video slot/);
   assert.deepEqual(listRecipes(BUILTIN).map((x) => [x.name, x.images, !!x.notes]), [['seedance-2.5-reference', 2, true]]);
+  // the recipe ships the full prompt it was made from, as the example every new prompt is adapted from
+  const example = fs.readFileSync(listRecipes(BUILTIN)[0].example, 'utf8');
+  assert.ok(example.length > 4500 && /^References: /.test(example) && /\n9\.63–10\.5s: /.test(example) && !/\[[A-Z][A-Z _-]+\]/.test(example));
 });
 
 test('say --attach: a reply carries a video, served with byte ranges so it can be played and seeked', async () => {

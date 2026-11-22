@@ -6,6 +6,7 @@ format**, with an optional notes file beside it.
 ```
 <scene folder>/recipes/my-look.json     the workflow (ComfyUI: Workflow > Export (API))
 <scene folder>/recipes/my-look.md       notes for you: limits, what each image slot is for, quirks
+<scene folder>/recipes/my-look.prompt.txt   the full prompt the workflow came with: the example to adapt
 <skill>/recipes/seedance-2.5-reference.json   built in, made from the user's Seedance 2.5 example
 ```
 
@@ -62,9 +63,12 @@ When the user gives you a workflow to keep ("save this as a recipe", or a new at
 1. Get it in API format and run `recipe.mjs slots` on it. Every slot the render needs must be found:
    video, prompt, and whatever references the workflow uses.
 2. If a slot is missed, tell the user which title tag to add, or add `_meta.title` tags in the JSON yourself.
-3. Replace the file names in the loaders with `REPLACE-…` placeholders, so a stale upload is never run by
+3. Before you change anything, copy the workflow's own prompt, whole and unedited, to
+   `<name>.prompt.txt`. It is the example every later prompt for this recipe is adapted from
+   (references/prompt.md), so the user's level of detail and phrasing carry over.
+4. Replace the file names in the loaders with `REPLACE-…` placeholders, so a stale upload is never run by
    mistake (`fill` warns while a placeholder is left).
-4. Save it as `<scene folder>/recipes/<name>.json`. Write `<name>.md` with what you learned: the model's
+5. Save it as `<scene folder>/recipes/<name>.json`. Write `<name>.md` with what you learned: the model's
    duration, ratio and resolution options (`get_node` / `comfy nodes show <class>`), how many images it
    takes, how the prompt refers to references (`@image_1`, or something else), whether it is a paid
    partner node or runs on local models, and anything the user said about how they use it.

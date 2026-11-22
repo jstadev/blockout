@@ -7,6 +7,42 @@ the reference images, which you open and look at.
 
 Write it to `<render folder>/prompt.txt`. Plain text, sections in this order, each starting with its label.
 
+## Start from the example, and match its detail
+
+Every recipe can carry the full prompt it was made from: `<recipe>.prompt.txt`, next to the recipe
+(`recipe.mjs list` prints its path). **Read all of it before you write anything.** It is the user's own
+prompt for this workflow, and the new prompt is that prompt adapted to this shot, not a fresh one written
+from the section list below. Adapt it like this:
+
+- **Keep** its sections and their order, its sentence patterns, its standing rules (the Camera and
+  Consistency wording, the exclusions) and any special section it has, when the same need exists in this
+  shot. The built-in example has a "Head tracking" section because the subject had to keep looking at the
+  lens: keep such a section when the user asks for the same thing, drop it when they do not.
+- **Replace** everything that is about the example's own shot: the subject, the set, the look, the times,
+  the moves, the sound. None of the example's people, props or rooms may be left in the new prompt.
+- **Match its level of detail, section by section.** This is the point of having it. Compare as you write:
+  - Subject: the example names hair, each piece of clothing, jewellery, shoes and what she sits in. Describe
+    this shot's subject that closely, from the images (or the user's words when there are none).
+  - Camera path: the example gives every move its own line with exact times, how the camera travels
+    ("whips down and around", "banks up into a steep tilted overhead"), the framing it lands on, **what is
+    in frame there** ("lava lamp behind her", "shooting through the silver stool"), what the subject does,
+    and the hold after it. Do the same for every segment of the brief. Get what is in frame from the scene
+    (`canvas ls`, a `canvas snapshot --t <time>` at each landing) and the images, not from guessing.
+  - Camera: the example describes the character of the motion in numbers (whips of 0.1 to 0.3 seconds, a
+    dead stop, a hover with slight drift, one whip per beat, the BPM). Give this shot's own character with
+    its own numbers from the brief.
+  - Audio: the example lists what is heard and when (clicks at 1.06s and 1.37s, the drop at 1.60s). With
+    `canvas brief --beats`, name this track's events and times the same way.
+  - Consistency: the example lists each thing that must not change, by name. List this shot's.
+- A shot with fewer moves has fewer camera lines, so the prompt may be shorter overall. The detail per line
+  and per section must not be. A one-move shot still gets a full Subject, Camera, Style, Audio and
+  Consistency. If you do not know something the example would have stated (what she wears, what is on the
+  wall), look at the images and snapshots, and ask the user only if they do not show it.
+- A recipe without an example prompt: use the built-in recipe's example for the level of detail and the
+  sections below for the content.
+
+The sections below say where each section's facts come from.
+
 ## Sections
 
 **References:** what each reference is for, by its tag. Say that the blocking, camera path, speed and
@@ -60,7 +96,11 @@ silent, and set the recipe's generate-audio input to match.
 **Consistency:** what must stay identical from every angle (face, hair, outfit, props, set dressing), the
 expression, and the usual exclusions: no subtitles, no on-screen text, no watermark.
 
-## Checks before the plan
+## Checks before the review
+
+- Put the example and your prompt side by side. Each section is as specific as the example's, and each
+  camera line says how the camera moves, where it lands, what is in frame and what the subject does.
+- Nothing from the example's own shot is left (search for its nouns).
 
 - Every time range in the prompt is inside the shot and matches a segment of the brief. The last line ends
   at the shot's length.

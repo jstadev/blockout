@@ -88,7 +88,9 @@ Use the recipe the user names, else their last one (`renders/settings.json`), el
 `seedance-2.5-reference`. Read the recipe's `.md` notes if it has them. How slots are found, how to save a
 new recipe and what to do when a graph does not fit: references/recipes.md.
 
-Write the prompt to `<render folder>/prompt.txt` following references/prompt.md, then upload the inputs
+Write the prompt to `<render folder>/prompt.txt`: read the recipe's example prompt in full
+(`<recipe>.prompt.txt`, shown by `recipe.mjs list`) and adapt it to this shot at the same level of detail,
+following references/prompt.md. Then upload the inputs
 (step 5 explains where; uploading is free) and fill a copy with the names the upload returned:
 
 ```bash
