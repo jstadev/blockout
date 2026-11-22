@@ -279,7 +279,7 @@ plays in place, and **always finish with a final `say`** (without `--working`):
 otherwise the user sees "no reply yet". When you need something from the user (a choice, an image, a
 confirmation, an API key), ask with a question card, `canvas ask` (references/api.md, "Question cards and
 keys"), not a paragraph of questions: it shows them one at a time and the answers come back as the next
-prompt. Then call `canvas wait` again straight away; a prompt is
+prompt. For a job that takes minutes, show a progress card (`canvas progress`, same section). Then call `canvas wait` again straight away; a prompt is
 only delivered to an agent that is waiting. Calling `wait` also marks any prompt you already took
 as done and turns listen mode on. "this", "it" or "here" in a prompt refer to the `selected:` object and
 the `playhead:` time printed with it. When the user attaches images (references, sketches,

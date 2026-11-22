@@ -669,6 +669,20 @@ try {
     await page.waitForFunction(() => !document.querySelector('.chat-ask:not(.is-done)'));
     const fb = cli('wait', '--timeout', '5', '--no-listen');
     ok(/NOT approved\. Feedback: "make it rain"/.test(fb) && !/- go /.test(fb), 'feedback goes back to the agent and the Render step is not offered');
+    // a progress card for the job: one card, updated in place, counting the time by itself
+    const job = cli('progress', 'Rendering test', '--steps', 'Upload|Queue|Render', '--eta', '120');
+    await page.waitForSelector('.chat-prog[data-state="running"]');
+    cli('progress', '--id', job, '--step', '3', '--pct', '50');
+    await page.waitForFunction(() => /Render · 3 of 3/.test(document.querySelector('.chat-prog-line')?.textContent || ''));
+    const t0 = await page.textContent('.chat-prog-time');
+    await page.waitForFunction((t) => document.querySelector('.chat-prog-time').textContent !== t, t0, { timeout: 5000 });
+    const pg = await page.evaluate(() => ({ n: document.querySelectorAll('.chat-prog').length, w: document.querySelector('.chat-prog-fill').style.width, line: document.querySelector('.chat-prog-line').textContent }));
+    ok(pg.n === 1 && pg.w === '50%' && /left|usually/.test(pg.line), `a progress card updates in place and keeps counting (${pg.line})`);
+    const held = execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'hook', 'stop'], { env, input: JSON.stringify({ session_id: 'e2e-session', cwd: ROOT }), encoding: 'utf8' });
+    ok(JSON.parse(held).decision === 'block' && held.includes(job) && /Rendering test/.test(held), 'Stop hook will not let the session go idle while a job card is running');
+    cli('progress', '--id', job, '--done', 'Rendered in 2m');
+    await page.waitForSelector('.chat-prog[data-state="done"]');
+    ok((await page.textContent('.chat-prog-line')) === 'Rendered in 2m' && !(await page.isVisible('.chat-prog-bar')), 'a finished job settles into one line');
     cli('say', 'Rendering now.');
     cli('secret', 'rm', 'E2E_TEST_KEY');
     if (!wasOpen) await page.click('.chat-toggle');

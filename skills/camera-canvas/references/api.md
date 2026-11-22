@@ -183,6 +183,13 @@ answers arrive as one prompt (`canvas wait` or the Stop hook), marked `ask`. A c
   If the user closes the card the prompt says so (`cancelled`); ask in plain words instead.
 - Asking marks the prompt it answers done (the turn is the user's). Ask, then end your turn or `canvas wait`.
 
+`canvas progress "title" [--steps "A|B|C"] [--eta seconds] [--note "…"]` puts a progress card in the chat for
+one long job (a render, a big export) and prints its id. Update the same card with
+`canvas progress --id <id> [--step n] [--pct 0-100] [--note "…"] [--eta s]`, and end it with `--done ["note"]`
+or `--fail "why"`. The card shows the stage, a bar (the percentage if given, else the stage, else moving) and
+the time since it started, which it counts by itself between updates; `--eta` adds "about 3 min left". It
+does not close the prompt you are working on. Always end a card you started.
+
 A `secret` question is a key block: a password field whose value goes from the tab to the server and into
 `~/.blockout/secrets.json` (owner-only; `CANVAS_SECRETS` moves it). It is never in the answers, the chat log
 or any command output. You are told only that `NAME` is saved. Use it with
@@ -219,6 +226,7 @@ removes one. Never read the secrets file, echo a key or ask the user to type one
 | `POST /api/say` | `{ text, reply?, done?, files?: [{ file, name? }] }` | the reply, with any attached files |
 | `POST /api/ask` | `{ title?, questions, reply? }` | a question card in the chat: `{ id, questions }` |
 | `POST /api/ask/answer` | `{ id, answers, cancelled?, context? }` (sent by the tab) | the answers as a prompt: `{ prompt }`; 409 if already answered |
+| `POST /api/progress` | `{ title }` to start, then `{ id, step?, pct?, note?, eta?, steps?, state?: running\|done\|failed }` | `{ id, progress }`: one card in the chat, updated in place |
 | `POST /api/secret` | `{ name, value }` (sent by the tab's key block) | `{ name }`; the value is never returned by any route |
 | `GET /api/secrets` | | `{ secrets: [{ name, savedAt }] }` |
 | `POST /api/chat/new` | | archives the open chat to `.canvas/chats/<id>.json`; `{ kept, archived }` |

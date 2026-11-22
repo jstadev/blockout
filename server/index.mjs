@@ -217,7 +217,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   // turn that turned listening on, before its first Stop hook polls).
   const listenLive = () => listen && (agentListening() || agentWorking() || Date.now() - Math.max(lastAgentActivity, lastAgentPoll) < 120000);
   const launch = launchInfo();
-  const statusPayload = () => ({ agent: agentListening(), working: !agentListening() && agentWorking(), listen, listenLive: listenLive(), launch, listenSession, listenCwd, pid: process.pid, waiting: waiters.length, queued: prompts.filter((p) => p.status === 'pending').length, rev });
+  const statusPayload = () => ({ agent: agentListening(), working: !agentListening() && agentWorking(), listen, listenLive: listenLive(), launch, listenSession, listenCwd, pid: process.pid, waiting: waiters.length, queued: prompts.filter((p) => p.status === 'pending').length, jobs: runningJobs().length, rev });
   let lastStatus = '';
   const pushStatus = () => { const s = JSON.stringify(statusPayload()); if (s !== lastStatus) { lastStatus = s; broadcast('status', statusPayload()); } };
   setInterval(pushStatus, 2000).unref();
@@ -248,6 +248,12 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     }
     pushStatus();
   }
+  const progress = new Map(); // progress card id -> its latest state
+  for (const m of readTail(logPath, Infinity)) if (m.kind === 'progress' && m.progress) progress.set(m.progress.id, m.progress);
+  // Jobs the agent started and has not ended. The Stop hook uses this so a session cannot go idle on a
+  // running job and leave its result unreported. One with no update for two hours is taken as abandoned.
+  const runningJobs = () => [...progress.values()].filter((p) => p.state === 'running' && Date.now() - (p.updatedAt || p.startedAt) < 2 * 3600000)
+    .map((p) => ({ id: p.id, title: p.title, startedAt: p.startedAt, updatedAt: p.updatedAt || p.startedAt }));
   function appendLog(entry) { fs.appendFileSync(logPath, JSON.stringify(entry) + '\n'); }
 
   // ---------- chat history ----------
@@ -288,7 +294,14 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       .map(({ id, title, startedAt, endedAt, prompts: ps = [], messages: ms = [] }) => ({ id, title, startedAt, endedAt, count: ps.length + ms.length }))
       .sort((a, b) => b.endedAt - a.endedAt);
   }
-  const currentChat = () => ({ prompts: prompts.slice(-CURRENT), messages: readTail(logPath, CURRENT) });
+  // A progress card is logged once per update. The open chat gets each card once: its latest state, at the
+  // place in the conversation where it first appeared.
+  const foldProgress = (ms) => {
+    const last = new Map(), first = new Map();
+    for (const m of ms) if (m.kind === 'progress' && m.progress) { last.set(m.progress.id, m); if (!first.has(m.progress.id)) first.set(m.progress.id, m.at); }
+    return ms.flatMap((m) => (m.kind !== 'progress' || !m.progress ? [m] : first.get(m.progress.id) === m.at && last.has(m.progress.id) ? (() => { const l = last.get(m.progress.id); last.delete(m.progress.id); return [{ ...l, at: m.at }]; })() : []));
+  };
+  const currentChat = () => ({ prompts: prompts.slice(-CURRENT), messages: foldProgress(readTail(logPath, Infinity)).slice(-CURRENT) });
 
   // ---------- http ----------
   const readBody = (req, limit = 512 * 1024 * 1024) => new Promise((resolve, reject) => {
@@ -349,6 +362,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
         keys: tl.keys.map((k) => `${k.id} t=${k.t} pos=${k.position.join(',')} target=${k.target.join(',')} fov=${k.fov}${k.roll ? ` roll=${k.roll}` : ''} ease=${JSON.stringify(k.ease)}${pathNote(k)}${k.shudder ? ` shudder=${k.shudder.jerks} ${k.shudder.shape}s, ${k.shudder.amount}% back, ${k.shudder.over}${k.shudder.from != null || k.shudder.to != null ? `, from ${k.shudder.from ?? 0} to ${k.shudder.to ?? 1} of the segment` : ''}` : ''}`),
       });
     },
+    'GET /api/jobs': (req, res) => json(res, 200, { ok: true, jobs: runningJobs() }),
     'GET /api/status': (req, res) => json(res, 200, { ...statusPayload(), tabs: clients.size, scene: scenePath, exports: exportsDir }),
 
     'POST /api/op': async (req, res) => {
@@ -548,6 +562,41 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       json(res, 200, { ok: true, name });
     },
     'GET /api/secrets': (req, res) => json(res, 200, { ok: true, secrets: listSecrets() }),
+
+    // ----- progress: one card in the chat for a long job, updated in place -----
+    'POST /api/progress': async (req, res) => {
+      const b = await readJson(req);
+      touchAgent();
+      const text = (v, max) => String(v ?? '').trim().slice(0, max);
+      const prev = b.id ? progress.get(String(b.id)) ?? readTail(logPath, Infinity).filter((m) => m.kind === 'progress' && m.progress?.id === b.id).at(-1)?.progress : null;
+      if (b.id && !prev) return json(res, 404, { ok: false, error: `no progress card ${b.id} in this chat` });
+      if (!prev && !text(b.title, 80)) return json(res, 400, { ok: false, error: 'a progress card needs a title' });
+      const now = Date.now();
+      const p = prev ? { ...prev } : { id: `g${now.toString(36)}${crypto.randomBytes(2).toString('hex')}`, state: 'running', startedAt: now };
+      if (text(b.title, 80)) p.title = text(b.title, 80);
+      if (Array.isArray(b.steps)) { p.steps = b.steps.map((s) => text(s, 40)).filter(Boolean).slice(0, 8); if (!p.steps.length) delete p.steps; p.step = p.steps ? Math.min(p.step || 1, p.steps.length) : undefined; }
+      if (b.step != null) {
+        const n = Number(b.step);
+        if (!p.steps || !Number.isInteger(n) || n < 1 || n > p.steps.length) return json(res, 400, { ok: false, error: p.steps ? `step must be 1 to ${p.steps.length}` : 'this card has no steps' });
+        if (n !== p.step) delete p.pct; // a percentage belongs to the stage it was given for
+        p.step = n;
+      }
+      if (b.pct != null) { const n = Number(b.pct); if (!(n >= 0 && n <= 100)) return json(res, 400, { ok: false, error: 'pct must be 0 to 100' }); p.pct = Math.round(n); }
+      if (b.eta != null) { const n = Number(b.eta); if (n > 0) p.eta = Math.round(n); else delete p.eta; }
+      if (b.note != null) { if (text(b.note, 200)) p.note = text(b.note, 200); else delete p.note; }
+      if (b.state != null) {
+        if (!['running', 'done', 'failed'].includes(b.state)) return json(res, 400, { ok: false, error: 'state must be running, done or failed' });
+        p.state = b.state;
+        if (p.state === 'running') delete p.endedAt; else p.endedAt = now;
+      }
+      p.updatedAt = now;
+      for (const k of Object.keys(p)) if (p[k] === undefined) delete p[k];
+      progress.set(p.id, p);
+      const entry = { from: 'agent', kind: 'progress', text: p.title, progress: p, at: now };
+      appendLog(entry);
+      broadcast('say', entry);
+      json(res, 200, { ok: true, id: p.id, progress: p });
+    },
 
     // ----- questions: the agent asks in the chat, the answers come back as one prompt -----
     'POST /api/ask': async (req, res) => {

@@ -48,7 +48,7 @@ session with the selected object, playhead time and camera pose attached.
 - After editing a skill in `skills/camera-canvas/` or `skills/blockout-render/`, run `npm run skills:sync` to update the copies.
 - ComfyUI rendering lives only in the `blockout-render` skill (`skills/blockout-render/`: instructions, recipes and
   `scripts/recipe.mjs`). Keep ComfyUI code out of `app/`, `core/`, `server/` and `bin/canvas.mjs`; what the skill needs
-  from Blockout should be a general feature (like `canvas brief`, `canvas say --attach` and `canvas ask`).
+  from Blockout should be a general feature (like `canvas brief`, `canvas say --attach`, `canvas ask` and `canvas progress`).
 - Ask the user with question cards (`canvas ask`), not paragraphs of questions. API keys go through a key block
   (`"type": "secret"`) and `canvas secret run`; never read `~/.blockout/secrets.json` or print a key.
 - Before finishing code changes: `npm test` (fast) and, if you touched the app, `npm run e2e`
@@ -69,6 +69,7 @@ app/                  the browser app (no build step; three.js via import map)
   timeline.js         transport, key track, curve editor
   prompt.js           chat sidebar (prompts to the agent, replies from it)
   ask.js              question cards in the chat, one question at a time, and the key block
+  progress.js         progress cards in the chat for long jobs (canvas progress)
   render.js           snapshot, storyboard, video export (WebCodecs → mp4)
   ui/                 design-system tokens, kit components, icons
   controls/           user-requested controls (empty by default) + template + example

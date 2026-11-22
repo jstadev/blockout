@@ -6,6 +6,7 @@ import { h, icon, button } from './ui/kit.js';
 import { describe } from '/core/doc.js';
 import { store } from './store.js';
 import { askCard } from './ask.js';
+import { progressCard } from './progress.js';
 
 const OPEN_KEY = 'cc-chat-open';
 
@@ -133,6 +134,7 @@ export function mountPrompt(root, { viewport, corner }) {
   const prompts = new Map(); // id -> prompt
   const items = new Map();   // prompt id -> element
   const asks = new Map();    // question card id -> card (see ask.js)
+  const jobs = new Map();    // progress card id -> card (see progress.js)
 
   function context() {
     const sel = store.state.selection && store.object(store.state.selection);
@@ -275,6 +277,7 @@ export function mountPrompt(root, { viewport, corner }) {
   }
   const newCard = (m, answered) => askCard(m, { answered, upload: uploadImage, post: (route, body) => store.post(route, body), context, onChange: () => { if (nearEnd()) scrollToEnd(); } });
   function agentEl(m, answered) {
+    if (m.kind === 'progress' && m.progress) return h('div.chat-msg.chat-msg--agent.chat-msg--ask', {}, progressCard(m.progress.state === 'running' ? { ...m, progress: { ...m.progress, state: 'failed', note: 'Not finished', endedAt: m.at } } : m).el);
     if (m.kind === 'ask' && m.ask) {
       // in a past chat a card that was never answered shows as closed
       const card = newCard(m, answered || { cancelled: true });
@@ -330,6 +333,19 @@ export function mountPrompt(root, { viewport, corner }) {
   }
 
   function renderMessage(m, live = true) {
+    if (m.kind === 'progress' && m.progress) {
+      // one card per job: later messages for the same job update it where it stands
+      const had = jobs.get(m.progress.id);
+      if (had) { had.update(m); return; }
+      const stickNow = nearEnd();
+      const card = progressCard(m);
+      jobs.set(m.progress.id, card);
+      thread.append(h('div.chat-msg.chat-msg--agent.chat-msg--ask', {}, card.el));
+      empty.remove();
+      if (!open && live) { unread = true; refreshBadge(); }
+      if (stickNow) scrollToEnd();
+      return;
+    }
     const stick = nearEnd();
     if (m.kind === 'ask' && m.ask) {
       const card = newCard(m, null);
@@ -354,7 +370,7 @@ export function mountPrompt(root, { viewport, corner }) {
   store.on('prompt', (p) => { prompts.set(p.id, p); renderPrompt(p); });
   store.on('say', (m) => renderMessage(m));
   store.on('history', ({ prompts: ps = [], messages: ms = [] }) => {
-    thread.replaceChildren(); items.clear(); prompts.clear(); asks.clear();
+    thread.replaceChildren(); items.clear(); prompts.clear(); asks.clear(); jobs.clear();
     for (const p of ps) prompts.set(p.id, p);
     const all = merge(ps, ms).slice(-200);
     if (!all.length) thread.append(empty);
@@ -402,7 +418,7 @@ export function mountPrompt(root, { viewport, corner }) {
     if (!chat) { past.replaceChildren(pastBar('Past chats', showList, 'All chats'), h('div.chat-past-note', {}, 'This chat could not be loaded.')); return; }
     const log = h('div.chat-past-log', { role: 'log' },
       h('div.chat-past-date', {}, when(chat.startedAt)),
-      ...merge(chat.prompts, chat.messages).filter((x) => !(x.p?.ask && chat.messages.some((m) => m.ask?.id === x.p.ask))).map((x) => x.p ? fillPrompt(h('div.chat-msg.chat-msg--user'), x.p) : agentEl(x.m, chat.prompts.find((p) => p.ask && p.ask === x.m.ask?.id))));
+      ...merge(chat.prompts, chat.messages.filter((m, i, all) => m.kind !== 'progress' || !all.slice(i + 1).some((n) => n.progress?.id === m.progress?.id))).filter((x) => !(x.p?.ask && chat.messages.some((m) => m.ask?.id === x.p.ask))).map((x) => x.p ? fillPrompt(h('div.chat-msg.chat-msg--user'), x.p) : agentEl(x.m, chat.prompts.find((p) => p.ask && p.ask === x.m.ask?.id))));
     past.replaceChildren(pastBar(chat.title, showList, 'All chats'), log);
     past.scrollTop = 0;
   }

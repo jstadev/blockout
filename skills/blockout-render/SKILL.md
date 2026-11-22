@@ -168,8 +168,28 @@ whatever is connected, in this order: Comfy Cloud MCP, local `comfy-mcp`, `comfy
 same everywhere: upload the inputs, validate, submit the filled workflow, wait, download the video.
 Tool names and commands for each: references/running.md.
 
-While it runs, keep the user posted without closing their prompt:
-`canvas say --working "Running on Comfy Cloud, usually a few minutes"`.
+Show the job on a progress card from the moment the user says go, and keep it true until the video is in
+the chat:
+
+```bash
+ID=$(node bin/canvas.mjs progress "Rendering on Comfy Cloud" --steps "Upload|Queue|Render|Download" --eta <seconds>)
+node bin/canvas.mjs progress --id $ID --step 2                 # submitted, waiting in the queue
+node bin/canvas.mjs progress --id $ID --step 3 --pct 40        # running; --pct only when the job reports one
+node bin/canvas.mjs progress --id $ID --step 4                 # downloading the result
+node bin/canvas.mjs progress --id $ID --done "Rendered in 3m 40s"      # or: --fail "<what went wrong, in plain words>"
+```
+
+- The card counts the elapsed time by itself, so it stays alive between your updates. Update it when the
+  stage changes, not on a timer.
+- Do not block on one long wait. Poll the job (`get_job_status`, `comfy --json jobs status <id>`, or
+  `wait_for_job` with a short timeout) every 15 to 30 seconds and move the card when the status changes:
+  queued or pending is step 2, running is step 3. Pass a percentage only if the status carries real
+  progress; a partner model such as Seedance usually reports none, and then the stage and the clock are
+  the progress. Never make a percentage up.
+- `--eta`: seconds the whole job usually takes, from the recipe notes or the last `render.json` with the
+  same recipe (`seconds`). Leave it out when you have nothing to go on.
+- Every card ends: `--done` when `render.mp4` is saved, `--fail` on an error or when the user stops the job
+  (`cancel_job` / `comfy jobs cancel`). Do not also post "working" messages; the card replaces them.
 If the job fails, say what the error was in plain words, fix what is fixable (a missing input, a value the
 node rejects) and ask before submitting again when the failed run may have cost credits.
 
