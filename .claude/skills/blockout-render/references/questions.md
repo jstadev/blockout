@@ -8,7 +8,8 @@ at a time and sends the answers back as one prompt.
 
 - Ask only what you could not work out. A request that already names the images, the model or the place to
   run skips those questions. `renders/settings.json` answers "where" and "which recipe" after the first render.
-- One card for the open questions, then one confirm card. Not a card per question.
+- One card for the open questions, then one confirm card (the prompt to review, then Render: SKILL.md
+  step 4). Not a card per question.
 - A question is under about 8 words. One short `note` if it needs it. Options are 1 to 4 words, with a
   `note` for the trade-off (quality, speed, cost).
 - Put your recommendation first. Use `when` so a follow-up shows only when it applies.

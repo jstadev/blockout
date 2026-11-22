@@ -889,6 +889,24 @@ test('canvas ask: a question card goes to the chat, the answers come back as one
     assert.deepEqual(quick.questions[0].options.map((o) => o.value), ['Run', 'Not yet']);
     const closed = await post('/api/ask/answer', { id: quick.id, cancelled: true });
     assert.ok(closed.prompt.cancelled && /without answering/.test(closed.prompt.text));
+    // a text to review before it is used: approved, edited in place, or sent back with feedback
+    const promptFile = path.join(dir, 'prompt.txt');
+    fs.writeFileSync(promptFile, 'References: @video_1 is the blockout.\n0–1.96s: Half orbit to the left.\n');
+    const review = () => { cli('ask', JSON.stringify({ title: 'Render', questions: [{ id: 'prompt', q: 'Check the prompt', file: promptFile }, { id: 'go', q: 'Ready?', options: ['Render', 'Not yet'], when: { prompt: ['approved', 'edited'] } }] })); return log().at(-1).ask; };
+    let rv = review();
+    assert.deepEqual([rv.questions[0].type, rv.questions[0].body], ['review', 'References: @video_1 is the blockout.\n0–1.96s: Half orbit to the left.']);
+    let ans = await post('/api/ask/answer', { id: rv.id, answers: { prompt: { text: rv.questions[0].body + '\n' }, go: { value: 'Render' } } });
+    assert.deepEqual(ans.prompt.answers, { prompt: { value: 'approved' }, go: { value: 'Render' } });
+    assert.match(ans.prompt.text, /- prompt \(Check the prompt\): approved as shown\n- go \(Ready\?\): Render/);
+    rv = review();
+    ans = await post('/api/ask/answer', { id: rv.id, answers: { prompt: { text: 'A new prompt.\nLine two.' }, go: { value: 'Render' } } });
+    assert.deepEqual(ans.prompt.answers.prompt, { value: 'edited', text: 'A new prompt.\nLine two.' });
+    assert.match(ans.prompt.text, /approved with their edits\. Use exactly this text:\n  \| A new prompt\.\n  \| Line two\.\n- go/);
+    rv = review();
+    ans = await post('/api/ask/answer', { id: rv.id, answers: { prompt: { text: rv.questions[0].body, feedback: 'make it night' }, go: { value: 'Render' } } });
+    assert.deepEqual(ans.prompt.answers, { prompt: { value: 'feedback', feedback: 'make it night' } }); // feedback is not approval: the Render step is not answered
+    assert.match(ans.prompt.text, /NOT approved\. Feedback: "make it night"\n  Revise it and show it for review again\.$/);
+    assert.throws(() => cli('ask', 'Check it', '--review', path.join(dir, 'missing.txt')), /no such file/);
     assert.match(cli('secret', 'rm', 'COMFY_API_KEY'), /removed/);
     assert.match(cli('secret', 'list'), /no keys saved/);
   } finally { srv.kill(); }

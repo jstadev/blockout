@@ -137,9 +137,9 @@ Prompts from the canvas
                                             (mp4, webm, mov, png, jpg, webp, gif; text is optional then)
   canvas ask <card.json | - | '{…}'> [--reply <promptId>] [--title "…"]
                                             ask the user in the chat with a question card: the questions show one
-                                            at a time (choices, text, images, an API key) and the answers come
+                                            at a time (choices, text, images, a text to review, an API key) and the answers come
                                             back as one prompt (canvas wait / the Stop hook). See references/api.md
-  canvas ask "Question?" --options "A|B|C" [--multi] [--other] | --images | --secret NAME [--optional]
+  canvas ask "Question?" --options "A|B|C" [--multi] [--other] | --images | --secret NAME | --review file.txt [--optional]
                                             the same for one quick question
   canvas secret list | rm NAME              API keys the user saved through a key block (names only)
   canvas secret run NAME[,NAME2] -- <command …>   run a command with those keys as environment variables;
@@ -745,12 +745,18 @@ const commands = {
       if (flags.options && flags.options !== true) { q.options = String(flags.options).split('|').map((x) => x.trim()).filter(Boolean); if (flags.multi) q.multi = true; if (flags.other) q.other = flags.other; }
       else if (flags.images) q.type = 'images';
       else if (flags.secret && flags.secret !== true) { q.type = 'secret'; q.name = String(flags.secret); }
+      else if (flags.review && flags.review !== true) { q.type = 'review'; q.file = String(flags.review); }
       if (flags.optional) q.optional = true;
       if (flags.note && flags.note !== true) q.note = String(flags.note);
       card = { questions: [q] };
     } else throw new Error('usage: canvas ask <card.json | - | \'{"questions":[…]}\'>   or   canvas ask "Question?" --options "A|B"');
     if (Array.isArray(card)) card = { questions: card };
     if (flags.title && flags.title !== true) card.title = String(flags.title);
+    // a review question can name the file to show ("file": "prompt.txt") instead of carrying the text
+    for (const q of card.questions || []) if (q && q.file && q.body == null) {
+      if (!fs.existsSync(q.file)) throw new Error(`question "${q.id || q.q}": no such file: ${q.file}`);
+      q.body = fs.readFileSync(q.file, 'utf8'); q.type ||= 'review';
+    }
     normalizeAsk(card); // fail here with a clear message, before anything shows in the chat
     const r = await api('POST', '/api/ask', { ...card, reply: flags.reply });
     out(`asked ${r.questions} question${r.questions === 1 ? '' : 's'} (${r.id}). The answers arrive as the next canvas prompt: end your turn, or run "canvas wait".`);

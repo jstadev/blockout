@@ -157,19 +157,27 @@ answers arrive as one prompt (`canvas wait` or the Stop hook), marked `ask`. A c
   { "id": "refs", "q": "Add your reference images", "type": "images", "max": 4, "when": { "look": "images" } },
   { "id": "notes", "q": "Anything to add?", "type": "text", "optional": true },
   { "id": "key", "q": "Comfy API key", "type": "secret", "name": "COMFY_API_KEY" },
+  { "id": "prompt", "q": "Check the prompt", "type": "review", "file": "renders/x/prompt.txt" },
   { "id": "go", "q": "Ready to render?", "rows": [["Shot", "shot-4 · 1.96s"], ["Cost", "about 170 credits"]],
     "options": ["Render", "Not yet"] } ] }
 ```
 
 - `type`: `choice` (has `options`; `multi` for several, `other` adds a free-text answer), `text`, `images`
-  (`max`, default 4) or `secret`. Left out, it is `choice` with options, `secret` with a `name`, else `text`.
+  (`max`, default 4), `review` or `secret`. Left out, it is `choice` with options, `secret` with a `name`,
+  `review` with a `body` or `file`, else `text`.
+- `review` shows a longer text in full (`body`, or `file`: a path the CLI reads; up to 20,000 characters) for
+  the user to check before you use it. They can approve it, edit it in place, or write what to change. The
+  answer's `value` is `approved`, `edited` (with their `text`: use it exactly) or `feedback` (with `feedback`,
+  and `text` if they also edited: not approved, so revise and show it again). `when` can test it:
+  `"when": { "prompt": ["approved", "edited"] }`.
 - `rows` puts a short label / value summary above the answer: use it for a confirm step instead of prose.
 - `optional` adds Skip. `when` asks a question only if an earlier answer matches (`{ id: value | [values] }`).
 - At most 12 questions and 8 options. Keep `q` under about 8 words; put detail in `note`.
 - One quick question without a file: `canvas ask "Run it?" --options "Run|Not yet"` (`--multi`, `--other`),
-  `canvas ask "Add a frame" --images`, `canvas ask "Comfy API key" --secret COMFY_API_KEY` (`--optional`, `--note`).
+  `canvas ask "Add a frame" --images`, `canvas ask "Check the prompt" --review prompt.txt`,
+  `canvas ask "Comfy API key" --secret COMFY_API_KEY` (`--optional`, `--note`).
 - The prompt that comes back reads `Answers to "<title>": - <id> (<question>): <answer>`, with image paths for
-  image questions; `--json` on `canvas wait` adds `answers: { id: { value | values | text | images | saved | skipped } }`.
+  image questions; `--json` on `canvas wait` adds `answers: { id: { value | values | text | feedback | images | saved | skipped } }`.
   If the user closes the card the prompt says so (`cancelled`); ask in plain words instead.
 - Asking marks the prompt it answers done (the turn is the user's). Ask, then end your turn or `canvas wait`.
 

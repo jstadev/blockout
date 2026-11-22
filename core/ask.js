@@ -2,11 +2,13 @@
 // and the answers come back to the agent as one prompt. Shared by the server, the CLI and the browser.
 //
 // A card: { title?, questions: [question, …] }. A question:
-//   { id, q, note?, type: 'choice' | 'text' | 'images' | 'secret',
+//   { id, q, note?, type: 'choice' | 'text' | 'images' | 'secret' | 'review',
 //     options?: [{ value, label, note? }], multi?, other?,   choice: pick one (or several); other = a free-text option
 //     placeholder?,                                          text
 //     max?,                                                  images: how many (default 4)
 //     name?,                                                 secret: the name it is saved under (COMFY_API_KEY)
+//     body,                                                  review: a text to read (a prompt, a script). The user
+//                                                            approves it, edits it in place, or writes feedback
 //     rows?: [[label, value], …],                            a short summary shown above the answer area
 //     optional?,                                             adds Skip
 //     when?: { <question id>: value | [values] } }           only asked when an earlier answer matches
@@ -15,7 +17,9 @@
 // only that it is there.
 
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
-const TYPES = ['choice', 'text', 'images', 'secret'];
+const TYPES = ['choice', 'text', 'images', 'secret', 'review'];
+const BODY_MAX = 20000;
+const indent = (t) => t.split('\n').map((l) => `  | ${l}`).join('\n');
 const str = (v, max = 400) => String(v ?? '').trim().slice(0, max);
 
 export function normalizeAsk(input) {
@@ -30,7 +34,7 @@ export function normalizeAsk(input) {
     if (!/^[\w-]+$/.test(out.id)) throw new Error(`question id "${out.id}" must be letters, digits, - or _`);
     if (ids.has(out.id)) throw new Error(`two questions share the id "${out.id}"`);
     ids.add(out.id);
-    out.type = q.type || (q.options ? 'choice' : q.name ? 'secret' : 'text');
+    out.type = q.type || (q.options ? 'choice' : q.name ? 'secret' : q.body != null ? 'review' : 'text');
     if (out.type === 'image') out.type = 'images';
     if (out.type === 'confirm') out.type = 'choice';
     if (!TYPES.includes(out.type)) throw new Error(`question "${out.id}": type must be one of ${TYPES.join(', ')}`);
@@ -50,6 +54,11 @@ export function normalizeAsk(input) {
     }
     if (out.type === 'text' && q.placeholder) out.placeholder = str(q.placeholder, 120);
     if (out.type === 'images') out.max = Math.max(1, Math.min(8, Number(q.max) || 4));
+    if (out.type === 'review') {
+      out.body = String(q.body ?? '').replace(/\r\n/g, '\n').trim();
+      if (!out.body) throw new Error(`question "${out.id}": a review needs the text to show (body, or file with canvas ask)`);
+      if (out.body.length > BODY_MAX) throw new Error(`question "${out.id}": the text to review is over ${BODY_MAX} characters`);
+    }
     if (out.type === 'secret') {
       out.name = str(q.name, 64);
       if (!SECRET_NAME.test(out.name)) throw new Error(`question "${out.id}": a secret needs a name like COMFY_API_KEY`);
@@ -86,6 +95,7 @@ export function answerLabel(q, a) {
   }
   if (q.type === 'images') return `${a.images?.length || 0} image${a.images?.length === 1 ? '' : 's'}`;
   if (q.type === 'secret') return a.saved ? 'Saved on this machine' : 'Skipped';
+  if (q.type === 'review') return a.value === 'feedback' ? `Asked for changes: ${a.feedback}` : a.value === 'edited' ? 'Approved with your edits' : 'Approved';
   return a.text || 'Skipped';
 }
 
@@ -112,12 +122,21 @@ export function answerAsk(ask, raw = {}, cancelled = false, image = () => null) 
       a = files.length ? { images: files } : { skipped: true };
       images.push(...files);
     } else if (q.type === 'secret') a = r.saved ? { saved: true, name: q.name } : { skipped: true };
+    else if (q.type === 'review') {
+      // value: approved (as shown), edited (their text replaces it) or feedback (not approved: revise and show again)
+      const feedback = str(r.feedback, 4000);
+      const body = String(r.text ?? '').replace(/\r\n/g, '\n').trim().slice(0, BODY_MAX);
+      const changed = !!body && body !== q.body;
+      a = { value: feedback ? 'feedback' : changed ? 'edited' : 'approved', ...(feedback ? { feedback } : {}), ...(changed ? { text: body } : {}) };
+    }
     else { const text = str(r.text, 4000); a = text ? { text } : { skipped: true }; }
     answers[q.id] = a;
     let line = `- ${q.id} (${q.q}): `;
     if (a.skipped) line += 'skipped';
     else if (q.type === 'choice') line += [...(a.values || (a.value != null ? [a.value] : [])).map((v) => { const o = q.options.find((x) => x.value === v); return o.label === v ? v : `${o.label} [${v}]`; }), ...(a.text ? [`"${a.text}"`] : [])].join(', ');
     else if (q.type === 'images') line += a.images.map((f) => f.path).join(' | ');
+    else if (q.type === 'review') line += a.value === 'feedback' ? `NOT approved. Feedback: "${a.feedback}"${a.text ? '\n  They also edited the text. Start from their version:\n' + indent(a.text) : ''}\n  Revise it and show it for review again.`
+      : a.value === 'edited' ? `approved with their edits. Use exactly this text:\n${indent(a.text)}` : 'approved as shown';
     else if (q.type === 'secret') line += `${q.name} is saved on this machine. Its value is not shown to you. Use it with: canvas secret run ${q.name} -- <command>`;
     else line += a.text;
     lines.push(line);

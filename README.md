@@ -137,7 +137,7 @@ Blockout stops at the blockout video, but your agent can take it further. Open t
 and choose **Render with Comfy** (it opens the chat with the request started), or just ask in the chat: "render this shot with Seedance". The agent asks for what it needs with question cards in the chat, one question at a time: your reference images, the model, and an API key if one is needed (a key block saves it on your machine and the agent never sees it). The
 `blockout-render` skill has the agent fit one of your saved ComfyUI workflows ("recipes") to the shot: it
 uploads the export as the motion reference, wires in your images and audio, writes a timed prompt from the
-shot's camera moves (`canvas brief`), and shows you a short confirm card with the cost. Nothing that costs credits runs until
+shot's camera moves (`canvas brief`), and shows you the full prompt to review (edit it in place or say what to change), then a short confirm card with the cost. Nothing that costs credits runs until
 you press Render. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
 and prompt that made it.
 

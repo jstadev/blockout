@@ -16,8 +16,9 @@ workflow JSON and never talks to ComfyUI.
 
 ## The rules
 
-1. **Nothing that spends credits runs before the user says go.** The go is the Render answer on the
-   confirm card (step 4). Uploading inputs, validating and estimating are free and can happen before.
+1. **Nothing that spends credits runs before the user says go**, and nothing is submitted with a prompt
+   the user has not seen. The confirm card (step 4) shows the full prompt for review, then asks; the go
+   is its Render answer. Uploading inputs, validating and estimating are free and can happen before.
    Partner models such as Seedance bill Comfy credits even when the graph runs on the user's own machine.
 2. **Ask with question cards, not paragraphs.** Whatever you need from the user goes on a `canvas ask`
    card (references/questions.md): one short question at a time, choices they can tap. Chat replies in
@@ -105,19 +106,35 @@ Duration: the shot length rounded up to a whole second, within what the model al
 ask the node: `get_node` / `comfy nodes show <class>`). A shot longer than the limit cannot be rendered in
 one go: tell the user and offer to cut the shot or render the first part.
 
-### 4. Confirm, then wait for go
+### 4. Review the prompt, confirm, then wait for go
 
-Ask with a confirm card and end your turn (or `canvas wait`). The plan is the card's `rows`: at most five,
-a few words each, no tags, paths or seeds.
+Ask with a confirm card and end your turn (or `canvas wait`). It has two steps: the full prompt to review,
+then the plan as `rows` (at most five, a few words each, no tags, paths or seeds) with the Render button.
 
 ```json
-{ "title": "Render with Comfy", "questions": [ { "id": "go", "q": "Ready to render <shot name>?",
+{ "title": "Render with Comfy", "questions": [
+  { "id": "prompt", "q": "Check the prompt", "type": "review", "file": "<render folder>/prompt.txt",
+    "note": "This is what the model gets. Edit it here, or say what to change." },
+  { "id": "go", "q": "Ready to render <shot name>?", "when": { "prompt": ["approved", "edited"] },
   "rows": [["Shot", "<shot> · <length>s"], ["Look", "<2 images: her, the room | from the prompt>"],
            ["Audio", "<track>, <from>–<to>s | none"], ["Output", "<resolution> · <ratio> · <model>"],
            ["Cost", "about <n> credits | no estimate"]],
   "options": [{ "value": "go", "label": "Render", "note": "Spends about <n> credits." }, "Not yet"],
   "other": "Change something" } ] }
 ```
+
+The prompt answer comes back as one of three:
+
+- `approved as shown`: use `prompt.txt` as it is.
+- `approved with their edits`: write their text to `prompt.txt` exactly, refill with it, and run `fill`'s
+  checks. Do not reword it. If an edit broke a reference tag or a time from the brief, say which in one
+  line and show the card again rather than fixing it silently.
+- `NOT approved. Feedback: …`: the Render step was not shown. Revise `prompt.txt` (from their edited text
+  if they changed it), refill, and show the same card again. Keep the brief's times unless they ask
+  for a different move, which is a camera change (see Follow-ups).
+
+Show the whole prompt every time it changes, and never a summary of it. A re-run with the same prompt
+(another take) can skip the review step.
 
 Only `go` is a go. A typed change: make it, refill, and show the card again. "Not yet" or a closed card:
 reply in one line that it is ready when they are. Add a row only for something the user would not expect

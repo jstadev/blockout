@@ -166,13 +166,40 @@ export function askCard(m, { answered = null, upload, post, context = () => ({})
     return { body: [keep, h('div.chat-ask-keyrow', {}, h('span.cc-mono.chat-ask-keyname', {}, q.name), input), note], action: save, focus: input };
   }
 
+  // A text to check before it is used (the prompt for a render): read it, change it in place, or say what
+  // to change. Feedback sends it back to the agent instead of approving it.
+  function review(q) {
+    const cur = answers[q.id] || {};
+    const body = h('textarea.chat-ask-input.chat-ask-body', { spellcheck: false, 'aria-label': q.q });
+    body.value = cur.text || q.body;
+    const feedback = h('input.chat-ask-input', { type: 'text', placeholder: 'Or say what to change', value: cur.feedback || '', 'aria-label': 'What to change', spellcheck: false });
+    const state = h('span.chat-ask-edited', { hidden: true }, 'Edited');
+    const reset = h('button.cc-btn.cc-btn--ghost.chat-ask-reset', { type: 'button', hidden: true, onClick: () => { body.value = q.body; sync(); } }, 'Undo edits');
+    const cont = h('button.cc-btn.cc-btn--primary.chat-ask-go', { type: 'button' });
+    const changed = () => body.value.trim() !== q.body;
+    function sync() {
+      const fb = feedback.value.trim(), ed = changed();
+      cont.textContent = fb ? 'Send feedback' : ed ? 'Use my edits' : 'Looks good';
+      cont.disabled = !body.value.trim();
+      state.hidden = reset.hidden = !ed;
+    }
+    const go = () => { if (!cont.disabled) next({ value: feedback.value.trim() ? 'feedback' : changed() ? 'edited' : 'approved', text: body.value, feedback: feedback.value.trim() }); };
+    cont.addEventListener('click', go);
+    body.addEventListener('input', sync);
+    body.addEventListener('keydown', (e) => e.stopPropagation());
+    feedback.addEventListener('input', sync);
+    feedback.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); go(); } });
+    sync();
+    return { body: [h('div.chat-ask-review', {}, body, h('div.chat-ask-review-bar', {}, h('span', {}, `${q.body.split(/\s+/).length} words · click to edit`), h('span.cc-spacer'), state, reset)), feedback], action: cont, fixedLabel: true, focus: cont };
+  }
+
   function render(focus = false) {
     const qs = list();
     index = Math.max(0, Math.min(index, qs.length - 1));
     const q = qs[index];
-    const part = { choice, text, images, secret }[q.type](q);
+    const part = { choice, text, images, secret, review }[q.type](q);
     const last = index === qs.length - 1;
-    if (part.action && last && q.type !== 'secret') part.action.textContent = 'Send';
+    if (part.action && last && q.type !== 'secret' && !part.fixedLabel) part.action.textContent = 'Send';
     if (part.action && sending) part.action.disabled = true;
     el.classList.toggle('is-sending', sending);
     fill(
@@ -180,7 +207,6 @@ export function askCard(m, { answered = null, upload, post, context = () => ({})
         h('span.chat-ask-title', {}, title),
         qs.length > 1 ? h('span.chat-ask-step', {}, `${index + 1} of ${qs.length}`) : null,
         h('button.chat-ask-x', { type: 'button', title: 'Close without answering', 'aria-label': 'Close without answering', onClick: () => submit(true) }, icon('close'))),
-      qs.length > 1 ? h('div.chat-ask-dots', { 'aria-hidden': 'true' }, ...qs.map((_, i) => h(`span${i < index ? '.is-past' : i === index ? '.is-now' : ''}`))) : null,
       h('div.chat-ask-q', {}, q.q),
       q.note ? h('div.chat-ask-note', {}, q.note) : null,
       q.rows?.length ? h('dl.chat-ask-rows', {}, ...q.rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
