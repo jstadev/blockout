@@ -125,6 +125,8 @@ body { background: var(--cc-bg); }
 .chat-input-col > .chat-input { flex: none; overflow-y: hidden; }
 .chat-input-col > .chat-input.is-capped { overflow-y: auto; }
 .chat-attach { width: 28px; height: 28px; flex: none; color: var(--cc-text-dim); }
+.chat-hint { margin: 0 2px 6px; padding: 6px 8px; border-radius: var(--cc-radius); background: var(--cc-surface-sunk); color: var(--cc-text-dim); font-size: 11.5px; line-height: 1.4; }
+.chat-hint[hidden] { display: none; }
 .chat-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 2px; }
 .chat-tray[hidden] { display: none; }
 .chat-thumb { position: relative; width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: var(--cc-surface-sunk); border: 1px solid var(--cc-line); flex: none; }
@@ -139,6 +141,13 @@ body { background: var(--cc-bg); }
 .chat-img { display: block; width: 120px; max-height: 120px; border-radius: 10px; overflow: hidden; border: 1px solid var(--cc-line); }
 .chat-imgs .chat-img:only-child { width: 180px; max-height: 180px; }
 .chat-img img { width: 100%; height: 100%; max-height: inherit; object-fit: cover; display: block; }
+/* files on an agent reply: videos play in place */
+.chat-files { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.chat-video { margin: 0; display: flex; flex-direction: column; gap: 3px; max-width: 100%; }
+.chat-video video { display: block; max-width: 100%; max-height: 360px; border-radius: 10px; border: 1px solid var(--cc-line); background: #000; }
+.chat-video figcaption { font-family: var(--cc-mono); font-size: 10.5px; color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-video figcaption a { color: inherit; text-decoration: none; }
+.chat-video figcaption a:hover { text-decoration: underline; }
 .chat.is-drop .chat-input-row { border-color: var(--cc-accent); box-shadow: 0 0 0 3px rgba(255,90,31,0.15); }
 .chat-send { border-radius: 50%; width: 28px; height: 28px; flex: none; }
 .chat-toggle { position: relative; }
@@ -319,6 +328,11 @@ body.has-audio .moves-pop { bottom: calc(156px + var(--stack-h, 0px)); }
 .moves-at { margin-left: 6px; color: var(--cc-text-faint); font-weight: 400; text-transform: none; }
 .moves-pop .cc-panel__head .moves-new { height: 20px; padding: 0 7px; font-size: var(--cc-size-sm); text-transform: none; letter-spacing: 0; }
 
+/* Export and its caret (Render with Comfy) read as one split button */
+.tl-bar > .tl-exportbtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-bar > .tl-exportcaret, .tl-bar.is-fit2 > .tl-exportcaret { margin-left: -4px; width: 20px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--cc-surface-solid) 28%, transparent); }
+.tl-bar > .tl-exportcaret svg { width: 10px; height: 10px; }
+.tl-export-pop { min-width: 0; }
 /* Key and its caret (preset moves) read as one split button */
 .tl-bar > .tl-keybtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .tl-bar > .tl-keycaret { margin-left: -3px; width: 18px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: transparent; }

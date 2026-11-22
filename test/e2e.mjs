@@ -574,6 +574,37 @@ try {
     ok(/^h264,320,48$/.test(probe), `ffprobe: ${probe}`);
   } catch { console.log('     (ffprobe not available, skipped)'); }
 
+  // a reply can carry a video: it plays in the chat. The brief describes the shot the export shows.
+  cli('say', '--attach', file, 'Here is the export');
+  const chatWasOpen = await page.isVisible('.chat');
+  if (!chatWasOpen) await page.click('.chat-toggle');
+  await page.waitForSelector('.chat-msg--agent .chat-video video');
+  const vid = await page.waitForFunction(() => { const v = document.querySelector('.chat-video video'); return v && v.readyState >= 1 && v.duration > 0 ? { d: v.duration, w: v.videoWidth } : null; }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
+  ok(vid && vid.d > 1 && vid.w === 320, `a video attached to a reply loads in the chat (${vid ? `${vid.d.toFixed(2)}s, ${vid.w}px wide` : 'did not load'})`);
+  if (!chatWasOpen) await page.click('.chat-toggle');
+  ok(/^shot 1\/\d+ .*\n(opens on|no camera keys)/.test(cli('brief')), 'canvas brief describes the active shot');
+
+  // the Render button starts a request in the chat (it sends nothing by itself)
+  {
+    const wasOpen = await page.isVisible('.chat');
+    if (wasOpen) await page.click('.chat-toggle');
+    const queued = () => JSON.parse(JSON.stringify(cli('inbox')));
+    const before = queued();
+    ok(!(await page.isVisible('.tl-render')), 'Render with Comfy is tucked behind the Export caret');
+    await page.click('.tl-exportcaret');
+    ok(/^Render with Comfy$/.test((await page.textContent('.tl-export-pop')).trim()), 'the Export caret opens a menu with Render with Comfy');
+    await page.click('.tl-render');
+    ok(!(await page.isVisible('.tl-export-pop')), 'choosing it closes the menu');
+    await page.waitForSelector('.chat-hint:not([hidden])');
+    const st = await page.evaluate(() => ({ text: document.querySelector('.chat-input').value, focus: document.activeElement === document.querySelector('.chat-input'), send: !document.querySelector('.chat-send').disabled }));
+    ok(/^Render this shot with ComfyUI/.test(st.text) && st.focus && st.send && (await page.isVisible('.chat')), 'Render with Comfy opens the chat with the request started and a note on what to add');
+    await page.click('.tl-exportcaret'); await page.click('.tl-render');
+    ok((await page.$eval('.chat-input', (e) => e.value)) === st.text && queued() === before, 'choosing it again does not repeat the text, and nothing is sent');
+    await page.fill('.chat-input', '');
+    ok(await page.$eval('.chat-hint', (e) => e.hidden), 'clearing the message removes the note');
+    if (!wasOpen) await page.click('.chat-toggle');
+  }
+
   // --- audio track: load from the CLI, waveform lane, beats, slide, mixed into the export ---
   const wav = path.join(dir, 'Click Track.wav');
   { // 6 s of clicks every 0.5 s (120 bpm), 44.1 kHz mono 16-bit

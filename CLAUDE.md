@@ -3,6 +3,8 @@
 ## Claude Code specifics
 
 - The `camera-canvas` skill is in `.claude/skills/camera-canvas/`; load it for any canvas work.
+- The `blockout-render` skill (`.claude/skills/blockout-render/`) is the optional ComfyUI render step; load it only
+  when the user asks to render a shot.
 - `.claude/settings.json` allows `node bin/canvas.mjs` commands without prompts and installs two hooks:
   - **Stop** → `canvas hook stop`: if the user typed a prompt in the canvas, it blocks the stop and
     gives you that prompt, so you keep working in this same thread. With `canvas listen on` and a tab

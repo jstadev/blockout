@@ -45,7 +45,10 @@ session with the selected object, playhead time and camera pose attached.
   prefer a control.
 - New capabilities that change data get an op in `core/doc.js`, a CLI command or flag in
   `bin/canvas.mjs`, a line in `references/api.md`, and a test in `test/run.mjs`.
-- After editing the skill in `skills/camera-canvas/`, run `npm run skills:sync` to update the copies.
+- After editing a skill in `skills/camera-canvas/` or `skills/blockout-render/`, run `npm run skills:sync` to update the copies.
+- ComfyUI rendering lives only in the `blockout-render` skill (`skills/blockout-render/`: instructions, recipes and
+  `scripts/recipe.mjs`). Keep ComfyUI code out of `app/`, `core/`, `server/` and `bin/canvas.mjs`; what the skill needs
+  from Blockout should be a general feature (like `canvas brief` and `canvas say --attach`).
 - Before finishing code changes: `npm test` (fast) and, if you touched the app, `npm run e2e`
   (needs Playwright).
 
@@ -56,6 +59,7 @@ bin/canvas.mjs        agent CLI (talks HTTP to the server)
 server/index.mjs      bridge server: scene doc + undo, SSE to tabs, prompt inbox, exports
 core/doc.js           scene document, primitives, ops (shared by server, CLI and browser)
 core/curves.js        easing, speed curves, camera path sampling
+core/brief.js         a shot's camera work in words (canvas brief)
 app/                  the browser app (no build step; three.js via import map)
   viewport.js         three.js scene, cameras, gizmos, offscreen rendering
   timeline.js         transport, key track, curve editor
@@ -65,5 +69,6 @@ app/                  the browser app (no build step; three.js via import map)
   controls/           user-requested controls (empty by default) + template + example
 docs/DESIGN.md        design system for controls
 skills/camera-canvas  the agent skill (canonical copy)
+skills/blockout-render optional skill: render an export with ComfyUI (recipes, scripts/recipe.mjs)
 scenes/               scene.json, exports/, .canvas/ (prompt inbox) — created at runtime
 ```

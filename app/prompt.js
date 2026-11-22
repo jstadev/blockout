@@ -92,7 +92,9 @@ export function mountPrompt(root, { viewport, corner }) {
   const fileInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, hidden: true });
   const attachBtn = h('button.cc-btn.cc-btn--ghost.cc-btn--icon.chat-attach', { type: 'button', title: 'Add images (or paste / drop them)' }, icon('image'));
   const tray = h('div.chat-tray', { hidden: true });
-  const composer = h('div.chat-composer', {}, h('div.chat-input-row', {}, h('div.chat-input-col', {}, tray, input), attachBtn, send), fileInput);
+  // A note above the composer when a button elsewhere started a request here (store.emit('compose', { text, hint })).
+  const hint = h('div.chat-hint', { hidden: true, role: 'note' });
+  const composer = h('div.chat-composer', {}, hint, h('div.chat-input-row', {}, h('div.chat-input-col', {}, tray, input), attachBtn, send), fileInput);
 
   // Past chats: "New chat" archives the conversation on the server; this view lists them and reads one back.
   const past = h('div.chat-past', { hidden: true });
@@ -204,10 +206,22 @@ export function mountPrompt(root, { viewport, corner }) {
     if (view !== 'current') showCurrent();
     const sent = attachments;
     input.value = ''; attachments = []; renderTray();
+    hint.hidden = true;
     const res = await store.post('/api/prompt', { text, images: imgs.map((a) => a.file), context: context() });
     if (!res.ok) { input.value = text; attachments = sent; renderTray(); return; }
     for (const a of sent) URL.revokeObjectURL(a.preview);
   }
+  // Start a request for the user: open the chat, put the text in the composer (in front of a draft) and show
+  // what to add. Nothing is sent until they press send.
+  store.on('compose', ({ text = '', hint: note = '' } = {}) => {
+    if (!open) setOpen(true);
+    if (view !== 'current') showCurrent();
+    if (!input.value.startsWith(text.trim())) input.value = text + input.value;
+    hint.textContent = note; hint.hidden = !note;
+    input.dispatchEvent(new Event('input'));
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
   function autosize() {
     const MAX = 160; // about 8 lines, then it scrolls
     input.style.height = 'auto';
@@ -217,6 +231,7 @@ export function mountPrompt(root, { viewport, corner }) {
     send.disabled = attachments.some((a) => a.pending) || (!input.value.trim() && !readyImages().length);
   }
   input.addEventListener('input', autosize);
+  input.addEventListener('input', () => { if (!input.value) hint.hidden = true; });
   new ResizeObserver(() => { if (input.value) autosize(); }).observe(composer); // rewrap when the panel width changes
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
@@ -259,8 +274,20 @@ export function mountPrompt(root, { viewport, corner }) {
     const cls = ['chat-msg', 'chat-msg--agent'];
     if (m.kind === 'error') cls.push('is-error');
     if (m.kind === 'working') cls.push('is-working');
-    return h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` }, h('div.chat-text', {}, m.text));
+    return h(`div.${cls.join('.')}`, { title: `${m.from === 'system' ? 'Canvas' : 'Agent'} · ${time(m.at)}` },
+      ...(m.text ? [h('div.chat-text', {}, m.text)] : []),
+      ...(m.files?.length ? [h('div.chat-files', {}, ...m.files.map(fileEl))] : []));
   }
+  // A file on a reply: a video plays in place, an image opens in a new tab.
+  function fileEl(f) {
+    if (f.type === 'video') {
+      return h('figure.chat-video', {},
+        h('video', { src: f.url, controls: true, loop: true, playsInline: true, preload: 'metadata', 'aria-label': f.name }),
+        h('figcaption', {}, h('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.path || 'Open video' }, f.name)));
+    }
+    return h('a.chat-img', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }));
+  }
+  const peekText = (m) => m.text || (m.files?.length ? `Sent ${m.files.length === 1 ? `a ${m.files[0].type === 'video' ? 'video' : 'file'}` : `${m.files.length} files`}` : '');
   // Prompts and replies in the order they happened.
   const merge = (ps = [], ms = []) => [...ps.map((p) => ({ at: p.at, p })), ...ms.map((m) => ({ at: m.at, m }))].sort((a, b) => a.at - b.at);
 
@@ -283,7 +310,7 @@ export function mountPrompt(root, { viewport, corner }) {
     hidePeek();
     const el = h('div.cc-panel.chat-peek', { role: 'status', title: 'Open chat', onClick: () => { setOpen(true); input.focus(); } },
       h('div.chat-peek-who', {}, h('span.cc-dot.cc-dot--ok'), m.from === 'system' ? 'Canvas' : 'Agent replied'),
-      h('div.chat-peek-text', {}, m.text));
+      h('div.chat-peek-text', {}, peekText(m)));
     document.body.append(el);
     const timer = setTimeout(() => { if (!peek) return; el.classList.add('is-leaving'); peek.timer = setTimeout(hidePeek, 450); }, 4000);
     peek = { el, timer };

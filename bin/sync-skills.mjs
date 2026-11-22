@@ -1,29 +1,33 @@
 #!/usr/bin/env node
-// Copy the canonical skill (skills/camera-canvas) to where each agent looks for it:
-//   Claude Code: .claude/skills/camera-canvas     Codex: .agents/skills/camera-canvas
-// Pass --global to also install into ~/.claude/skills and ~/.codex/skills (the skill then works from any folder;
-// it finds this repo through the CANVAS_HOME path written into it).
+// Copy the canonical skills (skills/camera-canvas, skills/blockout-render) to where each agent looks for them:
+//   Claude Code: .claude/skills/<skill>     Codex: .agents/skills/<skill>
+// Pass --global to also install into ~/.claude/skills and ~/.codex/skills (the skills then work from any folder;
+// they find this repo through the CANVAS_HOME path written into it).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SKILLS = ['camera-canvas', 'blockout-render'];
 const SRC = path.join(ROOT, 'skills', 'camera-canvas');
-const targets = [path.join(ROOT, '.claude/skills/camera-canvas'), path.join(ROOT, '.agents/skills/camera-canvas')];
 const global = process.argv.includes('--global');
-if (global) targets.push(path.join(os.homedir(), '.claude/skills/camera-canvas'), path.join(os.homedir(), '.codex/skills/camera-canvas'));
 
-for (const dest of targets) {
-  fs.rmSync(dest, { recursive: true, force: true });
-  fs.cpSync(SRC, dest, { recursive: true });
-  if (!dest.startsWith(ROOT)) {
-    for (const f of fs.readdirSync(dest, { recursive: true }).filter((f) => f.endsWith('.md'))) {
-      const file = path.join(dest, f);
-      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replaceAll('node bin/canvas.mjs', `node "${path.join(ROOT, 'bin/canvas.mjs')}"`));
+for (const skill of SKILLS) {
+  const src = path.join(ROOT, 'skills', skill);
+  const targets = [path.join(ROOT, '.claude/skills', skill), path.join(ROOT, '.agents/skills', skill)];
+  if (global) targets.push(path.join(os.homedir(), '.claude/skills', skill), path.join(os.homedir(), '.codex/skills', skill));
+  for (const dest of targets) {
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.cpSync(src, dest, { recursive: true });
+    if (!dest.startsWith(ROOT)) {
+      for (const f of fs.readdirSync(dest, { recursive: true }).filter((f) => f.endsWith('.md'))) {
+        const file = path.join(dest, f);
+        fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replaceAll('node bin/canvas.mjs', `node "${path.join(ROOT, 'bin/canvas.mjs')}"`));
+      }
     }
+    console.log(`skill -> ${dest}`);
   }
-  console.log(`skill -> ${dest}`);
 }
 
 // The builder helper (Claude Code subagent) is generated from the skill's reference, so there is one source.

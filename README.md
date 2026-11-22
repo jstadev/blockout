@@ -29,7 +29,7 @@ Then, in any folder, run **`/blockout-agent:start`** (optionally followed by wha
 your browser, starts listening to it and asks what you want to block out. Answer in the terminal or in the
 canvas: it is the same conversation. That's the whole setup; nothing to clone, install or keep open.
 
-The plugin brings the `/blockout-agent:start` command, the `camera-canvas` skill, the `canvas` command (on Claude's PATH), the listening hooks
+The plugin brings the `/blockout-agent:start` command, the `camera-canvas` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
 and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/` (or `~/Camera Canvas/scenes/` if you used it before the rename), so
 plugin updates never touch them (`CANVAS_DATA` moves them).
 
@@ -131,6 +131,21 @@ Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-c
 the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Export** (or
 `canvas export --sequence`) renders every shot in order into one video. Files land in `scenes/exports/`.
 
+## Rendering with ComfyUI (optional)
+
+Blockout stops at the blockout video, but your agent can take it further. Open the caret on the Export button
+and choose **Render with Comfy** (it opens the chat with the request started), or just ask in the chat, with your reference images attached: "render this shot with Seedance, image 1 is her, image 2 is the room". The
+`blockout-render` skill has the agent fit one of your saved ComfyUI workflows ("recipes") to the shot: it
+uploads the export as the motion reference, wires in your images and audio, writes a timed prompt from the
+shot's camera moves (`canvas brief`), and shows you a render plan. Nothing that costs credits runs until
+you say go. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
+and prompt that made it.
+
+It runs on [Comfy Cloud](https://docs.comfy.org/agent-tools/mcp) or your own ComfyUI, through whichever
+you have connected: the Comfy Cloud MCP, `comfy-mcp` for a local ComfyUI, or the `comfy` command line.
+There is no ComfyUI code in Blockout itself. A Seedance 2.5 reference-to-video recipe is included; put your
+own workflows (API format) in `scenes/recipes/`.
+
 ## Saving and loading
 
 The scene autosaves to `scenes/scene.json` on every change. To keep versions, press **⌘S** (or the
@@ -143,6 +158,7 @@ load. Agents use `canvas save <name>`, `canvas load <name>` and `canvas saves`.
 - [AGENTS.md](AGENTS.md) — project instructions (Codex, and Claude via CLAUDE.md)
 - [skills/camera-canvas/SKILL.md](skills/camera-canvas/SKILL.md) — the skill: workflow, conventions, camera craft
 - [skills/camera-canvas/references/api.md](skills/camera-canvas/references/api.md) — ops, CLI and HTTP reference
+- [skills/blockout-render/SKILL.md](skills/blockout-render/SKILL.md) — optional: render an export into a finished shot with ComfyUI
 - [docs/DESIGN.md](docs/DESIGN.md) — design system for new controls
 - `node bin/canvas.mjs help` — every command
 

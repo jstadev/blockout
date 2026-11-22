@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PRIMITIVES, MOVES, createDoc, shotTimeline } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
+import { shotBrief, briefText } from '../core/brief.js';
 import { dataDir } from '../server/paths.mjs';
 
 if (Number(process.versions.node.split('.')[0]) < 20) {
@@ -32,6 +33,12 @@ Server
 Read the scene
   canvas ls [--prefix p]                    one line per object and camera key (start here); --prefix: only ids starting p
   canvas doc                                the full scene JSON
+  canvas brief [--shot id | --all] [--beats] [--json]
+                                            the shot's camera work in words: each move between keys with its
+                                            times, pace and ease, how each framing reads (size, height, side,
+                                            lens), objects that move, and the part of the audio it plays.
+                                            For describing a shot, e.g. in a prompt for a video model.
+                                            --all: every shot; --beats: add tempo and beat times (needs the tab)
 
 Objects (meters, Y up, pivot at bottom centre, rotation in degrees)
   canvas add <type> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s|x,y,z]
@@ -68,7 +75,7 @@ timeline, length, fps and audio; camera, timeline and render commands work on th
                                             where the shot picks up the action (s seconds into the object moves)
   canvas shot-rm <id>                       delete a shot (not the last one)
   --shot <id>   on key, key-set, key-rm, keys-clear, ease-all, cam, timeline, audio, move, okey, okey-rm,
-                snapshot, storyboard and export: work on that shot without switching to it
+                snapshot, storyboard, export and brief: work on that shot without switching to it
 
 Camera timeline
   canvas key --t 2 --pos x,y,z --target x,y,z [--fov 40 | --lens 35] [--roll 0] [--ease name|x1,y1,x2,y2]
@@ -124,6 +131,8 @@ Prompts from the canvas
   canvas chats [id] [--json]                past chats (archived by "New chat"), newest first; with an id,
                                             that chat's transcript
   canvas say "text" [--reply <promptId>] [--working]   message shown in the canvas
+             [--attach file[,file…]]        ...carrying videos or images that play / show in the chat
+                                            (mp4, webm, mov, png, jpg, webp, gif; text is optional then)
   canvas listen on|off                      keep a Claude Code session waiting for canvas prompts (Stop hook)
 
 Save and load (scenes/saved/<name>.json)
@@ -140,7 +149,7 @@ Raw / batch
 
 // ---------- helpers ----------
 // Flags that never take a value, so `say --working "text"` keeps "text" as the message.
-const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay']);
+const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all']);
 
 function parseArgs(argv) {
   const pos = [], flags = {};
@@ -405,6 +414,25 @@ const commands = {
   },
 
   async doc() { out((await api('GET', '/api/doc')).doc); },
+
+  // The camera work of a shot (or every shot) in words and numbers, computed from the scene doc.
+  async brief({ flags }) {
+    const [{ doc }, st] = await Promise.all([api('GET', '/api/doc'), api('GET', '/api/status')]);
+    const ids = flags.all ? doc.shots.map((s) => s.id) : [SHOT ?? doc.shot];
+    const briefs = [];
+    for (const id of ids) {
+      const b = shotBrief(doc, id);
+      if (b.audio) b.audio.path = path.join(path.dirname(st.scene), 'audio', b.audio.file);
+      // beats come from the tab, which plays the active shot
+      if (flags.beats && b.shot.active && b.audio && !b.audio.silent) {
+        const info = await rpc('audio', { beats: true }, 60000);
+        b.beats = { tempo: info.tempo, beat: info.beat, beats: info.beats, onsets: info.onsets };
+      } else if (flags.beats && !flags.all && !b.shot.active) throw new Error(`--beats needs the tab on that shot: switch to it first (canvas shot ${b.shot.id})`);
+      briefs.push(b);
+    }
+    if (flags.json) return out(flags.all ? briefs : briefs[0]);
+    out(briefs.map((b) => briefText(b, b.beats) + (b.audio?.path ? `\n  audio file: ${b.audio.path}` : '')).join('\n\n'));
+  },
 
   async add({ pos, flags }) {
     const type = pos[0];
@@ -672,16 +700,27 @@ const commands = {
     }
     const { chat } = await api('GET', `/api/chats/get?id=${encodeURIComponent(pos[0])}`);
     if (flags.json) return out(chat);
-    const items = [...chat.prompts.map((p) => ({ at: p.at, who: 'user', text: p.text, images: p.images })), ...chat.messages.map((m) => ({ at: m.at, who: m.from || 'agent', text: m.text }))]
+    const items = [...chat.prompts.map((p) => ({ at: p.at, who: 'user', text: p.text, images: p.images })), ...chat.messages.map((m) => ({ at: m.at, who: m.from || 'agent', text: m.text, files: m.files }))]
       .sort((a, b) => a.at - b.at);
     out([`${chat.title}  (${when(chat.startedAt)} to ${when(chat.endedAt)})`, '',
-      ...items.map((x) => `${x.who}: ${x.text || ''}${x.images?.length ? ` [images: ${x.images.map((i) => i.path).join(' | ')}]` : ''}`)].join('\n'));
+      ...items.map((x) => `${x.who}: ${x.text || ''}${x.images?.length ? ` [images: ${x.images.map((i) => i.path).join(' | ')}]` : ''}${x.files?.length ? ` [attached: ${x.files.map((i) => i.path).join(' | ')}]` : ''}`)].join('\n'));
   },
   async say({ pos, flags }) {
     const text = pos.join(' ');
-    if (!text) throw new Error('usage: canvas say "message" [--reply <promptId>]');
-    await api('POST', '/api/say', { text, reply: flags.reply, done: !flags.working, kind: flags.kind || (flags.working ? 'working' : 'info') });
-    out('sent');
+    const attach = flags.attach && flags.attach !== true ? String(flags.attach).split(',').map((f) => f.trim()).filter(Boolean) : [];
+    if (!text && !attach.length) throw new Error('usage: canvas say "message" [--reply <promptId>] [--attach file.mp4]');
+    const files = [];
+    for (const f of attach) {
+      const file = path.resolve(f);
+      if (!fs.existsSync(file)) throw new Error(`no such file: ${f}`);
+      const res = await fetch(`${BASE}/api/chat/file?name=${encodeURIComponent(path.basename(file))}`, { method: 'POST', body: fs.readFileSync(file) })
+        .catch(() => { throw new Error(`canvas server is not running at ${BASE}`); });
+      const up = await res.json();
+      if (!up.ok) throw new Error(up.error);
+      files.push({ file: up.file, name: up.name });
+    }
+    await api('POST', '/api/say', { text, files, reply: flags.reply, done: !flags.working, kind: flags.kind || (flags.working ? 'working' : 'info') });
+    out(files.length ? `sent with ${files.length} attachment${files.length === 1 ? '' : 's'}` : 'sent');
   },
   async listen({ pos }) {
     const on = (pos[0] || 'on') !== 'off';
