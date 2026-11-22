@@ -16,15 +16,20 @@ workflow JSON and never talks to ComfyUI.
 
 ## The rules
 
-1. **Nothing that spends credits runs before the user says go.** Post the render plan, then stop and wait.
-   Uploading inputs, validating and estimating are free and can happen before. Partner models such as
-   Seedance bill Comfy credits even when the graph runs on the user's own machine.
-2. **Never edit a recipe in place.** Fill a copy into the render folder (`recipe.mjs fill --out`).
-3. **The prompt's times come from `canvas brief`, not from memory or from watching the video.**
-4. **Keep the seed** unless the user asks for another take, so a re-run changes only what they changed.
-5. **Save every render with what made it**: the filled workflow, the prompt, the brief and the inputs.
-6. **API keys stay out of files, chat and command lines you echo.** Use the sign-in the tools already hold.
-7. If no ComfyUI tool is connected, say what to set up (references/running.md) and stop. Do not write your
+1. **Nothing that spends credits runs before the user says go.** The go is the Render answer on the
+   confirm card (step 4). Uploading inputs, validating and estimating are free and can happen before.
+   Partner models such as Seedance bill Comfy credits even when the graph runs on the user's own machine.
+2. **Ask with question cards, not paragraphs.** Whatever you need from the user goes on a `canvas ask`
+   card (references/questions.md): one short question at a time, choices they can tap. Chat replies in
+   this flow are one or two lines. Never post the plan as a block of text.
+3. **Never edit a recipe in place.** Fill a copy into the render folder (`recipe.mjs fill --out`).
+4. **The prompt's times come from `canvas brief`, not from memory or from watching the video.**
+5. **Keep the seed** unless the user asks for another take, so a re-run changes only what they changed.
+6. **Save every render with what made it**: the filled workflow, the prompt, the brief and the inputs.
+7. **You never see an API key.** Use the sign-in the tools already hold. When a tool needs a key, ask for
+   it with a key block (`"type": "secret"`), which saves it on the user's machine, and pass it with
+   `canvas secret run NAME -- <command>`. Never ask for a key in words, read the secrets file or echo one.
+8. If no ComfyUI tool is connected, say what to set up (references/running.md) and stop. Do not write your
    own client for the ComfyUI API.
 
 ## Flow
@@ -32,14 +37,22 @@ workflow JSON and never talks to ComfyUI.
 ### 1. Gather
 
 The request usually comes from **Render with Comfy**, in the menu on the Export button's caret. It opens the chat
-with "Render this shot with ComfyUI (blockout-render skill)." started, and the user adds their reference
-images and what each is for before sending. A request typed by hand is the same thing.
+with "Render this shot with ComfyUI (blockout-render skill)." started. Most people send just that, so
+expect to ask for the rest. A request typed by hand is the same thing.
+
+Work out everything you can without asking, in this order: what the request says, files attached to it,
+`renders/settings.json`, the brief, what is connected. Then put only what is still open on **one question
+card** (references/questions.md has the card to start from): what sets the look and the images for it,
+which model when the recipe offers more than one, where to run when both cloud and local are connected,
+and a key block when the runner needs a key that `canvas secret list` does not show. If nothing is open,
+skip the card. Do the free work (export, brief, render folder) while the user answers.
 
 
 - The shot: the one the prompt came from (`shot:` in the canvas prompt), the one the user names, or the
   active one. One render per shot. Render a whole sequence as one video only if the user asks for that.
-- The reference images: the files attached to the canvas prompt (their paths are in the prompt), or paths
-  the user gives. Open each one so you know what it shows. Ask which is which only if you cannot tell.
+- The reference images: the files attached to the canvas prompt or to the card's answers (their paths are
+  in the prompt), or paths the user gives. Open each one so you know what it shows. Ask which is which
+  only if you cannot tell. No images is fine: the prompt then carries the look.
 - Where things live: `canvas status` prints `scene: <path>`; that file's folder is the **scene folder**.
   Recipes are in `<scene folder>/recipes/`, renders go to `<scene folder>/renders/`.
 
@@ -92,24 +105,28 @@ Duration: the shot length rounded up to a whole second, within what the model al
 ask the node: `get_node` / `comfy nodes show <class>`). A shot longer than the limit cannot be rendered in
 one go: tell the user and offer to cut the shot or render the first part.
 
-### 4. Plan, then wait for go
+### 4. Confirm, then wait for go
 
-Reply in the Blockout chat with the plan as plain lines, and end your turn (or `canvas wait`):
+Ask with a confirm card and end your turn (or `canvas wait`). The plan is the card's `rows`: at most five,
+a few words each, no tags, paths or seeds.
 
+```json
+{ "title": "Render with Comfy", "questions": [ { "id": "go", "q": "Ready to render <shot name>?",
+  "rows": [["Shot", "<shot> · <length>s"], ["Look", "<2 images: her, the room | from the prompt>"],
+           ["Audio", "<track>, <from>–<to>s | none"], ["Output", "<resolution> · <ratio> · <model>"],
+           ["Cost", "about <n> credits | no estimate"]],
+  "options": [{ "value": "go", "label": "Render", "note": "Spends about <n> credits." }, "Not yet"],
+  "other": "Change something" } ] }
 ```
-Render plan · <recipe> · <cloud | local>
-Blockout: <shot>, 0–<length>s, muted, as @video_1
-Images: @image_1 <file>: <what it sets> / @image_2 <file>: <what it sets>
-Audio: <track> <from>–<to>s as @audio_1   (or: none)
-Output: <resolution> · <ratio> · <duration>s · seed <kept | new>
-Prompt: <n> timed moves · saved at <render folder>/prompt.txt
-Cost: about <estimate> credits   (or: no estimate available)
-Say go to run, or tell me what to change.
-```
 
-Get the cost from `estimate_credits` when the cloud MCP is connected; otherwise say there is no estimate.
-Never invent a number. When the user changes something, refill and post the changed lines only. A workflow
-with no paid nodes on the user's own GPU is free: the plan is still shown, unless they have told you to
+Only `go` is a go. A typed change: make it, refill, and show the card again. "Not yet" or a closed card:
+reply in one line that it is ready when they are. Add a row only for something the user would not expect
+(the model renders 4s for a 1.96s shot: `["Length", "4s, the shortest it makes"]`). Everything else about
+the run is in the render folder, not in the chat.
+
+Get the cost from `estimate_credits` when the cloud MCP is connected; otherwise the row says no estimate.
+Never invent a number, and give one figure for the chosen model, not a range across models. A workflow
+with no paid nodes on the user's own GPU is free: the card is still shown, unless they have told you to
 skip it for free local runs (keep that in `renders/settings.json`).
 
 ### 5. Run
@@ -144,9 +161,9 @@ node bin/canvas.mjs say --reply <promptId> --attach <render folder>/render.mp4 "
 ## Follow-ups
 
 - **"Another take"**: `recipe.mjs fill <last render>/workflow.json --out <new folder>/workflow.json --seed new`.
-  The uploaded inputs can usually be reused; nothing else changes. It spends credits, so it needs a go
-  unless the request itself is the go ("run another take").
-- **A change to the prompt or an image**: edit `prompt.txt` or swap the file, refill, plan, go.
+  The uploaded inputs can usually be reused; nothing else changes. It spends credits, so it needs the
+  confirm card unless the request itself is the go ("run another take").
+- **A change to the prompt or an image**: edit `prompt.txt` or swap the file, refill, confirm card, go.
 - **A change to the camera**: that is a Blockout edit. Make it with camera-canvas, export and brief again,
   then render. The old prompt's timings are stale.
 - **"Same, on <other recipe>"**: fill the other recipe with the same inputs and prompt; check its notes for

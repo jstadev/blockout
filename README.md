@@ -134,11 +134,11 @@ the scene size and fps and encodes an H.264 MP4 in the browser. Shift-click **Ex
 ## Rendering with ComfyUI (optional)
 
 Blockout stops at the blockout video, but your agent can take it further. Open the caret on the Export button
-and choose **Render with Comfy** (it opens the chat with the request started), or just ask in the chat, with your reference images attached: "render this shot with Seedance, image 1 is her, image 2 is the room". The
+and choose **Render with Comfy** (it opens the chat with the request started), or just ask in the chat: "render this shot with Seedance". The agent asks for what it needs with question cards in the chat, one question at a time: your reference images, the model, and an API key if one is needed (a key block saves it on your machine and the agent never sees it). The
 `blockout-render` skill has the agent fit one of your saved ComfyUI workflows ("recipes") to the shot: it
 uploads the export as the motion reference, wires in your images and audio, writes a timed prompt from the
-shot's camera moves (`canvas brief`), and shows you a render plan. Nothing that costs credits runs until
-you say go. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
+shot's camera moves (`canvas brief`), and shows you a short confirm card with the cost. Nothing that costs credits runs until
+you press Render. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
 and prompt that made it.
 
 It runs on [Comfy Cloud](https://docs.comfy.org/agent-tools/mcp) or your own ComfyUI, through whichever

@@ -14,7 +14,7 @@ try { ({ chromium } = require('playwright')); } catch { console.log('skip: playw
 
 const PORT = 5399;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-e2e-'));
-const env = { ...process.env, CANVAS_PORT: String(PORT), CLAUDE_CODE_SESSION_ID: 'e2e-session' };
+const env = { ...process.env, CANVAS_PORT: String(PORT), CLAUDE_CODE_SESSION_ID: 'e2e-session', CANVAS_SECRETS: path.join(dir, 'secrets.json') };
 const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env, encoding: 'utf8' }).trim();
 const cliAsync = (...args) => new Promise((resolve, reject) => {
   const p = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env });
@@ -602,6 +602,51 @@ try {
     ok((await page.$eval('.chat-input', (e) => e.value)) === st.text && queued() === before, 'choosing it again does not repeat the text, and nothing is sent');
     await page.fill('.chat-input', '');
     ok(await page.$eval('.chat-hint', (e) => e.hidden), 'clearing the message removes the note');
+    if (!wasOpen) await page.click('.chat-toggle');
+  }
+
+  // --- question cards: one question at a time, a key block that keeps the key from the agent ---
+  {
+    const wasOpen = await page.isVisible('.chat');
+    if (wasOpen) await page.click('.chat-toggle');
+    cli('ask', JSON.stringify({ title: 'Render test', questions: [
+      { id: 'look', q: 'What sets the look?', options: [{ value: 'images', label: 'Reference images' }, { value: 'words', label: 'Describe it' }] },
+      { id: 'describe', q: 'Describe the look', when: { look: 'words' } },
+      { id: 'refs', q: 'Add images', type: 'images', when: { look: 'images' } },
+      { id: 'key', q: 'API key', type: 'secret', name: 'E2E_TEST_KEY' },
+      { id: 'go', q: 'Ready?', rows: [['Cost', 'about 170 credits']], options: ['Render', 'Not yet'] },
+    ] }));
+    await page.waitForSelector('.chat-ask');
+    ok(await page.isVisible('.chat'), 'a question card opens the chat');
+    const step = () => page.$eval('.chat-ask:not(.is-done)', (e) => ({ q: e.querySelector('.chat-ask-q').textContent, n: e.querySelector('.chat-ask-step')?.textContent, opts: e.querySelectorAll('.chat-ask-opts .chat-ask-opt').length }));
+    let s1 = await step();
+    ok(s1.q === 'What sets the look?' && s1.opts === 2 && /^1 of \d$/.test(s1.n) && (await page.$$('.chat-ask-q')).length === 1, `the card shows one question at a time (${s1.n})`);
+    await page.click('.chat-ask-opts .chat-ask-opt >> nth=1');
+    s1 = await step();
+    ok(s1.q === 'Describe the look' && s1.n === '2 of 4', 'picking an option moves on, and only the follow-up that applies is asked');
+    await page.click('.chat-ask-back');
+    await page.click('.chat-ask-opts .chat-ask-opt >> nth=0');
+    ok((await step()).q === 'Add images' && await page.$eval('.chat-ask-go', (b) => b.disabled), 'Back changes an answer; images need one before Continue');
+    const png = path.join(dir, 'ref.png');
+    fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+    await page.setInputFiles('.chat-ask input[type=file]', [png]);
+    await page.waitForSelector('.chat-ask .chat-thumb:not(.is-pending)');
+    await page.click('.chat-ask-go');
+    const KEY = 'sk-e2e-secret-4242';
+    ok((await step()).q === 'API key' && await page.$eval('.chat-ask-key-input', (i) => i.type === 'password'), 'a secret question is a key block with a hidden field');
+    await page.fill('.chat-ask-key-input', KEY);
+    await page.click('.chat-ask-go');
+    await page.waitForFunction(() => document.querySelector('.chat-ask:not(.is-done) .chat-ask-rows'));
+    ok((await page.textContent('.chat-ask-rows')).includes('about 170 credits'), 'a confirm step shows its summary rows');
+    await page.keyboard.press('1');
+    await page.waitForSelector('.chat-ask.is-done');
+    const sum = await page.textContent('.chat-ask.is-done');
+    ok(/Reference images/.test(sum) && /Saved on this machine/.test(sum) && /Render/.test(sum) && !sum.includes(KEY) && !(await page.$('.chat-msg--user .chat-bubble:has-text("Answers to")')), 'the answered card folds into a summary, with no key and no extra message');
+    const got = cli('wait', '--timeout', '5', '--no-listen');
+    ok(/Answers to "Render test"/.test(got) && /- refs \(Add images\): \S+ref\.png/.test(got) && /- go \(Ready\?\): Render/.test(got) && /E2E_TEST_KEY is saved on this machine/.test(got) && !got.includes(KEY), 'the answers reach the agent as one prompt, without the key');
+    ok(cli('secret', 'run', 'E2E_TEST_KEY', '--', process.execPath, '-e', 'console.log(process.env.E2E_TEST_KEY.length, process.env.E2E_TEST_KEY)').trim() === `${KEY.length} [E2E_TEST_KEY hidden]`, 'canvas secret run hands the key to a command and masks it in the output');
+    cli('say', 'Rendering now.');
+    cli('secret', 'rm', 'E2E_TEST_KEY');
     if (!wasOpen) await page.click('.chat-toggle');
   }
 

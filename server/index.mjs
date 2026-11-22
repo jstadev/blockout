@@ -10,12 +10,14 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeAsk, answerAsk } from '../core/ask.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE } from '../core/doc.js';
 import crypto from 'node:crypto';
 import { dataDir } from './paths.mjs';
+import { saveSecret, listSecrets } from './secrets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -537,6 +539,50 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       if (!p) return json(res, 404, { ok: false, error: `no prompt ${id}` });
       p.status = status; savePrompts(); broadcast('prompt', p); deliverToWaiters();
       json(res, 200, { ok: true });
+    },
+
+    // ----- secrets: typed into a key block in the chat, kept on this machine, never sent to the agent -----
+    'POST /api/secret': async (req, res) => {
+      const { name, value } = await readJson(req);
+      try { saveSecret(name, value); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+      json(res, 200, { ok: true, name });
+    },
+    'GET /api/secrets': (req, res) => json(res, 200, { ok: true, secrets: listSecrets() }),
+
+    // ----- questions: the agent asks in the chat, the answers come back as one prompt -----
+    'POST /api/ask': async (req, res) => {
+      const body = await readJson(req);
+      touchAgent();
+      let ask;
+      try { ask = normalizeAsk(body); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+      const taken = prompts.filter((x) => x.status === 'taken');
+      const reply = body.reply || (taken.length === 1 ? taken[0].id : undefined);
+      ask.id = `q${Date.now().toString(36)}${crypto.randomBytes(2).toString('hex')}`;
+      const entry = { from: 'agent', kind: 'ask', text: ask.title || ask.questions[0].q, ask, reply, at: Date.now() };
+      appendLog(entry);
+      broadcast('say', entry);
+      // Asking hands the turn to the user: the prompt it answers is no longer being worked on.
+      const p = reply && prompts.find((x) => x.id === reply);
+      if (p) { p.status = 'done'; p.doneAt = Date.now(); savePrompts(); broadcast('prompt', p); }
+      json(res, 200, { ok: true, id: ask.id, questions: ask.questions.length });
+    },
+    'POST /api/ask/answer': async (req, res) => {
+      const { id, answers = {}, cancelled = false, context } = await readJson(req);
+      const entry = readTail(logPath, Infinity).find((m) => m.kind === 'ask' && m.ask?.id === id);
+      if (!entry) return json(res, 404, { ok: false, error: `no question ${id} in this chat` });
+      if (prompts.some((x) => x.ask === id)) return json(res, 409, { ok: false, error: 'already answered' });
+      const { text, answers: clean, images } = answerAsk(entry.ask, answers, cancelled, (f) => {
+        const file = path.basename(String(f?.file || f));
+        return fs.existsSync(path.join(uploadsDir, file)) ? { file, url: `/uploads/${file}`, path: path.join(uploadsDir, file) } : null;
+      });
+      const p = { id: `p${Date.now().toString(36)}`, text, ask: id, answers: clean, context: context || {}, status: 'pending', at: Date.now() };
+      if (cancelled) p.cancelled = true;
+      if (images.length) p.images = images;
+      prompts.push(p); if (prompts.length > 500) prompts = prompts.slice(-500);
+      savePrompts();
+      broadcast('prompt', p);
+      deliverToWaiters();
+      json(res, 200, { ok: true, prompt: p, agent: agentListening() });
     },
 
     // New chat: archive the conversation and start an empty thread. Prompts still queued or being worked on stay.

@@ -819,3 +819,77 @@ test('say --attach: a reply carries a video, served with byte ranges so it can b
     assert.equal(JSON.parse(cli('brief', '--all', '--json')).length, 1);
   } finally { srv.kill(); }
 });
+
+test('canvas ask: a question card goes to the chat, the answers come back as one prompt, a key never does', async () => {
+  const os = await import('node:os');
+  const { spawn, execFileSync } = await import('node:child_process');
+  const { normalizeAsk, asked } = await import('../core/ask.js');
+  assert.throws(() => normalizeAsk({ questions: [] }), /needs/);
+  assert.throws(() => normalizeAsk([{ id: 'a', q: 'A?', options: ['one'] }]), /two options/);
+  assert.throws(() => normalizeAsk([{ id: 'k', q: 'Key?', type: 'secret', name: 'my key' }]), /COMFY_API_KEY/);
+  assert.throws(() => normalizeAsk([{ id: 'a', q: 'A?', when: { later: 'x' } }]), /earlier question/);
+  const n = normalizeAsk([{ id: 'look', q: 'Look?', options: ['Images', { value: 'words', label: 'Describe it' }] }, { id: 'refs', q: 'Which?', type: 'images', when: { look: 'Images' } }]);
+  assert.deepEqual([n.questions[0].type, n.questions[0].options[1].value, n.questions[1].max], ['choice', 'words', 4]);
+  assert.deepEqual([asked(n.questions[1], { look: { value: 'Images' } }), asked(n.questions[1], { look: { value: 'words' } }), asked(n.questions[1], {})], [true, false, false]);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-ask-'));
+  const port = 5393;
+  const env = { ...process.env, CANVAS_PORT: String(port), CANVAS_SECRETS: path.join(dir, 'home', 'secrets.json') };
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore', env });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) { try { await fetch(`${base}/api/status`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const post = async (route, body) => (await fetch(base + route, { method: 'POST', body: JSON.stringify(body) })).json();
+  const KEY = 'sk-test-0123456789-do-not-leak';
+  try {
+    const card = path.join(dir, 'card.json');
+    fs.writeFileSync(card, JSON.stringify({ title: 'Render with Comfy', questions: [
+      { id: 'model', q: 'Which model?', options: [{ value: 'pro', label: 'Seedance 2.5', note: 'best' }, { value: 'flash', label: 'Flash' }], other: true },
+      { id: 'why', q: 'Why Flash?', when: { model: 'flash' } },
+      { id: 'notes', q: 'Anything else?', optional: true },
+      { id: 'key', q: 'Comfy API key', type: 'secret', name: 'COMFY_API_KEY' },
+    ] }));
+    assert.match(cli('ask', card), /asked 4 questions \(q\w+\)/);
+    assert.throws(() => cli('ask', '{"questions":[{"q":"A?","options":["only"]}]}'), /two options/);
+    const log = () => fs.readFileSync(path.join(dir, '.canvas', 'log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const ask = log()[0];
+    assert.deepEqual([ask.kind, ask.ask.title, ask.ask.questions.length, ask.ask.questions[0].other], ['ask', 'Render with Comfy', 4, 'Something else']);
+
+    // the tab saves the key itself; the answers only say that it is saved
+    assert.equal((await post('/api/secret', { name: 'bad name', value: 'x' })).ok, false);
+    assert.equal((await post('/api/secret', { name: 'COMFY_API_KEY', value: KEY })).ok, true);
+    const saved = await (await fetch(`${base}/api/secrets`)).json();
+    assert.deepEqual(saved.secrets.map((x) => x.name), ['COMFY_API_KEY']);
+    assert.ok(!JSON.stringify(saved).includes(KEY));
+    if (process.platform !== 'win32') assert.equal(fs.statSync(env.CANVAS_SECRETS).mode & 0o777, 0o600);
+
+    const r = await post('/api/ask/answer', { id: ask.ask.id, answers: { model: { value: 'pro' }, why: { text: 'not asked' }, notes: { skipped: true }, key: { saved: true, value: KEY } } });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.prompt.answers, { model: { value: 'pro' }, notes: { skipped: true }, key: { saved: true, name: 'COMFY_API_KEY' } });
+    assert.equal((await post('/api/ask/answer', { id: ask.ask.id, answers: {} })).error, 'already answered');
+    assert.equal((await post('/api/ask/answer', { id: 'nope', answers: {} })).ok, false);
+    const got = cli('wait', '--timeout', '2', '--no-listen');
+    assert.match(got, /Answers to "Render with Comfy":\n- model \(Which model\?\): Seedance 2\.5 \[pro\]\n- notes \(Anything else\?\): skipped\n- key \(Comfy API key\): COMFY_API_KEY is saved on this machine/);
+    assert.match(got, /canvas secret run COMFY_API_KEY -- <command>/);
+    assert.match(got, /these answer your question card/);
+    // nothing the agent reads holds the key
+    for (const f of ['log.jsonl', 'inbox.jsonl']) assert.ok(!fs.readFileSync(path.join(dir, '.canvas', f), 'utf8').includes(KEY), `${f} holds the key`);
+    assert.ok(!got.includes(KEY));
+
+    // the agent uses it without seeing it
+    assert.match(cli('secret', 'list'), /^COMFY_API_KEY  saved \d{4}-/);
+    const ran = cli('secret', 'run', 'COMFY_API_KEY', '--', process.execPath, '-e', 'console.log("len", process.env.COMFY_API_KEY.length, "key", process.env.COMFY_API_KEY)');
+    assert.equal(ran.trim(), `len ${KEY.length} key [COMFY_API_KEY hidden]`);
+    assert.throws(() => cli('secret', 'run', 'OTHER_KEY', '--', 'true'), /no key named OTHER_KEY/);
+    assert.throws(() => cli('secret', 'run', 'COMFY_API_KEY', '--', process.execPath, '-e', 'process.exit(3)'), (e) => e.status === 3);
+
+    // one quick question, closed without an answer
+    assert.match(cli('ask', 'Run it?', '--options', 'Run|Not yet'), /asked 1 question /);
+    const quick = log().at(-1).ask;
+    assert.deepEqual(quick.questions[0].options.map((o) => o.value), ['Run', 'Not yet']);
+    const closed = await post('/api/ask/answer', { id: quick.id, cancelled: true });
+    assert.ok(closed.prompt.cancelled && /without answering/.test(closed.prompt.text));
+    assert.match(cli('secret', 'rm', 'COMFY_API_KEY'), /removed/);
+    assert.match(cli('secret', 'list'), /no keys saved/);
+  } finally { srv.kill(); }
+});
