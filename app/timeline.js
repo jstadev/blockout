@@ -95,35 +95,45 @@ export function mountTimeline(root, { viewport, exporter }) {
   const shotDur = h('span'), shotFps = h('span');
   const shotBtn = h('button.cc-btn.tl-shot', { type: 'button', title: 'Shot length, frame rate and size', onClick: () => shot.toggle() },
     icon('frame'), h('span.tl-shot-name', {}, 'Shot'), h('span.cc-mono', {}, shotDur, h('span.cc-affix__unit', {}, ' s')), h('span.tl-faint.tl-shot-fps', {}, '·'), h('span.cc-mono.tl-shot-fps', {}, shotFps, h('span.cc-affix__unit', {}, ' fps')), icon('chevronDown'));
-  // the whole timeline (every shot in order, one mp4); Shift-click for just the active shot
-  const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Render the blockout video (mp4)',
-    onClick: (e) => exporter.exportVideo({ sequence: !e.shiftKey }).catch((err) => toast(err.message, { kind: 'error' })) });
-
-  // Export is a split button: its caret opens a menu with what else can be done with the shot. "Render with
-  // Comfy" is the optional step after the export, done by the agent (the blockout-render skill): it only opens
-  // the chat with a request started, so the user can add reference images and send it.
+  // Export opens a menu (in the primary color, just below the button): the whole timeline (every shot in
+  // order, one mp4), just the active shot, and "Render with Comfy", the optional step after the export done by
+  // the agent (the blockout-render skill): it only opens the chat with a request started, so the user can add
+  // reference images and send it.
+  const exportBtn = button({ icon: 'film', label: 'Export', kind: 'primary', title: 'Export the blockout video, or render it with Comfy', onClick: () => toggleExportMenu() });
   exportBtn.classList.add('tl-exportbtn');
-  const exportCaret = button({ icon: 'chevronDown', kind: 'primary', title: 'More ways to render: Render with Comfy', onClick: () => toggleExportMenu() });
-  exportCaret.classList.add('tl-exportcaret');
-  exportCaret.setAttribute('aria-haspopup', 'menu');
-  const renderBtn = button({ icon: 'sparkle', label: 'Render with Comfy', kind: 'ghost', title: 'Render the whole timeline into a finished video with your agent and ComfyUI. Opens the chat with the request started: send it and your agent asks for what it needs',
-    onClick: () => store.emit('compose', {
+  exportBtn.append(icon('chevronDown'));
+  exportBtn.setAttribute('aria-haspopup', 'menu');
+  exportBtn.setAttribute('aria-expanded', 'false');
+  const runExport = (opts) => exporter.exportVideo(opts).catch((err) => toast(err.message, { kind: 'error' }));
+  const menuItem = (cls, ic, label, title, onClick) => {
+    const b = button({ icon: ic, label, kind: 'ghost', title, onClick });
+    b.classList.add(cls);
+    b.setAttribute('role', 'menuitem');
+    return b;
+  };
+  const exportFullBtn = menuItem('tl-export-full', 'film', 'Export full video', 'Every shot in order, cut together into one video (mp4)', () => runExport({ sequence: true }));
+  const exportShotBtn = menuItem('tl-export-shot', 'frame', 'Export shot', 'Just the current shot (mp4)', () => runExport({ sequence: false }));
+  const renderBtn = menuItem('tl-render', 'sparkle', 'Render with Comfy', 'Render the whole timeline into a finished video with your agent and ComfyUI. Opens the chat with the request started: send it and your agent asks for what it needs',
+    () => store.emit('compose', {
       text: 'Render this timeline with ComfyUI (blockout-render skill). ',
       hint: 'Send to start. Nothing costs credits until you confirm.',
-    }) });
-  renderBtn.classList.add('tl-render');
-  renderBtn.setAttribute('role', 'menuitem');
-  const exportPop = h('div.cc-panel.tl-more-pop.tl-export-pop', { hidden: true, role: 'menu' }, renderBtn);
+    }));
+  const exportPop = h('div.tl-export-pop', { hidden: true, role: 'menu' }, exportFullBtn, exportShotBtn, h('span.tl-export-sep'), renderBtn);
   document.body.append(exportPop);
   function toggleExportMenu(on = exportPop.hidden) {
-    if (on) { const r = exportCaret.getBoundingClientRect(); exportPop.style.right = `${Math.max(12, innerWidth - r.right)}px`; }
-    exportPop.hidden = !on;
-    exportCaret.classList.toggle('is-open', on);
-    exportCaret.setAttribute('aria-expanded', on);
+    if (on) {
+      const r = exportBtn.getBoundingClientRect();
+      exportPop.hidden = false;
+      exportPop.style.right = `${Math.max(12, innerWidth - r.right)}px`;
+      exportPop.style.top = `${Math.min(r.bottom + 4, innerHeight - exportPop.offsetHeight - 8)}px`;
+    } else exportPop.hidden = true;
+    exportBtn.classList.toggle('is-open', on);
+    exportBtn.setAttribute('aria-expanded', on);
   }
   exportPop.addEventListener('click', (e) => { if (e.target.closest('button')) toggleExportMenu(false); });
-  addEventListener('pointerdown', (e) => { if (!exportPop.hidden && !exportPop.contains(e.target) && !exportCaret.contains(e.target)) toggleExportMenu(false); }, true);
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !exportPop.hidden) { e.stopPropagation(); toggleExportMenu(false); exportCaret.focus(); } }, true);
+  addEventListener('pointerdown', (e) => { if (!exportPop.hidden && !exportPop.contains(e.target) && !exportBtn.contains(e.target)) toggleExportMenu(false); }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !exportPop.hidden) { e.stopPropagation(); toggleExportMenu(false); exportBtn.focus(); } }, true);
+  addEventListener('resize', () => { if (!exportPop.hidden) toggleExportMenu(false); });
 
   // audio: a waveform lane under the track, an Audio button in the bar (functions below are hoisted)
   // (one track for the whole sequence, on the shots' shared action-time axis)
@@ -137,7 +147,7 @@ export function mountTimeline(root, { viewport, exporter }) {
 
   const shots = mountShots();
   const bar = h('div.tl-bar', {}, playBtn, timeEl, h('span.cc-divider'), viewSeg, keyBtn, keyCaret, lensField, rollField,
-    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn, exportCaret);
+    h('span.cc-spacer'), audioTrack.btn, shotBtn, exportBtn);
 
   // The bar keeps play, the camera and output. The selected key's settings open in a card above that key
   // (placeKeyCard), Loop and Play all are switches in the shot popover, and the object's Key button sits in
@@ -996,7 +1006,9 @@ export function mountTimeline(root, { viewport, exporter }) {
     rollField.title = rollNum.disabled ? 'Select a key to change its roll (or hold the right mouse button and press Z / X)' : k ? 'Roll (Dutch tilt) of the selected key; the free view uses it too' : 'Roll (Dutch tilt) of the view; new keys get it';
     lensField.title = lensOff ? 'Select a key to change its lens' : k ? 'Lens of the selected key; the free view uses it too' : 'Lens of the free view; new keys get it';
     exportBtn.disabled = store.state.exporting;
-    exportBtn.title = store.doc.shots.length > 1 ? 'Render the whole timeline: every shot in order, cut together into one video (mp4). Shift-click: just this shot' : 'Render the blockout video (mp4)';
+    if (exportBtn.disabled && !exportPop.hidden) toggleExportMenu(false);
+    const active = shotList(store.doc).find((s) => s.active);
+    exportShotBtn.title = `Just the current shot${active?.name ? `, ${active.name}` : ''} (mp4)`;
     draw();
     audioTrack.refresh();
     curve.refresh();
