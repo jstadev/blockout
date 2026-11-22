@@ -45,7 +45,7 @@ export function mountPrompt(root, { viewport, corner }) {
     const claudeStep = plugin
       ? h('li', {}, 'In Claude Code, run ', cmd('/blockout-agent:start'), '.')
       : checkout && inFolder ? h('li', {}, 'Claude Code: in a terminal, run ', inFolder)
-      : h('li', {}, 'In Claude Code, add the plugin with ', cmd('/plugin marketplace add shrimbly/blockout-agent'), ', install it, then run ', cmd('/blockout-agent:start'), '.');
+      : h('li', {}, 'In Claude Code, add the plugin with ', cmd('/plugin marketplace add shrimbly/blockout'), ', install it, then run ', cmd('/blockout-agent:start'), '.');
     const codexStep = h('li', {}, 'Codex: start it in ', dir ? h('code', {}, dir) : 'this folder', ' and say ', say('listen to the canvas'), '.');
     if (listenStale) return [
       h('div.chat-empty-title', {}, 'Your agent stopped listening'),

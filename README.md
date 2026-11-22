@@ -20,7 +20,7 @@ Requires Node 20+ and a Chromium-based browser or Safari 17+ (for WebCodecs vide
 Install the plugin once, from any Claude Code session:
 
 ```
-/plugin marketplace add shrimbly/blockout-agent     # or the path to a local copy of this repo
+/plugin marketplace add shrimbly/blockout     # or the path to a local copy of this repo
 /plugin install blockout-agent@blockout-agent
 ```
 
