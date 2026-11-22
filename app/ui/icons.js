@@ -20,6 +20,7 @@ export const ICONS = {
   film: s('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M5 2.5v11M11 2.5v11M2 6h3M2 10h3M11 6h3M11 10h3"/>'),
   frame: s('<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/>'),
   send: s('<path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/>'),
+  paste: s('<rect x="3" y="3" width="10" height="11" rx="1.5"/><path d="M6 3V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V3a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1zM5.5 8h5M5.5 10.5h3.5"/>'),
   help: s('<circle cx="8" cy="8" r="6.5"/><path d="M6.2 6.2a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4"/><circle cx="8" cy="11.6" r=".4" fill="currentColor"/>'),
   close: s('<path d="M4 4l8 8M12 4l-8 8"/>'),
   target: s('<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>'),

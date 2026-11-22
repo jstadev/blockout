@@ -8,6 +8,8 @@ import { mountShots } from './shots.js';
 import { mountMoves } from './moves.js';
 import { shotList } from '/core/doc.js';
 
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
 const PAD = 14;
 const SIZES = [[1280, 720], [1920, 1080], [3840, 2160], [1080, 1920], [1080, 1080], [1440, 1080]];
 const RETIME_KEY = 'cc-retime';
@@ -1009,7 +1011,9 @@ export function mountTimeline(root, { viewport, exporter }) {
   let lastExtra = 0;
 
   // ---------- curve editor + shot settings ----------
-  const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => (keyCard.hidden ? easeBtn : keyCard) });
+  const curve = mountCurveEditor(root, { updateKey, keys, onToggle: (open, mode) => { easeBtn.classList.toggle('is-open', open && mode === 'segment'); }, anchor: () => (keyCard.hidden ? easeBtn : keyCard),
+    // clicks here keep it open: its own buttons, and the track, so you can pick another segment (to paste into) with it open
+    keepOpen: (el) => easeBtn.contains(el) || keyCard.contains(el) || track.contains(el) });
   // Loop and Play all: a small menu that opens while the pointer is over Play (and stays while it is over the menu)
   const loopSw = onOff({ value: store.state.loop, title: 'Loop playback', onChange: (v) => store.set({ loop: v }) });
   const playAllSw = onOff({ value: !!store.state.playAll, title: 'Play all: playback runs on through the cuts into the next shot', onChange: (v) => store.set({ playAll: v }) });
@@ -1042,7 +1046,7 @@ export function mountTimeline(root, { viewport, exporter }) {
  * Popover with a draggable bezier ease for the segment at the playhead, or the shot-wide speed curve.
  * Click the curve to add a point with its own handles; double-click or right-click a point to remove it.
  */
-function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
+function mountCurveEditor(root, { updateKey, keys, onToggle, anchor, keepOpen }) {
   // canvas layout: the curve on top, a speed strip under it, sharing one time axis
   const W = 276, H = 184, L = 18, R = W - 10, T = 10, CB = 124, ST = 136, SB = H - 6;
   const cv = h('canvas.curve-canvas', { width: W * 2, height: H * 2, style: { width: `${W}px`, height: `${H}px` } });
@@ -1052,22 +1056,67 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   const title = h('span.cc-label.cc-mono');
   const nameEl = h('span.curve-name');
   const presets = h('div.curve-presets');
-  const help = h('div.curve-help.cc-label');
-  const closeBtn = button({ icon: 'close', kind: 'ghost', title: 'Close', onClick: () => toggle(false) });
-  // copy this segment's ease to every segment in every shot (cuts stay cuts), as one undo step
-  const allBtn = button({ icon: 'copy', label: 'Apply to all segments', title: 'Give every camera segment this ease, in every shot. Cuts stay cuts.', onClick: () => {
+  // how to use the editor: a tooltip on the help icon in the header (hover or focus it)
+  const help = h('div.cc-panel.curve-tip', { role: 'tooltip' });
+  const helpBtn = button({ icon: 'help', kind: 'ghost', title: '' });
+  helpBtn.setAttribute('aria-label', 'How to edit the curve');
+  const helpWrap = h('span.curve-tipwrap', {}, helpBtn, help);
+  const closeBtn = button({ icon: 'close', kind: 'ghost', title: 'Close (Esc)', onClick: () => toggle(false) });
+  closeBtn.setAttribute('aria-label', 'Close');
+
+  // copy the segment's settings (curve + shudder) and paste them onto another segment, or onto the shot's playback speed
+  const CLIP_KEY = 'cc-ease-clip';
+  let clip = null; // { ease, shudder, from }
+  try { const c = JSON.parse(localStorage.getItem(CLIP_KEY)); if (c && c.ease != null) clip = c; } catch {}
+  const clipName = (c) => easeName(c.ease) + (c.shudder ? ' + shudder' : '');
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  function copySettings() {
     const tg = target();
-    if (!tg || tg.kind !== 'segment') return;
-    store.op({ op: 'key.easeAll', from: tg.key.id, allShots: true }, 'ease all segments')
-      .then(([r]) => toast(`${easeName(tg.ease)} on ${r.updated} segment${r.updated === 1 ? '' : 's'}${r.shots > 1 ? ` in ${r.shots} shots` : ''}`)).catch(() => {});
-  } });
+    if (!tg) return;
+    clip = { ease: tg.ease, shudder: tg.kind === 'segment' && !isCut(tg.key) ? tg.key.shudder ?? null : null, from: tg.kind === 'segment' ? `${tg.key.id} → ${tg.next.id}` : 'playback' };
+    try { localStorage.setItem(CLIP_KEY, JSON.stringify(clip)); } catch {}
+    toast(`Copied ${clipName(clip)}. Pick another segment and paste it with the paste button or ${MOD}V`);
+    refresh();
+  }
+  /** What paste would change here, or null when it would change nothing. */
+  function pasteable(tg) {
+    if (!clip || !tg) return null;
+    if (tg.kind === 'speed') return clip.ease === 'hold' || same(clip.ease, tg.ease) ? null : { ease: clip.ease };
+    const patch = { ease: clip.ease, shudder: clip.ease === 'hold' ? null : clip.shudder };
+    return same(patch.ease, tg.ease) && same(patch.shudder, tg.key.shudder) ? null : patch;
+  }
+  function pasteSettings() {
+    const tg = target(), patch = pasteable(tg);
+    if (!patch) return;
+    if (tg.kind === 'speed') { commit(patch.ease); return; }
+    store.set({ key: tg.key.id });
+    updateKey({ ease: patch.ease, shudder: patch.shudder || 'off' });
+    toast(`Pasted ${clipName(clip)} onto ${tg.key.id} → ${tg.next.id}`);
+  }
+  const copyBtn = button({ icon: 'copy', kind: 'ghost', title: `Copy this curve and shudder (${MOD}C)`, onClick: copySettings });
+  const pasteBtn = button({ icon: 'paste', kind: 'ghost', title: 'Paste', onClick: pasteSettings });
+
+  // copy this segment's ease to every segment in every shot (cuts stay cuts), as one undo step, after a confirmation
+  const allBtn = button({ icon: 'layers', label: 'Apply to all segments', title: 'Give every camera segment this ease, in every shot. Cuts stay cuts.', onClick: () => askAll(true) });
   const allCount = h('span.curve-all__count');
   allBtn.append(allCount);
   allBtn.classList.add('curve-all');
+  const allMsg = h('span.curve-confirm__msg');
+  const allYes = button({ label: 'Replace', kind: 'primary', onClick: () => {
+    const tg = target();
+    askAll(false);
+    if (!tg || tg.kind !== 'segment') return;
+    store.op({ op: 'key.easeAll', from: tg.key.id, allShots: true }, 'ease all segments')
+      .then(([r]) => toast(`${easeName(tg.ease)} on ${r.updated} segment${r.updated === 1 ? '' : 's'}${r.shots > 1 ? ` in ${r.shots} shots` : ''}. ${MOD}Z undoes it`)).catch(() => {});
+  } });
+  const allNo = button({ label: 'Cancel', kind: 'ghost', onClick: () => askAll(false) });
+  const allConfirm = h('div.curve-confirm', { hidden: true }, allMsg, h('div.cc-row.curve-confirm__row', {}, h('span.cc-spacer'), allNo, allYes));
+  let asking = false;
+  function askAll(on) { asking = on; refresh(); if (on) allYes.focus(); }
   // shudder: exact jerks back and forth along this segment, on top of its ease
   let liveSh = null; // settings being scrubbed, drawn before they are committed
   const shPatch = (patch) => { const tg = target(); return { ...SHUDDER_DEFAULT, ...tg?.key.shudder, ...patch }; };
-  const shPreview = (patch) => { liveSh = shPatch(patch); draw(); };
+  const shPreview = (patch) => { liveSh = shPatch(patch); paintRange(liveSh); draw(); };
   const shCommit = (patch) => {
     const tg = target();
     liveSh = null;
@@ -1081,8 +1130,8 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
   // where in the segment it plays, in seconds from the segment's first key (stored as shares of the segment)
   const span = () => { const tg = target(); return tg?.kind === 'segment' ? Math.max(1e-3, tg.next.t - tg.key.t) : 1; };
   const shFrac = (sec) => Math.min(1, Math.max(0, sec / span()));
-  const shFrom = number({ value: 0, step: 0.05, min: 0, precision: 2, title: 'Where the shudder starts, in seconds after this key', onInput: (v) => shPreview({ from: shFrac(v) }), onChange: (v) => shCommit({ from: shFrac(v) }) });
-  const shTo = number({ value: 1, step: 0.05, min: 0, precision: 2, title: 'Where the shudder stops, in seconds after this key', onInput: (v) => shPreview({ to: shFrac(v) }), onChange: (v) => shCommit({ to: shFrac(v) }) });
+  const shFrom = number({ value: 0, step: 0.05, min: 0, precision: 2, width: 44, title: 'Where the shudder starts, in seconds after this key', onInput: (v) => shPreview({ from: shFrac(v) }), onChange: (v) => shCommit({ from: shFrac(v) }) });
+  const shTo = number({ value: 1, step: 0.05, min: 0, precision: 2, width: 44, title: 'Where the shudder stops, in seconds after this key', onInput: (v) => shPreview({ to: shFrac(v) }), onChange: (v) => shCommit({ to: shFrac(v) }) });
   const shShape = segmented({ value: SHUDDER_DEFAULT.shape, onChange: (v) => shCommit({ shape: v }), options: [
     { value: 'jerk', label: 'Jerk', title: 'Snaps back, then eases forward again' },
     { value: 'wobble', label: 'Wobble', title: 'A smooth back and forth' },
@@ -1091,16 +1140,53 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     { value: 'even', label: 'Even', title: 'The same all the way' },
     { value: 'fade', label: 'Fade out', title: 'Strong at the start, gone by the end' },
     { value: 'build', label: 'Build', title: 'Grows towards the end' }] });
+  // timing: a strip spanning the segment (key to key) with the shudder's section on it; drag an edge to
+  // move that end, drag the middle to slide it, click outside it to bring the nearer end there
+  const rangeFill = h('div.curve-range__fill', {}, h('span.curve-range__edge.is-from'), h('span.curve-range__edge.is-to'));
+  const range = h('div.curve-range', { title: 'Where the shudder plays: drag an edge to move it, the middle to slide it' }, rangeFill);
+  const rangeA = h('span.curve-range__key'), rangeB = h('span.curve-range__key');
+  let rangeDrag = null;
+  const rangeAt = (e) => { const r = range.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+  const snapF = (f) => { const tl = store.doc.timeline, d = 1 / (tl.fps || 24) / span(); return Math.min(1, Math.max(0, Math.round(f / d) * d)); };
+  range.addEventListener('pointerdown', (e) => {
+    const tg = target();
+    if (!tg || tg.kind !== 'segment') return;
+    e.preventDefault();
+    const v = { ...SHUDDER_DEFAULT, ...tg.key.shudder }, x = rangeAt(e), w = range.getBoundingClientRect().width, near = 8 / w;
+    let edge = Math.abs(x - v.from) <= near ? 'from' : Math.abs(x - v.to) <= near ? 'to' : x > v.from && x < v.to ? 'move' : x < v.from ? 'from' : 'to';
+    rangeDrag = { edge, x0: x, from: v.from, to: v.to, cur: { from: v.from, to: v.to } };
+    if (edge !== 'move') { rangeDrag.cur[edge] = snapF(x); shPreview(rangeDrag.cur); }
+    range.setPointerCapture(e.pointerId);
+  });
+  range.addEventListener('pointermove', (e) => {
+    if (!rangeDrag) return;
+    const x = rangeAt(e), d = rangeDrag, gap = 0.02;
+    if (d.edge === 'move') { const len = d.to - d.from; const f = Math.min(1 - len, Math.max(0, snapF(d.from + x - d.x0))); d.cur = { from: f, to: f + len }; }
+    else if (d.edge === 'from') d.cur = { from: Math.min(snapF(x), d.to - gap), to: d.to };
+    else d.cur = { from: d.from, to: Math.max(snapF(x), d.from + gap) };
+    shPreview(d.cur); paintRange(d.cur);
+  });
+  const endRange = () => { if (!rangeDrag) return; const c = rangeDrag.cur; rangeDrag = null; shCommit({ from: +c.from.toFixed(4), to: +c.to.toFixed(4) }); };
+  range.addEventListener('pointerup', endRange);
+  range.addEventListener('pointercancel', endRange);
+  function paintRange(v) {
+    rangeFill.style.left = `${v.from * 100}%`;
+    rangeFill.style.right = `${(1 - v.to) * 100}%`;
+  }
   const shBody = h('div.curve-shudder__body', {},
-    h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Back'), affix(shAmount, '%')),
-    h('div.cc-row', {}, h('span.cc-label', {}, 'From'), affix(shFrom, 's'), h('span.cc-label.curve-shudder__back', {}, 'To'), affix(shTo, 's')),
     h('div.cc-row', {}, h('span.cc-label', {}, 'Shape'), shShape),
-    h('div.cc-row', {}, h('span.cc-label', {}, 'Over move'), shOver));
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Strength'), shOver),
+    h('div.cc-row', {}, h('span.cc-label', {}, 'Jerks'), shJerks, h('span.cc-label.curve-shudder__back', {}, 'Amount'), affix(shAmount, '%')),
+    h('div.curve-shudder__sec', {}, 'Timing'),
+    range,
+    h('div.curve-range__axis', {}, rangeA, h('span.curve-range__fields', {}, affix(shFrom, 's'), h('span.curve-range__dash', {}, '–'), affix(shTo, 's')), rangeB));
   const shWrap = h('div.curve-shudder', {}, h('div.cc-row', {}, h('span.cc-label', {}, 'Shudder'), h('span.cc-spacer'), shOn), shBody);
+  // the header stays put while the body scrolls on short screens, so close is always in reach
   const pop = h('div.cc-panel.curve-pop', { hidden: true },
-    h('div.cc-row', {}, tabs, h('span.cc-spacer'), closeBtn),
-    h('div.cc-row.curve-head', {}, title, nameEl),
-    cv, presets, h('div.curve-sep'), shWrap, allBtn, help);
+    h('div.curve-pop__head', {},
+      h('div.cc-row', {}, tabs, h('span.cc-spacer'), h('div.curve-pop__tools', {}, copyBtn, pasteBtn, helpWrap, closeBtn)),
+      h('div.cc-row.curve-head', {}, title, nameEl)),
+    h('div.curve-pop__body', {}, cv, presets, h('div.curve-sep'), shWrap, allBtn, allConfirm));
   document.body.append(pop); // outside #timeline: its blurred panel would become the box `position: fixed` measures from
 
   // The ease is a flat array (see resolveEase): pairs at index % 6 = 0 or 2 are handles, % 6 = 4 points.
@@ -1419,6 +1505,18 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     allBtn.disabled = segs.every((k) => JSON.stringify(k.ease) === JSON.stringify(cur));
     allBtn.querySelector('.cc-btn__label').textContent = multi ? 'Apply to all shots' : 'Apply to all segments';
     allCount.textContent = allBtn.disabled ? 'all match' : `${segs.length} segment${segs.length === 1 ? '' : 's'}`;
+    if (allBtn.hidden || allBtn.disabled) asking = false;
+    const nShots = multi ? new Set(shotList(store.doc).filter((x) => x.timeline.keys.length > 1).map((x) => x.id)).size : 1;
+    allMsg.textContent = `Replace the curve on ${segs.length} segment${segs.length === 1 ? '' : 's'}${nShots > 1 ? ` in ${nShots} shots` : ''} with ${easeName(cur)}? Their own curves are overwritten. Cuts stay cuts.`;
+    allConfirm.hidden = !asking;
+    if (asking) allBtn.hidden = true;
+    copyBtn.title = tg ? `Copy ${tg.kind === 'speed' ? 'this playback curve' : 'this curve and shudder'} (${MOD}C)` : 'Copy';
+    copyBtn.disabled = !tg;
+    pasteBtn.hidden = !clip;
+    const pv = pasteable(tg);
+    pasteBtn.disabled = !pv;
+    pasteBtn.title = !clip ? '' : pv ? `Paste ${tg.kind === 'speed' ? easeName(clip.ease) : clipName(clip)}, copied from ${clip.from} (${MOD}V)`
+      : tg?.kind === 'speed' && clip.ease === 'hold' ? 'A cut can not be pasted onto playback speed' : `Already ${clipName(clip)}, as copied from ${clip.from}`;
     allBtn.title = allBtn.disabled ? 'Every segment already has this ease' : `Give all ${segs.length} camera segments${multi ? ` in all ${store.doc.shots.length} shots` : ''} this ease. Cuts stay cuts.`;
     const seg = tg?.kind === 'segment' && !isCut(tg.key);
     shWrap.hidden = !seg;
@@ -1429,13 +1527,17 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
       shJerks.set(v.jerks); shAmount.set(v.amount); shShape.value = v.shape; shOver.value = v.over;
       const len = tg.next.t - tg.key.t;
       shFrom.set(+(v.from * len).toFixed(2)); shTo.set(+(v.to * len).toFixed(2));
+      if (!rangeDrag) paintRange(v);
+      rangeFill.dataset.over = v.over;
+      rangeA.textContent = `${tg.key.id} 0 s`; rangeB.textContent = `${tg.next.id} ${+len.toFixed(2)} s`;
     }
-    // never taller than the room above it (it sits on its bottom edge): scroll inside instead
+    // never taller than the room above it (it sits on its bottom edge): the body scrolls inside instead
     const room = Math.floor(pop.getBoundingClientRect().bottom - 12);
     if (room > 0 && pop.style.maxHeight !== `${room}px`) pop.style.maxHeight = `${room}px`;
-    help.textContent = mode === 'speed'
+    const tip = mode === 'speed'
       ? 'Slow motion and fast forward for the camera and everything in the shot. Its length stays the same.'
       : 'Drag the orange handles. Click the curve to add a point, double-click a point to remove it. Alt breaks a point\'s handles apart.';
+    if (help.textContent !== tip) help.textContent = tip;
     draw();
   }
 
@@ -1443,7 +1545,7 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     if (on === undefined) on = !(api.open && (!m || m === mode));
     if (m) { mode = m; tabs.value = m; }
     api.open = on; pop.hidden = !on; onToggle?.(on, mode);
-    if (!on) preview = null;
+    if (!on) { preview = null; asking = false; }
     if (on && anchor) {
       const a = mode === 'speed' ? null : anchor();
       const r = a && a.getClientRects().length ? a.getBoundingClientRect() : null;
@@ -1453,6 +1555,18 @@ function mountCurveEditor(root, { updateKey, keys, onToggle, anchor }) {
     }
     refresh();
   }
+  // a click anywhere else closes it; Esc too. While it is open, Cmd/Ctrl+C and V copy and paste its settings
+  addEventListener('pointerdown', (e) => {
+    if (api.open && !pop.contains(e.target) && !keepOpen?.(e.target) && !e.target.closest?.('.cc-toast-stack')) toggle(false);
+  }, true);
+  addEventListener('keydown', (e) => {
+    if (!api.open) return;
+    if (e.key === 'Escape') { e.stopPropagation(); if (asking) askAll(false); else toggle(false); return; }
+    const typing = e.target.closest?.('input, textarea, select, [contenteditable="true"]');
+    if (typing || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || getSelection()?.toString()) return;
+    const k = e.key.toLowerCase();
+    if (k === 'c') { e.preventDefault(); copySettings(); } else if (k === 'v' && clip) { e.preventDefault(); pasteSettings(); }
+  }, true);
   return api;
 }
 
