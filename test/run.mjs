@@ -260,7 +260,7 @@ test('a mannequin exists for every body: closed parts, 1 unit tall, feet on the 
 test('the Claude Code plugin manifests parse and their hooks run the same CLI as the checkout hooks', () => {
   const read = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));
   const plugin = read('.claude-plugin/plugin.json'), market = read('.claude-plugin/marketplace.json');
-  assert.equal(plugin.name, 'blockout-agent');
+  assert.equal(plugin.name, 'blockout');
   assert.ok(market.plugins.some((p) => p.name === plugin.name && p.source === './'));
   for (const a of plugin.agents || []) assert.ok(fs.existsSync(path.join(ROOT, a)), `${a} is missing`);
   const pluginHooks = read('hooks/hooks.json').hooks, repoHooks = read('.claude/settings.json').hooks;
@@ -289,9 +289,9 @@ test('launchInfo tells Claude Code, Codex and a terminal apart, and finds the pl
   assert.equal(t.by, 'terminal');
   assert.equal(t.plugin, false);
   fs.mkdirSync(path.join(none, 'plugins'));
-  fs.writeFileSync(path.join(none, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'blockout-agent@blockout-agent': [{}] } }));
+  fs.writeFileSync(path.join(none, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'blockout@blockout': [{}] } }));
   assert.equal(launchInfo({ CLAUDE_CONFIG_DIR: none }).plugin, true);
-  assert.equal(launchInfo({}, '/Users/x/.claude/plugins/cache/blockout-agent/0.3.0').plugin, true);
+  assert.equal(launchInfo({}, '/Users/x/.claude/plugins/cache/blockout/0.3.0').plugin, true);
 });
 
 test('audio op: load, offset, volume, fit, replace, clear', () => {

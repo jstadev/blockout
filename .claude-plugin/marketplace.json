@@ -1,12 +1,12 @@
 {
-  "name": "blockout-agent",
+  "name": "blockout",
   "owner": {
     "name": "Willie"
   },
   "description": "Blockout: a three.js blockout canvas you drive with Claude.",
   "plugins": [
     {
-      "name": "blockout-agent",
+      "name": "blockout",
       "source": "./",
       "description": "Block out 3D scenes and camera moves with Claude, then export a blockout video."
     }

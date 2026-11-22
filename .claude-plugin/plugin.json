@@ -1,5 +1,5 @@
 {
-  "name": "blockout-agent",
+  "name": "blockout",
   "description": "Block out 3D scenes and camera moves with Claude in a minimal three.js canvas, then export a blockout video for a generative video model.",
   "author": {
     "name": "Willie"

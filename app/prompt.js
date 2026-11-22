@@ -43,9 +43,9 @@ export function mountPrompt(root, { viewport, corner }) {
     const { by, plugin, checkout, dir } = launch || {};
     const inFolder = dir ? cmd(`cd ${dir} && claude "listen to the canvas"`) : null;
     const claudeStep = plugin
-      ? h('li', {}, 'In Claude Code, run ', cmd('/blockout-agent:start'), '.')
+      ? h('li', {}, 'In Claude Code, run ', cmd('/blockout:start'), '.')
       : checkout && inFolder ? h('li', {}, 'Claude Code: in a terminal, run ', inFolder)
-      : h('li', {}, 'In Claude Code, add the plugin with ', cmd('/plugin marketplace add shrimbly/blockout'), ', install it, then run ', cmd('/blockout-agent:start'), '.');
+      : h('li', {}, 'In Claude Code, add the plugin with ', cmd('/plugin marketplace add shrimbly/blockout'), ', install it, then run ', cmd('/blockout:start'), '.');
     const codexStep = h('li', {}, 'Codex: start it in ', dir ? h('code', {}, dir) : 'this folder', ' and say ', say('listen to the canvas'), '.');
     if (listenStale) return [
       h('div.chat-empty-title', {}, 'Your agent stopped listening'),
@@ -55,7 +55,7 @@ export function mountPrompt(root, { viewport, corner }) {
     if (by === 'claude') return [
       h('div.chat-empty-title', {}, 'One step left'),
       h('p', {}, 'Claude Code started the canvas but isn’t listening to it yet. In that session:'),
-      h('ol.chat-steps', {}, plugin ? h('li', {}, 'Run ', cmd('/blockout-agent:start'), '.') : h('li', {}, 'Say ', say('listen to the canvas'), '.')),
+      h('ol.chat-steps', {}, plugin ? h('li', {}, 'Run ', cmd('/blockout:start'), '.') : h('li', {}, 'Say ', say('listen to the canvas'), '.')),
     ];
     if (by === 'codex') return [
       h('div.chat-empty-title', {}, 'One step left'),
@@ -451,7 +451,7 @@ export function mountPrompt(root, { viewport, corner }) {
       : state === 'listening' ? 'Your agent is in listen mode. It picks up prompts from this canvas as soon as its current turn ends.'
       : state === 'working' ? 'Your agent is working on a prompt. New prompts queue until it is done.'
       : store.state.listenStale ? 'Your agent stopped listening. Prompts queue until it reconnects.'
-      : 'Prompts queue until your agent listens. Run /blockout-agent:start in Claude Code, or ask your agent to "listen to the canvas".';
+      : 'Prompts queue until your agent listens. Run /blockout:start in Claude Code, or ask your agent to "listen to the canvas".';
     renderEmpty();
     const sel = store.state.selection;
     selEl.textContent = sel ? `@${sel}` : '';
