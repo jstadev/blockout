@@ -48,7 +48,9 @@ session with the selected object, playhead time and camera pose attached.
 - After editing a skill in `skills/camera-canvas/` or `skills/blockout-render/`, run `npm run skills:sync` to update the copies.
 - ComfyUI rendering lives only in the `blockout-render` skill (`skills/blockout-render/`: instructions, recipes and
   `scripts/recipe.mjs`). Keep ComfyUI code out of `app/`, `core/`, `server/` and `bin/canvas.mjs`; what the skill needs
-  from Blockout should be a general feature (like `canvas brief` and `canvas say --attach`).
+  from Blockout should be a general feature (like `canvas brief`, `canvas say --attach` and `canvas ask`).
+- Ask the user with question cards (`canvas ask`), not paragraphs of questions. API keys go through a key block
+  (`"type": "secret"`) and `canvas secret run`; never read `~/.blockout/secrets.json` or print a key.
 - Before finishing code changes: `npm test` (fast) and, if you touched the app, `npm run e2e`
   (needs Playwright).
 
@@ -57,13 +59,16 @@ session with the selected object, playhead time and camera pose attached.
 ```
 bin/canvas.mjs        agent CLI (talks HTTP to the server)
 server/index.mjs      bridge server: scene doc + undo, SSE to tabs, prompt inbox, exports
+server/secrets.mjs    API keys from the chat's key block, kept in ~/.blockout (never sent to the agent)
 core/doc.js           scene document, primitives, ops (shared by server, CLI and browser)
 core/curves.js        easing, speed curves, camera path sampling
 core/brief.js         a shot's camera work in words (canvas brief)
+core/ask.js           question cards: the agent's questions and the user's answers (canvas ask)
 app/                  the browser app (no build step; three.js via import map)
   viewport.js         three.js scene, cameras, gizmos, offscreen rendering
   timeline.js         transport, key track, curve editor
   prompt.js           chat sidebar (prompts to the agent, replies from it)
+  ask.js              question cards in the chat, one question at a time, and the key block
   render.js           snapshot, storyboard, video export (WebCodecs → mp4)
   ui/                 design-system tokens, kit components, icons
   controls/           user-requested controls (empty by default) + template + example

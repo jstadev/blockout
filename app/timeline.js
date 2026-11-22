@@ -104,10 +104,10 @@ export function mountTimeline(root, { viewport, exporter }) {
   const exportCaret = button({ icon: 'chevronDown', kind: 'primary', title: 'More ways to render: Render with Comfy', onClick: () => toggleExportMenu() });
   exportCaret.classList.add('tl-exportcaret');
   exportCaret.setAttribute('aria-haspopup', 'menu');
-  const renderBtn = button({ icon: 'sparkle', label: 'Render with Comfy', kind: 'ghost', title: 'Render this shot into a finished video with your agent and ComfyUI. Opens the chat with the request started: add your reference images and send',
+  const renderBtn = button({ icon: 'sparkle', label: 'Render with Comfy', kind: 'ghost', title: 'Render this shot into a finished video with your agent and ComfyUI. Opens the chat with the request started: send it and your agent asks for what it needs',
     onClick: () => store.emit('compose', {
       text: 'Render this shot with ComfyUI (blockout-render skill). ',
-      hint: 'Attach your reference images and say what each one is for, then send. Your agent shows a render plan and waits for your go before anything costs credits.',
+      hint: 'Send this and your agent asks for what it needs, one question at a time. Nothing costs credits until you confirm.',
     }) });
   renderBtn.classList.add('tl-render');
   renderBtn.setAttribute('role', 'menuitem');

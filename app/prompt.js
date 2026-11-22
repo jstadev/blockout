@@ -5,6 +5,7 @@
 import { h, icon, button } from './ui/kit.js';
 import { describe } from '/core/doc.js';
 import { store } from './store.js';
+import { askCard } from './ask.js';
 
 const OPEN_KEY = 'cc-chat-open';
 
@@ -131,6 +132,7 @@ export function mountPrompt(root, { viewport, corner }) {
   // ---------- state ----------
   const prompts = new Map(); // id -> prompt
   const items = new Map();   // prompt id -> element
+  const asks = new Map();    // question card id -> card (see ask.js)
 
   function context() {
     const sel = store.state.selection && store.object(store.state.selection);
@@ -162,15 +164,16 @@ export function mountPrompt(root, { viewport, corner }) {
       return c.toDataURL(blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png', 0.9);
     } finally { URL.revokeObjectURL(url); }
   }
+  async function uploadImage(f) {
+    const res = await store.post('/api/chat/image', { data: await toDataUrl(f), name: f.name || 'pasted' });
+    if (!res.ok) throw new Error(res.error || 'upload failed');
+    return res.file;
+  }
   async function addImages(files) {
     for (const f of [...files].filter((x) => x.type?.startsWith('image/')).slice(0, 8 - attachments.length)) {
       const a = { id: Math.random().toString(36).slice(2), preview: URL.createObjectURL(f), pending: true };
       attachments.push(a); renderTray();
-      try {
-        const res = await store.post('/api/chat/image', { data: await toDataUrl(f), name: f.name || 'pasted' });
-        if (!res.ok) throw new Error(res.error || 'upload failed');
-        a.file = res.file;
-      } catch (e) { a.error = true; console.warn('image upload failed', e); }
+      try { a.file = await uploadImage(f); } catch (e) { a.error = true; console.warn('image upload failed', e); }
       a.pending = false; renderTray();
     }
   }
@@ -270,7 +273,13 @@ export function mountPrompt(root, { viewport, corner }) {
       ...(st ? [h('div.chat-foot', {}, st)] : []));
     return el;
   }
-  function agentEl(m) {
+  const newCard = (m, answered) => askCard(m, { answered, upload: uploadImage, post: (route, body) => store.post(route, body), context, onChange: () => { if (nearEnd()) scrollToEnd(); } });
+  function agentEl(m, answered) {
+    if (m.kind === 'ask' && m.ask) {
+      // in a past chat a card that was never answered shows as closed
+      const card = newCard(m, answered || { cancelled: true });
+      return h('div.chat-msg.chat-msg--agent.chat-msg--ask', {}, card.el);
+    }
     const cls = ['chat-msg', 'chat-msg--agent'];
     if (m.kind === 'error') cls.push('is-error');
     if (m.kind === 'working') cls.push('is-working');
@@ -287,11 +296,13 @@ export function mountPrompt(root, { viewport, corner }) {
     }
     return h('a.chat-img', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, h('img', { src: f.url, alt: f.name, loading: 'lazy' }));
   }
-  const peekText = (m) => m.text || (m.files?.length ? `Sent ${m.files.length === 1 ? `a ${m.files[0].type === 'video' ? 'video' : 'file'}` : `${m.files.length} files`}` : '');
+  const peekText = (m) => m.kind === 'ask' ? `Has a question: ${m.ask?.questions?.[0]?.q || m.text}` : m.text || (m.files?.length ? `Sent ${m.files.length === 1 ? `a ${m.files[0].type === 'video' ? 'video' : 'file'}` : `${m.files.length} files`}` : '');
   // Prompts and replies in the order they happened.
   const merge = (ps = [], ms = []) => [...ps.map((p) => ({ at: p.at, p })), ...ms.map((m) => ({ at: m.at, m }))].sort((a, b) => a.at - b.at);
 
   function renderPrompt(p) {
+    // the answers to a question card show in the card, not as a message of yours
+    if (p.ask && asks.has(p.ask)) { if (!items.has(p.id)) { items.set(p.id, asks.get(p.ask).el); asks.get(p.ask).done(p); } return; }
     let el = items.get(p.id);
     const stick = nearEnd();
     if (!el) {
@@ -320,6 +331,17 @@ export function mountPrompt(root, { viewport, corner }) {
 
   function renderMessage(m, live = true) {
     const stick = nearEnd();
+    if (m.kind === 'ask' && m.ask) {
+      const card = newCard(m, null);
+      asks.set(m.ask.id, card);
+      thread.append(h('div.chat-msg.chat-msg--agent.chat-msg--ask', {}, card.el));
+      // a question needs an answer: bring the chat up rather than leave it behind a badge
+      if (live && !open) setOpen(true);
+      if (live) requestAnimationFrame(() => card.focus());
+      empty.remove();
+      scrollToEnd();
+      return;
+    }
     thread.append(agentEl(m));
     empty.remove();
     if (!open && live) {
@@ -332,7 +354,7 @@ export function mountPrompt(root, { viewport, corner }) {
   store.on('prompt', (p) => { prompts.set(p.id, p); renderPrompt(p); });
   store.on('say', (m) => renderMessage(m));
   store.on('history', ({ prompts: ps = [], messages: ms = [] }) => {
-    thread.replaceChildren(); items.clear(); prompts.clear();
+    thread.replaceChildren(); items.clear(); prompts.clear(); asks.clear();
     for (const p of ps) prompts.set(p.id, p);
     const all = merge(ps, ms).slice(-200);
     if (!all.length) thread.append(empty);
@@ -380,7 +402,7 @@ export function mountPrompt(root, { viewport, corner }) {
     if (!chat) { past.replaceChildren(pastBar('Past chats', showList, 'All chats'), h('div.chat-past-note', {}, 'This chat could not be loaded.')); return; }
     const log = h('div.chat-past-log', { role: 'log' },
       h('div.chat-past-date', {}, when(chat.startedAt)),
-      ...merge(chat.prompts, chat.messages).map((x) => x.p ? fillPrompt(h('div.chat-msg.chat-msg--user'), x.p) : agentEl(x.m)));
+      ...merge(chat.prompts, chat.messages).filter((x) => !(x.p?.ask && chat.messages.some((m) => m.ask?.id === x.p.ask))).map((x) => x.p ? fillPrompt(h('div.chat-msg.chat-msg--user'), x.p) : agentEl(x.m, chat.prompts.find((p) => p.ask && p.ask === x.m.ask?.id))));
     past.replaceChildren(pastBar(chat.title, showList, 'All chats'), log);
     past.scrollTop = 0;
   }

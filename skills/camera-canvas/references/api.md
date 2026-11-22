@@ -143,6 +143,51 @@ lens). Also the objects that move during the shot and which seconds of the audio
 `canvas say "text" --attach file[,file…]` puts videos (mp4, webm, mov) or images on a reply; a video plays in
 the chat. The text is optional with a file. Files are copied to `.canvas/uploads/`.
 
+## Question cards and keys
+
+`canvas ask <card.json | - | '{…}'> [--reply id] [--title "…"]` asks the user in the chat with a card instead of
+a paragraph. The questions show one at a time; when the last is answered the card folds into a summary and the
+answers arrive as one prompt (`canvas wait` or the Stop hook), marked `ask`. A card:
+
+```json
+{ "title": "Render with Comfy", "questions": [
+  { "id": "look", "q": "What should set the look?", "note": "one short line",
+    "options": [{ "value": "images", "label": "Reference images", "note": "optional second line" }, "Describe it"],
+    "other": "Something else" },
+  { "id": "refs", "q": "Add your reference images", "type": "images", "max": 4, "when": { "look": "images" } },
+  { "id": "notes", "q": "Anything to add?", "type": "text", "optional": true },
+  { "id": "key", "q": "Comfy API key", "type": "secret", "name": "COMFY_API_KEY" },
+  { "id": "prompt", "q": "Check the prompt", "type": "review", "file": "renders/x/prompt.txt" },
+  { "id": "go", "q": "Ready to render?", "rows": [["Shot", "shot-4 · 1.96s"], ["Cost", "about 170 credits"]],
+    "options": ["Render", "Not yet"] } ] }
+```
+
+- `type`: `choice` (has `options`; `multi` for several, `other` adds a free-text answer), `text`, `images`
+  (`max`, default 4), `review` or `secret`. Left out, it is `choice` with options, `secret` with a `name`,
+  `review` with a `body` or `file`, else `text`.
+- `review` shows a longer text in full (`body`, or `file`: a path the CLI reads; up to 20,000 characters) for
+  the user to check before you use it. They can approve it, edit it in place, or write what to change. The
+  answer's `value` is `approved`, `edited` (with their `text`: use it exactly) or `feedback` (with `feedback`,
+  and `text` if they also edited: not approved, so revise and show it again). `when` can test it:
+  `"when": { "prompt": ["approved", "edited"] }`.
+- `rows` puts a short label / value summary above the answer: use it for a confirm step instead of prose.
+- `optional` adds Skip. `when` asks a question only if an earlier answer matches (`{ id: value | [values] }`).
+- At most 12 questions and 8 options. Keep `q` under about 8 words; put detail in `note`.
+- One quick question without a file: `canvas ask "Run it?" --options "Run|Not yet"` (`--multi`, `--other`),
+  `canvas ask "Add a frame" --images`, `canvas ask "Check the prompt" --review prompt.txt`,
+  `canvas ask "Comfy API key" --secret COMFY_API_KEY` (`--optional`, `--note`).
+- The prompt that comes back reads `Answers to "<title>": - <id> (<question>): <answer>`, with image paths for
+  image questions; `--json` on `canvas wait` adds `answers: { id: { value | values | text | feedback | images | saved | skipped } }`.
+  If the user closes the card the prompt says so (`cancelled`); ask in plain words instead.
+- Asking marks the prompt it answers done (the turn is the user's). Ask, then end your turn or `canvas wait`.
+
+A `secret` question is a key block: a password field whose value goes from the tab to the server and into
+`~/.blockout/secrets.json` (owner-only; `CANVAS_SECRETS` moves it). It is never in the answers, the chat log
+or any command output. You are told only that `NAME` is saved. Use it with
+`canvas secret run NAME[,NAME2] -- <command …>`, which runs the command with the keys as environment
+variables and masks their values in its output. `canvas secret list` shows names, `canvas secret rm NAME`
+removes one. Never read the secrets file, echo a key or ask the user to type one into the chat.
+
 ## Shots
 
 `canvas shots`, `canvas shot <id|name|n>` (switch), `canvas shot-add [--name] [--from id] [--blank] [--stay] [--start s] [--length s] [--frame]`,
@@ -170,6 +215,10 @@ the chat. The text is optional with a file. Files are copied to `.canvas/uploads
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |
 | `POST /api/chat/file?name=render.mp4` | raw bytes of a video or image | `{ file, name, type, url, path }`: for `files` on `/api/say` |
 | `POST /api/say` | `{ text, reply?, done?, files?: [{ file, name? }] }` | the reply, with any attached files |
+| `POST /api/ask` | `{ title?, questions, reply? }` | a question card in the chat: `{ id, questions }` |
+| `POST /api/ask/answer` | `{ id, answers, cancelled?, context? }` (sent by the tab) | the answers as a prompt: `{ prompt }`; 409 if already answered |
+| `POST /api/secret` | `{ name, value }` (sent by the tab's key block) | `{ name }`; the value is never returned by any route |
+| `GET /api/secrets` | | `{ secrets: [{ name, savedAt }] }` |
 | `POST /api/chat/new` | | archives the open chat to `.canvas/chats/<id>.json`; `{ kept, archived }` |
 | `GET /api/chats` | | past chats, newest first: `{ chats: [{ id, title, startedAt, endedAt, count }] }` |
 | `GET /api/chats/get?id=<id>` | | `{ chat: { id, title, startedAt, endedAt, prompts, messages } }` |

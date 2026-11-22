@@ -1,0 +1,38 @@
+References: Follow the body pose, blocking, camera path, speed and timing of @video_1 exactly, and use the audio track of @video_1 as the soundtrack. @image_1 defines the young woman's appearance and outfit, the cluttered bedroom environment, and the flash-film color palette. Head and gaze direction are NOT taken from @video_1: see Head tracking.
+
+Summary: One continuous, unbroken take, 10.5 seconds. The camera flies around a young woman seated in a green leather armchair in a poster-covered bedroom, snapping between hovering positions in time with the music of @video_1, while her face stays locked to the lens throughout, ending on a wink, on 35mm flash film.
+
+Subject: The woman from @image_1 with long wavy black hair and wispy bangs, wearing a white cropped graphic tee, dark-wash flared jeans with colorful patches down one leg, stacked silver bracelets, rings, a silver necklace, and chunky silver sneakers, seated in a tufted green leather armchair.
+
+Head tracking: Her head and eyes follow the camera lens continuously as it flies around her, like she is tracking a drone. Her head turns and tilts in real time with the camera's travel, so her face is toward the lens with direct eye contact at every hover and during every move. Her body holds the pose from @video_1. She never looks away, and never faces forward when the camera is to her side or behind her.
+
+Camera path and sync (single continuous shot, no cuts):
+0–1.19s: Wide shot of the whole room, armchair centered, silver stool in the foreground, drifting forward very slowly in near silence. Click 1 sounds at 1.06s while the camera is still wide.
+1.19–1.29s: First snap forward, stopping abruptly at a medium-wide.
+1.29–1.45s: The camera sticks, frozen on the medium-wide, as click 2 sounds at 1.37s.
+1.45–1.58s: Second snap forward, stopping at a medium frontal from slightly below.
+1.60s: The music drops the instant the camera has landed. Hold to 1.78s.
+1.78–1.98s: Whips down and around to a low side angle behind the armrest, lava lamp behind her. Hold to 2.34s.
+2.34–2.54s: Rises and swings to a high-angle full-body frontal. Hold to 2.93s.
+2.93–3.03s: Short drop back to an eye-level full-body frontal. Hold to 3.43s.
+3.43–3.65s: Arcs up over her shoulder to a high rear three-quarter; she looks back over her shoulder into the lens. Hold to 3.95s.
+3.95–4.23s: Slides further behind her, wall posters in view. Hold to 4.52s.
+4.52–4.64s: Whips around the front into a tight head-and-shoulders close-up. Hold to 5.08s.
+5.08–5.23s: Dives to floor level directly in front, looking up at her, hands raised at her sides. Hold to 5.61s.
+5.61–5.78s: Lifts to a medium three-quarter, forearm across her lap. Hold to 6.09s.
+6.09–6.30s: Banks up into a steep tilted overhead as she leans forward toward her knees, face tipped up to the lens. Hold to 6.63s.
+6.63–6.86s: Sweeps down to a shoulder-height side position behind the armrest, bed in the background. Hold to 7.18s.
+7.18–7.38s: Pulls out to a low tilted wide on her left side, full body. Hold to 7.75s.
+7.75–7.92s: Slides across to a low wide frontal, shooting through the silver stool. Hold to 8.21s.
+8.21–8.47s: Climbs and swings in one long move to a high tilted wide from the corner of the room on her right. Hold to 8.84s.
+8.84–9.03s: Drops to floor level across the rug, full body three-quarter. Hold to 9.34s.
+9.34–9.63s: Pushes in and settles into a medium three-quarter from slightly below, forearm across her lap.
+9.63–10.5s: The camera is completely locked off, no drift. She holds eye contact, then gives one slow, deliberate wink with her left eye and a slight smirk exactly on the hit at 10.25s, and holds the look to the last frame.
+
+Camera: Exactly replicate the camera trajectory, speed, heights, distances, roll and tilted horizons of @video_1. Snap-and-stick motion: each move is an extremely fast whip of 0.1 to 0.3 seconds with motion blur, ending in an abrupt dead stop, followed by a brief hover with only slight drift. From 1.78s on, the middle of every whip lands on a beat of the track, one whip per beat, about 112 BPM. The room and subject remain continuous through every move. No cuts, no jump cuts, no fades, no dissolves, no speed ramps or zooms that are not in @video_1.
+
+Style: 35mm point-and-shoot film realism matching @image_1: direct on-camera flash look, hard shadows, slight grain, saturated greens and oranges, warm skin tones, cluttered lived-in room.
+
+Audio: Use the original audio track of @video_1 unchanged, at its original timing and full 10.5-second length: near silence for the first second, two sharp clicks at 1.06s and 1.37s, the music drop at 1.60s, then the beat through to the end. No added sound effects, no additional music, no dialogue.
+
+Consistency: Her face, hair, outfit, jewelry and sneakers from @image_1 remain identical from every angle; the armchair, patterned cushion, posters, lava lamp, stacked magazines and Persian rug stay fixed in the same positions as the camera moves around them. Expression stays neutral and relaxed until the final wink; both eyes open before it. No subtitles, no on-screen text, no watermark.

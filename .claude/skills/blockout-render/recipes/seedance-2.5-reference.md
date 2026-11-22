@@ -14,6 +14,10 @@ workflow. A paid partner node: it spends Comfy credits on cloud and on a local C
   (`get_node ByteDance2ReferenceNodeV2`, or `comfy nodes show ByteDance2ReferenceNodeV2`) for the allowed
   durations, ratios, resolutions and how many references it takes, and add them to this file's copy in the
   user's recipes folder.
-- **Prompt**: the long sectioned form in references/prompt.md, with a timed "Camera path and sync" list.
-  The recipe's prompt is a template with `[PLACEHOLDERS]`; `fill` warns while any is left.
+- **Prompt**: `seedance-2.5-reference.prompt.txt` is the user's full original prompt for this workflow
+  (a 10.5 second take around a woman in an armchair, cut to music). Read all of it and adapt it to the new
+  shot at the same level of detail, following references/prompt.md. In the original the soundtrack is the
+  audio of `@video_1` and there is one image; here the blockout is muted and the audio is `@audio_1`, so
+  reword those lines. The prompt inside the JSON is only a `[PLACEHOLDER]` skeleton so the original is never
+  submitted by mistake; `fill` warns while any placeholder is left.
 - **Loader names** are `REPLACE-…` placeholders. Fill them with the names the upload returns.

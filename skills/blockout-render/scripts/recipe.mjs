@@ -212,7 +212,8 @@ export function fillRecipe(recipe, values = {}) {
   return { workflow: wf, changes, warnings, slots: after };
 }
 
-/** Recipes in a folder: every <name>.json that is an API-format workflow, with its notes file if any. */
+/** Recipes in a folder: every <name>.json that is an API-format workflow, with its notes file (<name>.md) and
+ *  the example prompt to adapt (<name>.prompt.txt: the prompt the workflow was saved with), if any. */
 export function listRecipes(dir) {
   if (!dir || !fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().flatMap((f) => {
@@ -220,7 +221,8 @@ export function listRecipes(dir) {
     try {
       const s = findSlots(JSON.parse(fs.readFileSync(file, 'utf8')));
       const notes = file.replace(/\.json$/, '.md');
-      return [{ name: f.replace(/\.json$/, ''), file, notes: fs.existsSync(notes) ? notes : null, model: s.model?.class || null, video: !!s.video, images: s.images.length, audio: !!s.audio }];
+      const example = file.replace(/\.json$/, '.prompt.txt');
+      return [{ name: f.replace(/\.json$/, ''), file, notes: fs.existsSync(notes) ? notes : null, example: fs.existsSync(example) ? example : null, model: s.model?.class || null, video: !!s.video, images: s.images.length, audio: !!s.audio }];
     } catch { return []; }
   });
 }
@@ -256,7 +258,7 @@ const readJson = (file) => { if (!file) throw new Error('which workflow? pass a 
 const commands = {
   list({ flags }) {
     const mine = flags.root && flags.root !== true ? listRecipes(path.join(String(flags.root), 'recipes')) : [];
-    const line = (r) => `  ${r.name}  (${r.model || 'no model node found'}; video ${r.video ? 'yes' : 'no'}, images ${r.images}, audio ${r.audio ? 'yes' : 'no'})\n    ${r.file}${r.notes ? `\n    notes: ${r.notes}` : ''}`;
+    const line = (r) => `  ${r.name}  (${r.model || 'no model node found'}; video ${r.video ? 'yes' : 'no'}, images ${r.images}, audio ${r.audio ? 'yes' : 'no'})\n    ${r.file}${r.notes ? `\n    notes: ${r.notes}` : ''}${r.example ? `\n    example prompt (read it in full and adapt it): ${r.example}` : ''}`;
     console.log([`your recipes${flags.root && flags.root !== true ? ` (${path.join(String(flags.root), 'recipes')})` : ' (pass --root <scene folder> to list them)'}:`, ...(mine.length ? mine.map(line) : ['  none yet']),
       'built in:', ...listRecipes(BUILTIN).map(line)].join('\n'));
   },

@@ -12,6 +12,8 @@ import { PRIMITIVES, MOVES, createDoc, shotTimeline } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
 import { shotBrief, briefText } from '../core/brief.js';
 import { dataDir } from '../server/paths.mjs';
+import { normalizeAsk } from '../core/ask.js';
+import { readSecrets, listSecrets, removeSecret, secretsPath } from '../server/secrets.mjs';
 
 if (Number(process.versions.node.split('.')[0]) < 20) {
   console.error(`error: Blockout needs Node 20 or newer (this is ${process.version}). Install it from https://nodejs.org and try again.`);
@@ -133,6 +135,15 @@ Prompts from the canvas
   canvas say "text" [--reply <promptId>] [--working]   message shown in the canvas
              [--attach file[,file…]]        ...carrying videos or images that play / show in the chat
                                             (mp4, webm, mov, png, jpg, webp, gif; text is optional then)
+  canvas ask <card.json | - | '{…}'> [--reply <promptId>] [--title "…"]
+                                            ask the user in the chat with a question card: the questions show one
+                                            at a time (choices, text, images, a text to review, an API key) and the answers come
+                                            back as one prompt (canvas wait / the Stop hook). See references/api.md
+  canvas ask "Question?" --options "A|B|C" [--multi] [--other] | --images | --secret NAME | --review file.txt [--optional]
+                                            the same for one quick question
+  canvas secret list | rm NAME              API keys the user saved through a key block (names only)
+  canvas secret run NAME[,NAME2] -- <command …>   run a command with those keys as environment variables;
+                                            the values are never printed (they are masked in its output)
   canvas listen on|off                      keep a Claude Code session waiting for canvas prompts (Stop hook)
 
 Save and load (scenes/saved/<name>.json)
@@ -149,7 +160,7 @@ Raw / batch
 
 // ---------- helpers ----------
 // Flags that never take a value, so `say --working "text"` keeps "text" as the message.
-const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all']);
+const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all', 'images', 'multi', 'optional']);
 
 function parseArgs(argv) {
   const pos = [], flags = {};
@@ -283,7 +294,8 @@ function formatPrompt(p) {
   if (c.selection?.length) lines.push(`selected: ${c.selection.join(' | ')}`);
   if (c.time != null) lines.push(`${c.shot ? `shot: ${c.shot}, ` : ''}playhead: ${Number(c.time).toFixed(2)}s of ${c.duration}s, view: ${c.view}${c.key ? `, key: ${c.key}` : ''}`);
   if (c.camera) lines.push(`camera: pos=${c.camera.position.map((v) => +v.toFixed(2)).join(',')} target=${c.camera.target.map((v) => +v.toFixed(2)).join(',')} fov=${+c.camera.fov.toFixed(1)}`);
-  lines.push(`→ do it with canvas commands, then: canvas say --reply ${p.id} "<one line on what changed>"`);
+  lines.push(p.ask ? `→ these answer your question card ${p.ask}. Carry on with what you were doing, then: canvas say --reply ${p.id} "<one line>"`
+    : `→ do it with canvas commands, then: canvas say --reply ${p.id} "<one line on what changed>"`);
   lines.push('→ then run "canvas wait" again so the next canvas prompt reaches you (until the user says stop).');
   return lines.join('\n');
 }
@@ -721,6 +733,65 @@ const commands = {
     }
     await api('POST', '/api/say', { text, files, reply: flags.reply, done: !flags.working, kind: flags.kind || (flags.working ? 'working' : 'info') });
     out(files.length ? `sent with ${files.length} attachment${files.length === 1 ? '' : 's'}` : 'sent');
+  },
+  async ask({ pos, flags }) {
+    let card;
+    const src = pos.join(' ');
+    if (src === '-') card = JSON.parse(await readStdin());
+    else if (/^\s*[[{]/.test(src)) card = JSON.parse(src);
+    else if (pos.length === 1 && /\.json$/i.test(src) && fs.existsSync(src)) card = JSON.parse(fs.readFileSync(src, 'utf8'));
+    else if (src) {
+      const q = { id: 'answer', q: src };
+      if (flags.options && flags.options !== true) { q.options = String(flags.options).split('|').map((x) => x.trim()).filter(Boolean); if (flags.multi) q.multi = true; if (flags.other) q.other = flags.other; }
+      else if (flags.images) q.type = 'images';
+      else if (flags.secret && flags.secret !== true) { q.type = 'secret'; q.name = String(flags.secret); }
+      else if (flags.review && flags.review !== true) { q.type = 'review'; q.file = String(flags.review); }
+      if (flags.optional) q.optional = true;
+      if (flags.note && flags.note !== true) q.note = String(flags.note);
+      card = { questions: [q] };
+    } else throw new Error('usage: canvas ask <card.json | - | \'{"questions":[…]}\'>   or   canvas ask "Question?" --options "A|B"');
+    if (Array.isArray(card)) card = { questions: card };
+    if (flags.title && flags.title !== true) card.title = String(flags.title);
+    // a review question can name the file to show ("file": "prompt.txt") instead of carrying the text
+    for (const q of card.questions || []) if (q && q.file && q.body == null) {
+      if (!fs.existsSync(q.file)) throw new Error(`question "${q.id || q.q}": no such file: ${q.file}`);
+      q.body = fs.readFileSync(q.file, 'utf8'); q.type ||= 'review';
+    }
+    normalizeAsk(card); // fail here with a clear message, before anything shows in the chat
+    const r = await api('POST', '/api/ask', { ...card, reply: flags.reply });
+    out(`asked ${r.questions} question${r.questions === 1 ? '' : 's'} (${r.id}). The answers arrive as the next canvas prompt: end your turn, or run "canvas wait".`);
+  },
+  async secret() {
+    const argv = process.argv.slice(3);
+    const sub = argv[0];
+    if (sub === 'list' || !sub) {
+      const all = listSecrets();
+      return out(all.length ? all.map((x) => `${x.name}  saved ${x.savedAt ? new Date(x.savedAt).toISOString().slice(0, 10) : '?'}`).join('\n') : 'no keys saved yet (ask for one with a key block: canvas ask "…" --secret NAME)');
+    }
+    if (sub === 'rm') {
+      if (!argv[1]) throw new Error('usage: canvas secret rm NAME');
+      return out(removeSecret(argv[1]) ? `removed ${argv[1]}` : `no key named ${argv[1]}`);
+    }
+    if (sub === 'path') return out(secretsPath());
+    if (sub !== 'run') throw new Error('usage: canvas secret list | rm NAME | run NAME[,NAME2] -- <command …>');
+    const dash = argv.indexOf('--');
+    const names = (argv[1] || '').split(',').filter(Boolean);
+    const command = dash >= 0 ? argv.slice(dash + 1) : [];
+    if (!names.length || dash !== 2 || !command.length) throw new Error('usage: canvas secret run NAME[,NAME2] -- <command …>');
+    const all = readSecrets();
+    const env = { ...process.env };
+    const hide = [];
+    for (const n of names) {
+      if (!all[n]?.value) throw new Error(`no key named ${n} is saved. Ask the user for it with a key block: canvas ask "…" --secret ${n}`);
+      env[n] = all[n].value; hide.push([all[n].value, `[${n} hidden]`]);
+    }
+    // The command's output goes back to the agent, so the values are masked in it, line by line.
+    const mask = (text) => hide.reduce((t, [v, label]) => t.split(v).join(label), text);
+    const child = spawn(command[0], command.slice(1), { env, stdio: ['inherit', 'pipe', 'pipe'] });
+    const pipe = (from, to) => { let buf = ''; from.setEncoding('utf8'); from.on('data', (d) => { buf += d; const i = buf.lastIndexOf('\n'); if (i >= 0) { to.write(mask(buf.slice(0, i + 1))); buf = buf.slice(i + 1); } }); from.on('end', () => { if (buf) to.write(mask(buf)); }); };
+    pipe(child.stdout, process.stdout); pipe(child.stderr, process.stderr);
+    const code = await new Promise((res, rej) => { child.on('error', (e) => rej(new Error(`could not run ${command[0]}: ${e.message}`))); child.on('close', (c) => res(c ?? 1)); });
+    process.exitCode = code;
   },
   async listen({ pos }) {
     const on = (pos[0] || 'on') !== 'off';
