@@ -24,14 +24,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * How this server was started, so the empty chat can say the right next step: by Claude Code (its Bash
  * tool sets CLAUDECODE), by Codex (CODEX_* variables), or by hand from a terminal; whether the
- * blockout-agent plugin is installed (so /blockout-agent:start works); and whether this is a git checkout
+ * blockout plugin is installed (so /blockout:start works); and whether this is a git checkout
  * (so "listen to the canvas" works for an agent started in it, through the repo's own hooks).
  */
 export function launchInfo(env = process.env, root = ROOT) {
   const by = env.CLAUDECODE || env.CLAUDE_CODE_SESSION_ID ? 'claude' : Object.keys(env).some((k) => k.startsWith('CODEX_')) ? 'codex' : 'terminal';
   let plugin = !!env.CLAUDE_PLUGIN_ROOT || root.split(path.sep).join('/').includes('/.claude/plugins/');
   if (!plugin) {
-    try { plugin = fs.readFileSync(path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'plugins', 'installed_plugins.json'), 'utf8').includes('"blockout-agent@'); } catch {}
+    try { plugin = fs.readFileSync(path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'plugins', 'installed_plugins.json'), 'utf8').includes('"blockout@'); } catch {}
   }
   // the folder as the user would type it: ~/... when it is under home and needs no quoting
   const home = os.homedir(), rel = root.startsWith(home + path.sep) ? root.slice(home.length + 1) : null;

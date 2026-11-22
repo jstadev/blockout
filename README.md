@@ -20,23 +20,26 @@ Requires Node 20+ and a Chromium-based browser or Safari 17+ (for WebCodecs vide
 Install the plugin once, from any Claude Code session:
 
 ```
-/plugin marketplace add shrimbly/blockout-agent     # or the path to a local copy of this repo
-/plugin install blockout-agent@blockout-agent
+/plugin marketplace add shrimbly/blockout     # or the path to a local copy of this repo
+/plugin install blockout@blockout
 ```
 
-Then, in any folder, run **`/blockout-agent:start`** (optionally followed by what to block out, e.g.
-`/blockout-agent:start a lighthouse on a cliff, slow orbit`). Claude starts the server, opens the canvas in
+Then, in any folder, run **`/blockout:start`** (optionally followed by what to block out, e.g.
+`/blockout:start a lighthouse on a cliff, slow orbit`). Claude starts the server, opens the canvas in
 your browser, starts listening to it and asks what you want to block out. Answer in the terminal or in the
 canvas: it is the same conversation. That's the whole setup; nothing to clone, install or keep open.
 
-The plugin brings the `/blockout-agent:start` command, the `camera-canvas` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
+The plugin brings the `/blockout:start` command, the `camera-canvas` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
 and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/` (or `~/Camera Canvas/scenes/` if you used it before the rename), so
 plugin updates never touch them (`CANVAS_DATA` moves them).
 
+Installed it before as `blockout-agent`? The plugin is now `blockout`: run `/plugin uninstall blockout-agent@blockout-agent`
+and `/plugin marketplace remove blockout-agent`, then the two commands above.
+
 **Updates.** Claude Code doesn't auto-update plugins from third-party marketplaces unless you turn it
-on: run `/plugin`, open **Marketplaces**, select `blockout-agent` and choose **Enable auto-update**. Or
-update by hand with `/plugin marketplace update blockout-agent`. The plugin has no fixed version, so
-every new commit on `main` is an update. The next `/blockout-agent:start` restarts the canvas server on
+on: run `/plugin`, open **Marketplaces**, select `blockout` and choose **Enable auto-update**. Or
+update by hand with `/plugin marketplace update blockout`. The plugin has no fixed version, so
+every new commit on `main` is an update. The next `/blockout:start` restarts the canvas server on
 the new copy.
 
 Listening belongs to the session that turned it on: the plugin's hooks run in every Claude Code
