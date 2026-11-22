@@ -59,7 +59,7 @@ virtualenv). It needs a ComfyUI workspace (`comfy install`, or `comfy set-defaul
 | download | `fetch_outputs(prompt_id, out_dir)` into the render folder |
 
 Local input names are the plain file names in `input/`. Give the inputs names that will not collide, for
-example `<scene>-<shot>-blockout.mp4`. A partner node needs the user to be signed in to their Comfy account
+example `<scene>-timeline-blockout.mp4`. A partner node needs the user to be signed in to their Comfy account
 in that ComfyUI; if the run fails with a sign-in or key error, ask them to sign in there. Do not ask for
 the key in chat. When the CLI itself needs a key, ask with a key block and pass it with
 `canvas secret run` (references/questions.md, "Keys").

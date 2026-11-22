@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PRIMITIVES, MOVES, createDoc, shotTimeline } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
-import { shotBrief, briefText } from '../core/brief.js';
+import { shotBrief, briefText, timelineBrief, timelineText } from '../core/brief.js';
 import { dataDir } from '../server/paths.mjs';
 import { normalizeAsk } from '../core/ask.js';
 import { readSecrets, listSecrets, removeSecret, secretsPath } from '../server/secrets.mjs';
@@ -35,12 +35,14 @@ Server
 Read the scene
   canvas ls [--prefix p]                    one line per object and camera key (start here); --prefix: only ids starting p
   canvas doc                                the full scene JSON
-  canvas brief [--shot id | --all] [--beats] [--json]
+  canvas brief [--shot id | --all | --timeline] [--beats] [--json]
                                             the shot's camera work in words: each move between keys with its
                                             times, pace and ease, how each framing reads (size, height, side,
                                             lens), objects that move, and the part of the audio it plays.
                                             For describing a shot, e.g. in a prompt for a video model.
                                             --all: every shot; --beats: add tempo and beat times (needs the tab)
+                                            --timeline: the whole timeline as one video, as canvas export renders
+                                            it: every shot with its cuts, all times in seconds of that video
 
 Objects (meters, Y up, pivot at bottom centre, rotation in degrees)
   canvas add <type> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s|x,y,z]
@@ -160,7 +162,7 @@ Raw / batch
 
 // ---------- helpers ----------
 // Flags that never take a value, so `say --working "text"` keeps "text" as the message.
-const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all', 'images', 'multi', 'optional']);
+const BOOLEAN_FLAGS = new Set(['working', 'json', 'retime', 'keys', 'from-view', 'open', 'no-open', 'help', 'overwrite', 'fit', 'clear', 'beats', 'sequence', 'blank', 'stay', 'all', 'timeline', 'images', 'multi', 'optional']);
 
 function parseArgs(argv) {
   const pos = [], flags = {};
@@ -430,6 +432,16 @@ const commands = {
   // The camera work of a shot (or every shot) in words and numbers, computed from the scene doc.
   async brief({ flags }) {
     const [{ doc }, st] = await Promise.all([api('GET', '/api/doc'), api('GET', '/api/status')]);
+    if (flags.timeline) {
+      // the whole timeline as one video, as `canvas export` renders it: times are seconds of that video
+      const t = timelineBrief(doc);
+      const dir = path.join(path.dirname(st.scene), 'audio');
+      for (const b of t.shots) {
+        if (b.audio) b.audio.path = path.join(dir, b.audio.file);
+        if (flags.beats && b.shot.active && b.audio && !b.audio.silent) { const info = await rpc('audio', { beats: true }, 60000); b.beats = { tempo: info.tempo, beat: info.beat, beats: info.beats, onsets: info.onsets }; }
+      }
+      return out(flags.json ? t : timelineText(t));
+    }
     const ids = flags.all ? doc.shots.map((s) => s.id) : [SHOT ?? doc.shot];
     const briefs = [];
     for (const id of ids) {

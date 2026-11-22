@@ -1,12 +1,12 @@
 ---
 name: blockout-render
-description: Turn a Blockout export into a finished shot by running a ComfyUI reference-to-video workflow (Seedance 2.5 or any saved "recipe") on Comfy Cloud or the user's local ComfyUI. Use only when the user asks to render, generate or "run through Comfy / Seedance" a Blockout shot, asks for another take of a render, or asks to save or adapt a ComfyUI workflow for Blockout. Not for building the scene or camera (that is camera-canvas), and not for general ComfyUI work.
+description: Turn a Blockout export (the whole timeline, every shot, as one reference video) into a finished video by running a ComfyUI reference-to-video workflow (Seedance 2.5 or any saved "recipe") on Comfy Cloud or the user's local ComfyUI. Use only when the user asks to render, generate or "run through Comfy / Seedance" a Blockout timeline or shot, asks for another take of a render, or asks to save or adapt a ComfyUI workflow for Blockout. Not for building the scene or camera (that is camera-canvas), and not for general ComfyUI work.
 ---
 
 # Blockout render
 
-An optional step after the blockout: the shot's export goes into a ComfyUI reference-to-video workflow as
-the motion reference, next to the user's reference images and audio, and a finished video comes back into
+An optional step after the blockout: the export of the **whole timeline** (every shot, cut together, as
+`canvas export` makes it) goes into a ComfyUI reference-to-video workflow as one motion reference, next to the user's reference images and audio, and a finished video comes back into
 the Blockout chat. Blockout itself has no ComfyUI code. You do the adapting, with the ComfyUI tools the
 user already has.
 
@@ -38,7 +38,7 @@ workflow JSON and never talks to ComfyUI.
 ### 1. Gather
 
 The request usually comes from **Render with Comfy**, in the menu on the Export button's caret. It opens the chat
-with "Render this shot with ComfyUI (blockout-render skill)." started. Most people send just that, so
+with "Render this timeline with ComfyUI (blockout-render skill)." started. Most people send just that, so
 expect to ask for the rest. A request typed by hand is the same thing.
 
 Work out everything you can without asking, in this order: what the request says, files attached to it,
@@ -49,8 +49,12 @@ and a key block when the runner needs a key that `canvas secret list` does not s
 skip the card. Do the free work (export, brief, render folder) while the user answers.
 
 
-- The shot: the one the prompt came from (`shot:` in the canvas prompt), the one the user names, or the
-  active one. One render per shot. Render a whole sequence as one video only if the user asks for that.
+- What to render: **the whole timeline, all shots, as one reference video and one render.** The shots are
+  one piece: the model gets the cuts from the blockout and the prompt, so the people, the set and the look
+  stay the same across them. Never plan a render per shot, never ask which shot, and never offer to
+  render shots separately or to merge them: the timeline is already one video. Render a single shot only
+  when the user asks for that shot by name ("render just shot 2"); then use `--shot <id>` everywhere
+  below in place of the timeline.
 - The reference images: the files attached to the canvas prompt or to the card's answers (their paths are
   in the prompt), or paths the user gives. Open each one so you know what it shows. Ask which is which
   only if you cannot tell. No images is fine: the prompt then carries the look.
@@ -60,22 +64,25 @@ skip the card. Do the free work (export, brief, render folder) while the user an
 ### 2. Brief and export
 
 ```bash
-node bin/canvas.mjs brief --shot <id> --beats     # camera moves with times, framings, moving objects, audio, beats
-node bin/canvas.mjs export --shot <id>            # the blockout mp4; prints its path
+node bin/canvas.mjs brief --timeline      # every shot in order with its cuts: moves, framings, moving objects, audio
+node bin/canvas.mjs export                # the blockout mp4 of the whole timeline, with the audio; prints its path
 ```
 
-`--beats` needs the tab open on that shot and an audio track; leave it off otherwise. `brief --json` has
-every number. Make the render folder and keep both there:
+`brief --timeline` gives every time in **seconds of the exported video**, with a `CUT at <t>s` line where
+each shot starts. Those are the times the prompt uses. `--json` has every number. For beat times add
+`--beats`: it covers the shot the tab is on, so for a timeline with music switch to each shot in turn
+(`canvas shot <id>`, then `brief --timeline --beats`) and keep the beat lines, which are already in video
+time. Make the render folder and keep both there:
 
 ```bash
-node <skill>/scripts/recipe.mjs folder --root <scene folder> --scene <scene name> --shot <id>
-# -> <scene folder>/renders/<scene>-<shot>-<date>-<time>/   copy the export in as blockout.mp4, the brief as brief.txt
+node <skill>/scripts/recipe.mjs folder --root <scene folder> --scene <scene name> --shot timeline
+# -> <scene folder>/renders/<scene>-timeline-<date>-<time>/   copy the export in as blockout.mp4, the brief as brief.txt
 ```
 
-If the scene has audio, the brief says which part of the file the shot plays (`audio: … = 3.00–13.50s of
-the file`) and where the file is. Cut that part for the audio slot:
-`ffmpeg -ss <fileFrom> -t <shot length> -i <audio file> -c copy <render folder>/audio.<ext>` (re-encode if
-`-c copy` fails). No audio on the shot: fill with `--audio none`.
+If the scene has audio, the export already carries it, laid out exactly as the timeline plays it. Take the
+audio slot from the export, not from the source file:
+`ffmpeg -i <render folder>/blockout.mp4 -vn -c copy <render folder>/audio.m4a` (re-encode if `-c copy`
+fails). No audio in the export: fill with `--audio none`.
 
 ### 3. Pick a recipe and fill it
 
@@ -97,16 +104,22 @@ following references/prompt.md. Then upload the inputs
 node <skill>/scripts/recipe.mjs fill <recipe.json> --out <render folder>/workflow.json \
   --video <uploaded blockout name> --image <uploaded image 1> --image <uploaded image 2> \
   --audio <uploaded audio name | none> --prompt-file <render folder>/prompt.txt \
-  --duration <whole seconds> --ratio <ratio from the brief> --prefix blockout/<scene>/<shot>
+  --duration <whole seconds> --ratio <ratio from the brief> --prefix blockout/<scene>/timeline
 ```
 
 Images go in the order the prompt names them (`@image_1`, `@image_2`, …). Fewer images than the recipe has
 slots removes the spare ones; more adds slots. `fill` prints every change and warns when the prompt names a
 reference the graph does not have, or a placeholder is left. Fix every warning before the plan.
 
-Duration: the shot length rounded up to a whole second, within what the model allows (the recipe notes, or
-ask the node: `get_node` / `comfy nodes show <class>`). A shot longer than the limit cannot be rendered in
-one go: tell the user and offer to cut the shot or render the first part.
+Duration: the timeline's length rounded up to a whole second, within what the model allows (the recipe
+notes, or ask the node: `get_node` / `comfy nodes show <class>`).
+
+- Shorter than the model's minimum: render the minimum, say in the prompt that the camera holds on the
+  last framing after the timeline ends, and trim the result back to the timeline's length afterwards. Do
+  this without asking; note it in one row of the confirm card (`["Length", "4s, trimmed to 2.94s"]`).
+- Longer than the model's maximum: it cannot be one render. Ask once, with a card: shorten the timeline,
+  or render it in parts split at cuts (cut `blockout.mp4` at the brief's cut times with ffmpeg, one prompt
+  per part with times restarting at 0, each part costing its own credits).
 
 ### 4. Review the prompt, confirm, then wait for go
 
@@ -117,8 +130,8 @@ then the plan as `rows` (at most five, a few words each, no tags, paths or seeds
 { "title": "Render with Comfy", "questions": [
   { "id": "prompt", "q": "Check the prompt", "type": "review", "file": "<render folder>/prompt.txt",
     "note": "This is what the model gets. Edit it here, or say what to change." },
-  { "id": "go", "q": "Ready to render <shot name>?", "when": { "prompt": ["approved", "edited"] },
-  "rows": [["Shot", "<shot> · <length>s"], ["Look", "<2 images: her, the room | from the prompt>"],
+  { "id": "go", "q": "Ready to render the timeline?", "when": { "prompt": ["approved", "edited"] },
+  "rows": [["Video", "<n> shots · <length>s"], ["Look", "<2 images: her, the room | from the prompt>"],
            ["Audio", "<track>, <from>–<to>s | none"], ["Output", "<resolution> · <ratio> · <model>"],
            ["Cost", "about <n> credits | no estimate"]],
   "options": [{ "value": "go", "label": "Render", "note": "Spends about <n> credits." }, "Not yet"],
@@ -140,7 +153,7 @@ Show the whole prompt every time it changes, and never a summary of it. A re-run
 
 Only `go` is a go. A typed change: make it, refill, and show the card again. "Not yet" or a closed card:
 reply in one line that it is ready when they are. Add a row only for something the user would not expect
-(the model renders 4s for a 1.96s shot: `["Length", "4s, the shortest it makes"]`). Everything else about
+(the model renders 4s for a 2.94s timeline: `["Length", "4s, trimmed to 2.94s"]`). Everything else about
 the run is in the render folder, not in the chat.
 
 Get the cost from `estimate_credits` when the cloud MCP is connected; otherwise the row says no estimate.
@@ -167,7 +180,7 @@ Put the result in the render folder as `render.mp4`, with `workflow.json`, `prom
 
 ```json
 { "recipe": "seedance-2.5-reference", "where": "cloud", "runner": "comfy-cloud-mcp", "job": "<id>",
-  "shot": "shot-2", "seed": 1, "duration": 11, "ratio": "9:16", "seconds": 220, "credits": null }
+  "shots": "all", "seed": 1, "duration": 11, "ratio": "9:16", "seconds": 220, "credits": null }
 ```
 
 Write `{ "where": …, "runner": …, "recipe": … }` to `<scene folder>/renders/settings.json` so the next

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
-import { shotBrief, briefText, describeMove, ratioOf } from '../core/brief.js';
+import { shotBrief, briefText, describeMove, ratioOf, timelineBrief, timelineText } from '../core/brief.js';
 import { findSlots, fillRecipe, listRecipes, BUILTIN } from '../skills/blockout-render/scripts/recipe.mjs';
 import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments, shudderOffset } from '../core/curves.js';
 
@@ -738,6 +738,16 @@ test('brief: a shot\'s camera work in words, with times, framings, moving object
   ({ doc } = applyOps(doc, [{ op: 'shot.add', name: 'two', start: 2, duration: 2 }]));
   const two = shotBrief(doc, 'two');
   assert.deepEqual(two.shot.sequence, [5, 7]);
+  // the whole timeline as one video: both shots, a cut between them, every time in seconds of the export
+  const tl = timelineBrief(doc);
+  assert.deepEqual([tl.timeline.shots, tl.timeline.duration, tl.timeline.cuts, tl.shots.map((x) => x.at)], [2, 7, [5], [0, 5]]);
+  const tt = timelineText(tl);
+  assert.match(tt, /^timeline: 2 shots, 7\.00s @ 24fps, 720x1280 \(9:16\), hard cut at 5\.00s\n/);
+  assert.match(tt, /\nshot 1\/2 shot-1 "Shot 1": 0\.00–5\.00s \(5s\)\n/);
+  assert.match(tt, /1\.50–1\.75s {2}orbit 90°/);                          // the first shot keeps its own times
+  assert.match(tt, /\nCUT at 5\.00s to shot 2\/2 two: 5\.00–7\.00s \(2s\)\n/);
+  assert.ok(!/\n[0-4]\.\d\d–/.test(tt.slice(tt.indexOf('CUT at'))), 'the second shot\'s times start at the cut');
+  assert.match(tt.slice(tt.indexOf('CUT at')), /plays 5\.00–7\.00s of the video = 5\.00–7\.00s of the file/);
   assert.deepEqual([two.audio.fileFrom, two.audio.fileTo], [5, 7]);
   assert.deepEqual(two.objects.map((o) => [o.from, o.to, o.moved]), [[0, 1, 1]]);
   assert.equal(shotBrief(doc, 'shot-1').shot.active, false);
@@ -820,6 +830,8 @@ test('say --attach: a reply carries a video, served with byte ranges so it can b
     assert.throws(() => cli('say'), /usage/);
     assert.match(cli('brief'), /^shot 1\/1 shot-1/);
     assert.equal(JSON.parse(cli('brief', '--all', '--json')).length, 1);
+    assert.match(cli('brief', '--timeline'), /^timeline: 1 shot, .*one continuous shot\nevery time below is in seconds of the exported video/);
+    assert.equal(JSON.parse(cli('brief', '--timeline', '--json')).timeline.shots, 1);
   } finally { srv.kill(); }
 });
 

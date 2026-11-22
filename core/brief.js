@@ -229,8 +229,9 @@ export function shotBrief(doc, ref) {
 
 const secs = (v) => v.toFixed(2);
 /** The brief as lines of text. beats: { tempo, beat, beats, onsets } from the tab, in shot time (optional). */
-export function briefText(b, beats = null) {
+export function briefText(b, beats = null, at = 0) {
   const s = b.shot;
+  const secs = (v) => (v + at).toFixed(2); // `at`: where the shot starts in the whole timeline's video
   const lines = [
     `shot ${s.index}/${s.of} ${s.id}${s.name !== s.id ? ` "${s.name}"` : ''}: ${s.duration}s @ ${s.fps}fps (${s.frames} frames), ${s.width}x${s.height} (${s.ratio.nearest}${s.ratio.exact !== s.ratio.nearest ? `, exactly ${s.ratio.exact}` : ''})`
       + `${s.start ? `, action from ${s.start}s` : ''}${s.of > 1 ? `, ${s.sequence[0]}–${s.sequence[1]}s of the sequence` : ''}${s.speed !== 'linear' ? `, speed curve ${s.speed} (times below include it)` : ''}`,
@@ -248,12 +249,43 @@ export function briefText(b, beats = null) {
   if (b.audio) {
     const a = b.audio;
     lines.push(a.silent ? `audio: ${a.name || a.file} does not play during this shot`
-      : `audio: ${a.name || a.file} plays ${secs(a.from)}–${secs(a.to)}s of the shot = ${secs(a.fileFrom)}–${secs(a.fileTo)}s of the file${a.muted ? ' (muted)' : ''}`);
+      : `audio: ${a.name || a.file} plays ${secs(a.from)}–${secs(a.to)}s of the ${at ? 'video' : 'shot'} = ${a.fileFrom.toFixed(2)}–${a.fileTo.toFixed(2)}s of the file${a.muted ? ' (muted)' : ''}`);
   }
   if (beats) {
+    const shift = (list) => list.map((t) => (at ? +(t + at).toFixed(2) : t)).join(' ');
     lines.push(`tempo: ${beats.tempo ? `${beats.tempo} bpm (a beat every ${beats.beat}s)` : 'not found'}`);
-    if (beats.beats?.length) lines.push(`beats: ${beats.beats.join(' ')}`);
-    if (beats.onsets?.length) lines.push(`strong onsets: ${beats.onsets.join(' ')}`);
+    if (beats.beats?.length) lines.push(`beats: ${shift(beats.beats)}`);
+    if (beats.onsets?.length) lines.push(`strong onsets: ${shift(beats.onsets)}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * The whole timeline as one video (what `canvas export` renders): every shot in order, cut together.
+ * Returns { timeline: { shots, duration, fps, width, height, ratio, cuts }, shots: [shotBrief + at] }.
+ * `at` is where each shot starts in that video; add it to the shot's own times.
+ */
+export function timelineBrief(doc) {
+  const shots = doc.shots.map((s) => shotBrief(doc, s.id)).map((b) => ({ ...b, at: b.shot.sequence[0] }));
+  const first = shots[0].shot, last = shots.at(-1).shot;
+  return {
+    timeline: { shots: shots.length, duration: last.sequence[1], fps: first.fps, width: first.width, height: first.height, ratio: first.ratio, cuts: shots.slice(1).map((b) => b.at) },
+    shots,
+  };
+}
+
+/** The timeline brief as text: one block per shot, every time in seconds of the exported video. */
+export function timelineText(t) {
+  const { timeline: tl } = t;
+  const head = [
+    `timeline: ${tl.shots} shot${tl.shots === 1 ? '' : 's'}, ${tl.duration.toFixed(2)}s @ ${tl.fps}fps, ${tl.width}x${tl.height} (${tl.ratio.nearest})`
+      + (tl.cuts.length ? `, hard cut${tl.cuts.length === 1 ? '' : 's'} at ${tl.cuts.map((c) => `${c.toFixed(2)}s`).join(' ')}` : ', one continuous shot'),
+    'every time below is in seconds of the exported video (canvas export), not of the shot',
+  ];
+  const blocks = t.shots.map((b, i) => {
+    const text = briefText(b, b.beats, b.at).split('\n');
+    text[0] = `${i ? `CUT at ${b.at.toFixed(2)}s to ` : ''}shot ${b.shot.index}/${b.shot.of} ${b.shot.id}${b.shot.name !== b.shot.id ? ` "${b.shot.name}"` : ''}: ${b.shot.sequence[0].toFixed(2)}–${b.shot.sequence[1].toFixed(2)}s (${b.shot.duration}s)`;
+    return text.join('\n');
+  });
+  return [head.join('\n'), ...blocks].join('\n\n');
 }

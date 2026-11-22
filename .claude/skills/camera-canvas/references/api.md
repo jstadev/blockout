@@ -132,13 +132,15 @@ with the audio track mixed in; `--shot <id>` for one shot); `snapshot`, `storybo
 
 ## Brief and chat attachments
 
-`canvas brief [--shot id | --all] [--beats] [--json]` describes a shot's camera work from the scene doc (no tab
+`canvas brief [--shot id | --all | --timeline] [--beats] [--json]` describes a shot's camera work from the scene doc (no tab
 needed, except `--beats`): one line per segment between keys with its times in the exported video (the speed
 curve applied), what the camera does (push in, truck, orbit, pan, tilt, zoom, roll, hold, cut), pace and ease,
 and the framing it lands on (shot size and side when the aim is a person, camera height and angle, distance,
 lens). Also the objects that move during the shot and which seconds of the audio file the shot plays.
 `--json` gives `{ shot, start, segments: [{ from, to, kind: move|hold|cut, text, pace, ease, keys, move, end }], objects, audio, beats? }`
-(the code is `core/brief.js`).
+(the code is `core/brief.js`). `--timeline` describes the whole timeline as the one video `canvas export`
+renders: a `timeline:` line (shots, length, size, cut times), then each shot with a `CUT at <t>s` line and
+every time in seconds of that video; `--json` gives `{ timeline: { shots, duration, fps, width, height, ratio, cuts }, shots: [brief + at] }`.
 
 `canvas say "text" --attach file[,file…]` puts videos (mp4, webm, mov) or images on a reply; a video plays in
 the chat. The text is optional with a file. Files are copied to `.canvas/uploads/`.
