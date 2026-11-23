@@ -26,7 +26,9 @@ export function mountAudioTrack(root, { xA, aAt, axisEnd, scrubTo, marks, spans,
       const res = await fetch(`/api/audio?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
       const up = await res.json();
       if (!up.ok) throw new Error(up.error);
-      await store.op({ op: 'audio', file: up.file, name: up.name }, track() ? 'replace audio' : 'load audio');
+      // a track you load shows its beats straight away, and its settings open so you can see the tempo and trim it
+      await store.op({ op: 'audio', file: up.file, name: up.name, beats: true }, track() ? 'replace audio' : 'load audio');
+      pop.toggle(true);
       const buf = await audio.load();
       note.remove();
       const n = store.doc.shots.length;

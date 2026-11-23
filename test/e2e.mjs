@@ -721,6 +721,14 @@ try {
   ok(/^12\d bpm|^11[89] bpm/.test(await page.locator('.audio-pop .audio-bpm').textContent()) && cli('ls').includes('beats shown'), `Beats toggle marks the beat grid (${await page.locator('.audio-pop .audio-bpm').textContent()})`);
   await page.screenshot({ path: path.join(dir, 'audio-beats.png') });
   await page.keyboard.press('Escape');
+  // loading a file from the tab turns the beats on and opens the Audio menu
+  cli('audio', '--show-beats', 'off');
+  await page.waitForFunction(() => !window.canvas.store.doc.audio.beats && !document.querySelector('.audio-pop').checkVisibility());
+  await page.locator('input[type=file][accept^="audio"]').setInputFiles(wav);
+  await page.waitForFunction(() => window.canvas.store.doc.audio.beats === true && document.querySelector('.audio-pop').checkVisibility() && /bpm/.test(document.querySelector('.audio-pop .audio-bpm').textContent));
+  ok(true, `uploading a track shows its beats and opens the Audio menu (${await page.locator('.audio-pop .audio-bpm').textContent()})`);
+  await page.screenshot({ path: path.join(dir, 'audio-upload.png') });
+  await page.keyboard.press('Escape');
   // slide the audio by dragging the waveform
   const lb = await page.locator('.tl-audio').boundingBox();
   await page.mouse.move(lb.x + lb.width * 0.5, lb.y + lb.height / 2); await page.mouse.down();
