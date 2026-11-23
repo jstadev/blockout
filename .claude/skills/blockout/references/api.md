@@ -92,6 +92,7 @@ shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot 
 | stairs | w 1, h 1, d 1.5, steps 6 (rise toward −z) | w,h,d |
 | arch | w 2, h 2.5, d 0.5, t 0.4 (doorway, wall thickness t) | w,h,d |
 | person | body male\|female\|child (default male), h (default 1.8 / 1.65 / 1.3 by body); faces +z | h |
+| model | file (a `.glb` in the scene's `models/`, from `canvas import`), offset 0 (action time where its first clip starts), speed 1, length and h (clip seconds and height, measured at upload; descriptive). Size it with `scale` | — |
 
 ### Eases
 
@@ -126,6 +127,11 @@ shot A's last (hold) key.
 `export [--fps] [--width --height] [--grid on|off] [--name]` (the whole timeline, every shot in order in one mp4,
 with the audio track mixed in; `--shot <id>` for one shot); `snapshot`, `storyboard` and `export` take `--shot <id>`,
 `audio --beats [--json]` and `audio --fit` (the tab decodes the file).
+
+`canvas import <file.glb> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s] [--offset s] [--speed v] [--fit]` uploads a GLB
+(`POST /api/model`) and adds it as a `model` object, drawn with its own materials. Its first animation clip plays on the
+action time: from `offset`, at `speed`, holding its first frame before and its last frame after. `--fit` makes the active
+shot as long as the clip. Move, rotate and scale it like any object (`canvas set`, `canvas move`); `around: <id>` orbits it.
 
 `canvas audio <file> [--offset s] [--in s] [--out s] [--volume v] [--mute on|off] [--show-beats on|off] [--fit]` uploads and sets the audio track;
 `canvas audio` alone prints it; `canvas audio --clear` removes it.
@@ -221,6 +227,7 @@ removes one. Never read the secrets file, echo a key or ask the user to type one
 | `GET /api/saves` | | `{ saves: [{ name, savedAt, objects, keys, thumb }] }` |
 | `POST /api/save` | `{ name?, overwrite? }` | `{ name, path }`; 409 if it exists |
 | `POST /api/load` | `{ name }` | `{ name, objects, keys }` (undoable) |
+| `POST /api/model?name=dancer.glb` | raw GLB bytes | `{ file, name, path, url, bytes, clips: [{ name, length }], height, meshes, skins }`: stored in the scene folder's `models/`; then add it with `{ op: 'add', type: 'model', file }` |
 | `POST /api/audio?name=song.mp3` | raw audio bytes | `{ file, name, path, url }`: stored in the scene folder's `audio/`; then set it with the `audio` op |
 | `POST /api/rpc` | `{ method, params, timeout? }` (methods: camera, state, seek, play, pause, view, select, frame, snapshot, storyboard, export, audio) | `{ ok, result }` |
 | `GET /api/prompt/next?wait=600` | long poll | `{ prompt }` or `{ prompt: null }` on timeout |

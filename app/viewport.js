@@ -4,8 +4,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { buildGeometry } from './geometry.js';
-import { isCut, sampleCamera, sampleObject, fovToLens, lensToFov } from '/core/curves.js';
+import { isCut, sampleCamera, sampleObject, remapTime, fovToLens, lensToFov } from '/core/curves.js';
 import { store } from './store.js';
 import { toast } from './ui/kit.js';
 
@@ -38,7 +40,9 @@ export class Viewport {
     this.objects = new THREE.Group(); this.objects.name = 'objects';
     this.helpers = new THREE.Group(); this.helpers.name = 'helpers';
     this.scene.add(this.objects, this.helpers);
-    this.meshes = new Map(); // id -> { mesh, edges, geoKey }
+    this.meshes = new Map(); // id -> { mesh, edges, geoKey, model?, mixer?, clipLength?, modelMats? }
+    this.gltfs = new Map(); // model file -> Promise<gltf>, loaded once and cloned per object
+    this.loading = new Set(); // model loads in flight (renders wait for them: loaded())
 
     this._buildEnvironment();
     this._buildCameras();
@@ -184,7 +188,7 @@ export class Viewport {
       const rect = this.canvas.getBoundingClientRect();
       const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       ray.setFromCamera(ndc, this.activeCam);
-      const hit = ray.intersectObjects([...this.meshes.values()].map((m) => m.mesh), false)[0];
+      const hit = ray.intersectObjects(this._pickables(), false)[0];
       // Ctrl/Cmd-click selects (or clears the selection on empty space). Plain click aims the camera
       // at the clicked point: the object surface, else the ground.
       if (e.ctrlKey || e.metaKey) { store.set({ selection: hit ? hit.object.userData.id : null }); return; }
@@ -409,7 +413,8 @@ export class Viewport {
       let m = this.meshes.get(o.id);
       // a person without its own detail follows the scene's env.people
       const params = o.type === 'person' ? { ...o.params, detail: o.params.detail ?? env.people ?? 'low' } : o.params;
-      const geoKey = o.type + JSON.stringify(params);
+      // a model reloads only when its file changes (offset and speed are applied each frame)
+      const geoKey = o.type === 'model' ? `model:${params.file}` : o.type + JSON.stringify(params);
       if (!m) {
         const mat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, color: o.color });
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
@@ -429,8 +434,10 @@ export class Viewport {
         // the low-detail person paints its face in vertex colours, multiplied by the object's colour
         mesh.material.vertexColors = !!mesh.geometry.attributes.color;
         mesh.material.needsUpdate = true;
-        // A body's fine creases would draw as stray lines, so people show selection with a tint instead.
-        m.tint = o.type === 'person';
+        // A body's fine creases would draw as stray lines, so people (and imported models) show selection
+        // with a tint instead.
+        m.tint = o.type === 'person' || o.type === 'model';
+        if (o.type === 'model') this._loadModel(o.id, m, params.file); else this._dropModel(m);
         edges.geometry = m.tint ? new THREE.BufferGeometry() : new THREE.EdgesGeometry(mesh.geometry, 28);
         m.geoKey = geoKey;
       }
@@ -444,6 +451,7 @@ export class Viewport {
     for (const [id, m] of this.meshes) {
       if (seen.has(id)) continue;
       if (this.gizmo.object === m.mesh) this.gizmo.detach();
+      this._dropModel(m);
       m.mesh.geometry.dispose(); m.edges.geometry.dispose(); m.mesh.material.dispose();
       this.objects.remove(m.mesh);
       this.meshes.delete(id);
@@ -460,8 +468,7 @@ export class Viewport {
       const sel = mid === id;
       m.edges.material.color.set(sel ? ACCENT : 0x000000);
       m.edges.material.opacity = sel ? 1 : 0.22;
-      m.mesh.material.emissive.set(sel && m.tint ? ACCENT : 0x000000);
-      m.mesh.material.emissiveIntensity = 0.35;
+      this._tint(m, sel && m.tint);
     }
     const m = id && this.meshes.get(id);
     if (m) this.gizmo.attach(m.mesh); else this.gizmo.detach();
@@ -596,6 +603,7 @@ export class Viewport {
   /** Put animated objects where they are at time t (the one being dragged stays under the pointer). */
   poseObjects(t, timeline = store.doc.timeline) {
     for (const o of store.doc.objects) {
+      if (o.type === 'model') this._poseModel(o, timeline, t);
       if (!o.anim?.length) continue;
       const m = this.meshes.get(o.id);
       if (!m || (this.dragging && this.gizmo.object === m.mesh)) continue;
@@ -604,6 +612,84 @@ export class Viewport {
       m.mesh.rotation.set(s.rotation[0] * DEG, s.rotation[1] * DEG, s.rotation[2] * DEG, 'XYZ');
       m.mesh.scale.fromArray(s.scale);
     }
+  }
+
+  // ---------- imported models ----------
+  /** Resolves once every model in the scene has loaded, so a snapshot or export never misses one. */
+  async loaded() {
+    while (this.loading.size) await Promise.allSettled([...this.loading]);
+  }
+
+  _pickables() {
+    const out = [];
+    for (const m of this.meshes.values()) {
+      out.push(m.mesh);
+      m.model?.traverse((c) => { if (c.isMesh) out.push(c); });
+    }
+    return out;
+  }
+
+  _tint(m, on) {
+    for (const mat of [m.mesh.material, ...(m.modelMats || [])]) {
+      if (!mat.emissive) continue;
+      mat.emissive.set(on ? ACCENT : 0x000000);
+      mat.emissiveIntensity = 0.35;
+    }
+  }
+
+  /** Load a model's GLB (once per file) and put a copy of it, with its own skeleton and mixer, under the object. */
+  _loadModel(id, m, file) {
+    this._dropModel(m);
+    m.modelFile = file;
+    if (!this.gltfs.has(file)) this.gltfs.set(file, new GLTFLoader().loadAsync(`/models/${encodeURIComponent(file)}`));
+    const job = this.gltfs.get(file).then((gltf) => {
+      if (m.modelFile !== file || this.meshes.get(id) !== m) return; // replaced or removed while loading
+      const model = cloneSkinned(gltf.scene);
+      const mats = [];
+      model.traverse((c) => {
+        c.userData.id = id; // a click on any part selects the object
+        if (!c.isMesh) return;
+        c.castShadow = c.receiveShadow = true;
+        c.frustumCulled = false; // a skinned mesh's bounds are its rest pose, not where the animation puts it
+        c.material = Array.isArray(c.material) ? c.material.map((x) => x.clone()) : c.material.clone();
+        mats.push(...[c.material].flat());
+      });
+      m.model = model;
+      m.modelMats = mats;
+      const clip = gltf.animations[0];
+      if (clip) {
+        m.mixer = new THREE.AnimationMixer(model);
+        const action = m.mixer.clipAction(clip);
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+        action.play();
+        m.clipLength = clip.duration;
+      }
+      m.mesh.add(model);
+      this._applySelection();
+      this.poseObjects(store.state.time);
+    }).catch((e) => {
+      this.gltfs.delete(file);
+      toast(`Could not load model ${file}: ${e.message}`);
+    }).finally(() => this.loading.delete(job));
+    this.loading.add(job);
+  }
+
+  _dropModel(m) {
+    if (!m.model && !m.modelFile) return;
+    m.mixer?.stopAllAction();
+    if (m.model) m.mesh.remove(m.model);
+    for (const mat of m.modelMats || []) mat.dispose();
+    m.model = m.mixer = m.modelMats = m.modelFile = m.clipLength = null;
+  }
+
+  /** Put a model's animation where it is at shot time t: the action time, less its offset, times its speed. */
+  _poseModel(o, timeline, t) {
+    const m = this.meshes.get(o.id);
+    if (!m?.mixer) return;
+    const action = remapTime(timeline, t) + (timeline.start || 0);
+    const ct = (action - (o.params.offset || 0)) * (o.params.speed ?? 1);
+    m.mixer.setTime(Math.min(Math.max(0, ct), Math.max(0, m.clipLength - 1e-4)));
   }
 
   _rebuildObjPath() {
@@ -693,7 +779,7 @@ export class Viewport {
     this.helpers.visible = false; this.gizmoHelper.visible = false;
     if (grid != null) this.grid.visible = !!grid;
     const sel = store.state.selection && this.meshes.get(store.state.selection);
-    if (sel) { sel.edges.material.color.set(0x000000); sel.edges.material.opacity = 0.22; sel.mesh.material.emissive.set(0x000000); }
+    if (sel) { sel.edges.material.color.set(0x000000); sel.edges.material.opacity = 0.22; this._tint(sel, false); }
     this.poseObjects(t, timeline);
     renderer.render(this.scene, cam);
     this.poseObjects(store.state.time);

@@ -14,7 +14,7 @@ import { normalizeAsk, answerAsk } from '../core/ask.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE } from '../core/doc.js';
+import { applyOps, createDoc, migrate, describe, shotList, AUDIO_FILE, MODEL_FILE } from '../core/doc.js';
 import crypto from 'node:crypto';
 import { dataDir } from './paths.mjs';
 import { saveSecret, listSecrets } from './secrets.mjs';
@@ -55,8 +55,28 @@ const MIME = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.md': 'text/markdown; charset=utf-8',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
-  '.opus': 'audio/ogg', '.flac': 'audio/flac', '.woff2': 'font/woff2',
+  '.opus': 'audio/ogg', '.flac': 'audio/flac', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary',
 };
+
+/**
+ * What a GLB holds, read from its JSON chunk without loading it: clip names and lengths, and the height of its
+ * meshes above the origin (their bind pose; node transforms are not applied). Null if it is not a GLB.
+ */
+export function glbInfo(buf) {
+  if (buf.length < 20 || buf.toString('latin1', 0, 4) !== 'glTF' || buf.readUInt32LE(16) !== 0x4e4f534a) return null;
+  const j = JSON.parse(buf.toString('utf8', 20, 20 + buf.readUInt32LE(12)));
+  const acc = j.accessors || [];
+  const clips = (j.animations || []).map((a, i) => ({
+    name: a.name || `clip ${i + 1}`,
+    length: Math.round(Math.max(0, ...a.samplers.map((s) => acc[s.input]?.max?.[0] ?? 0)) * 1000) / 1000,
+  }));
+  let top = null;
+  for (const m of j.meshes || []) for (const p of m.primitives || []) {
+    const y = acc[p.attributes?.POSITION]?.max?.[1];
+    if (Number.isFinite(y)) top = Math.max(top ?? y, y);
+  }
+  return { clips, height: top == null ? null : Math.round(top * 1000) / 1000, meshes: (j.meshes || []).length, skins: (j.skins || []).length };
+}
 
 export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = false } = {}) {
   const scenePath = path.resolve(scene || process.env.CANVAS_SCENE || path.join(dataDir(), 'scenes', 'scene.json'));
@@ -65,6 +85,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
   const savesDir = path.join(path.dirname(scenePath), 'saved');
   const uploadsDir = path.join(workDir, 'uploads');
   const audioDir = path.join(path.dirname(scenePath), 'audio'); // the timeline's audio tracks, shared by every save
+  const modelsDir = path.join(path.dirname(scenePath), 'models'); // imported GLBs (model objects), shared by every save
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(exportsDir, { recursive: true });
   const inboxPath = path.join(workDir, 'inbox.jsonl');
@@ -361,6 +382,7 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
     ['/saved/', savesDir],
     ['/uploads/', uploadsDir],
     ['/audio/', audioDir],
+    ['/models/', modelsDir],
     ['/', path.join(ROOT, 'app')],
   ];
 
@@ -493,6 +515,23 @@ export function startServer({ port = 5317, host = '127.0.0.1', scene, quiet = fa
       fs.mkdirSync(audioDir, { recursive: true });
       fs.writeFileSync(path.join(audioDir, file), body);
       json(res, 200, { ok: true, file, name: orig, path: path.join(audioDir, file), url: `/audio/${file}`, bytes: body.length });
+    },
+
+    // A GLB for a model object: saved under the scene folder's models/ by a name made from the file's name and
+    // content (the same file twice reuses it). The caller then adds it with { op: 'add', type: 'model', file }.
+    'POST /api/model': async (req, res, url) => {
+      const orig = path.basename(url.searchParams.get('name') || 'model.glb');
+      const body = await readBody(req, 500 * 1024 * 1024);
+      if (!body.length) return json(res, 400, { ok: false, error: 'empty model file' });
+      let info;
+      try { info = glbInfo(body); } catch (e) { return json(res, 400, { ok: false, error: `could not read the GLB: ${e.message}` }); }
+      if (!info) return json(res, 400, { ok: false, error: 'not a GLB file (binary glTF 2.0, .glb)' });
+      const stem = orig.slice(0, orig.length - path.extname(orig).length).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'model';
+      const file = `${stem}-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 8)}.glb`;
+      if (!MODEL_FILE.test(file)) return json(res, 400, { ok: false, error: `bad model name "${file}"` });
+      fs.mkdirSync(modelsDir, { recursive: true });
+      fs.writeFileSync(path.join(modelsDir, file), body);
+      json(res, 200, { ok: true, file, name: orig, path: path.join(modelsDir, file), url: `/models/${file}`, bytes: body.length, ...info });
     },
 
     // ----- prompts: canvas -> agent -----

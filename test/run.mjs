@@ -962,3 +962,64 @@ test('canvas ask: a question card goes to the chat, the answers come back as one
     assert.match(cli('secret', 'list'), /no keys saved/);
   } finally { srv.kill(); }
 });
+
+// A minimal GLB: a JSON chunk only (glbInfo reads nothing else), with one mesh and one 2.5 s clip.
+function tinyGlb({ clipMax = 2.5, top = 1.7 } = {}) {
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: '2.0' },
+    accessors: [{ type: 'VEC3', count: 3, min: [0, 0, 0], max: [1, top, 1] }, { type: 'SCALAR', count: 2, min: [0], max: [clipMax] }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    animations: [{ name: 'dance', samplers: [{ input: 1, output: 0 }], channels: [] }],
+  }));
+  const pad = Buffer.alloc((4 - (json.length % 4)) % 4, 0x20), body = Buffer.concat([json, pad]);
+  const head = Buffer.alloc(20);
+  head.write('glTF', 0, 'latin1'); head.writeUInt32LE(2, 4); head.writeUInt32LE(20 + body.length, 8);
+  head.writeUInt32LE(body.length, 12); head.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([head, body]);
+}
+
+test('model op: needs a .glb file name in models/, keeps offset and speed', () => {
+  assert.throws(() => applyOps(createDoc(), { op: 'add', type: 'model' }), /needs a file/);
+  assert.throws(() => applyOps(createDoc(), { op: 'add', type: 'model', file: '../x.glb' }), /models\/ folder/);
+  assert.throws(() => applyOps(createDoc(), { op: 'add', type: 'model', file: 'x.obj' }), /models\/ folder/);
+  assert.throws(() => applyOps(createDoc(), { op: 'add', type: 'model', file: 'x.glb', offset: 'soon' }), /must be a number/);
+  let { doc } = applyOps(createDoc(), { op: 'add', type: 'model', name: 'dancer', file: 'dance-1a2b3c4d.glb', length: 13, h: 1.7 });
+  assert.deepEqual(doc.objects[0].params, { file: 'dance-1a2b3c4d.glb', offset: 0, speed: 1, length: 13, h: 1.7 });
+  doc = applyOps(doc, { op: 'update', id: 'dancer', offset: 2, speed: 0.5 }).doc;
+  assert.deepEqual([doc.objects[0].params.offset, doc.objects[0].params.speed], [2, 0.5]);
+  assert.throws(() => applyOps(doc, { op: 'update', id: 'dancer', file: null }), /needs a file/);
+  assert.throws(() => applyOps(createDoc(), [{ op: 'add', type: 'box', id: 'b' }, { op: 'update', id: 'b', type: 'model' }]), /needs a file/);
+});
+
+test('glbInfo reads clip lengths and height from a GLB without loading it', async () => {
+  const { glbInfo } = await import('../server/index.mjs');
+  assert.deepEqual(glbInfo(tinyGlb()), { clips: [{ name: 'dance', length: 2.5 }], height: 1.7, meshes: 1, skins: 0 });
+  assert.equal(glbInfo(Buffer.from('not a glb at all, honestly')), null);
+});
+
+test('canvas import uploads a GLB to models/, adds a model and --fit sets the shot length', async () => {
+  const os = await import('node:os');
+  const { spawn, execFileSync } = await import('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-model-'));
+  const port = 5394;
+  const srv = spawn(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), 'serve', '--scene', path.join(dir, 'scene.json'), '--port', String(port)], { stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) { try { await fetch(`${base}/api/status`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  const cli = (...args) => execFileSync(process.execPath, [path.join(ROOT, 'bin/canvas.mjs'), ...args], { env: { ...process.env, CANVAS_PORT: String(port) }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const file = path.join(dir, 'My Dance.glb');
+    fs.writeFileSync(file, tinyGlb());
+    const said = cli('import', file, '--offset', '1', '--fit');
+    assert.match(said, /^my-dance: My Dance\.glb → models\/my-dance-[0-9a-f]{8}\.glb/);
+    assert.match(said, /clip "dance" 2\.5s plays from action time 1s/);
+    assert.match(said, /shot length set to 2\.5s/);
+    const { doc } = await (await fetch(`${base}/api/doc`)).json();
+    const o = doc.objects[0];
+    assert.deepEqual([o.type, o.params.offset, o.params.length, o.params.h, doc.timeline.duration], ['model', 1, 2.5, 1.7, 2.5]);
+    assert.ok(fs.existsSync(path.join(dir, 'models', o.params.file)));
+    const served = await fetch(`${base}/models/${o.params.file}`);
+    assert.equal(served.headers.get('content-type'), 'model/gltf-binary');
+    fs.writeFileSync(path.join(dir, 'bad.glb'), 'nope');
+    assert.throws(() => cli('import', path.join(dir, 'bad.glb')), /not a GLB/);
+  } finally { srv.kill(); }
+});
