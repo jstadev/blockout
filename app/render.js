@@ -37,6 +37,7 @@ export function createRenderer(viewport) {
   const fileStem = (name, seq, s) => seq ? safeName(name || store.doc.meta.name) : stem(name, s);
 
   async function snapshot({ t = store.state.time, view = 'shot', name, width, height, grid, from, target, fov, shot } = {}) {
+    await viewport.loaded();
     const [w, hh] = size({ width, height });
     const timeline = pick(shot).timeline;
     const canvas = viewport.renderShot(t, w, hh, { view, grid, from, target, fov, timeline });
@@ -47,6 +48,7 @@ export function createRenderer(viewport) {
   }
 
   async function storyboard({ frames = 8, cols = 4, width = 480, shot } = {}) {
+    await viewport.loaded();
     const s = pick(shot), tl = s.timeline;
     const A = store.doc.meta.width / store.doc.meta.height;
     const cw = width, ch = Math.round(width / A), rows = Math.ceil(frames / cols), gap = 8, label = 18;
@@ -75,6 +77,7 @@ export function createRenderer(viewport) {
    */
   async function exportVideo({ fps, width, height, grid, name, shot, sequence } = {}) {
     if (store.state.exporting) throw new Error('an export is already running');
+    await viewport.loaded();
     const all = shotList(store.doc);
     const seq = all.length > 1 && (sequence ?? shot == null);
     const shots = seq ? all : [pick(shot)];

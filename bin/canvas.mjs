@@ -108,6 +108,9 @@ keys in between are replaced. Both stay ordinary keys you can drag, re-key and e
   canvas timeline [--duration 6 [--retime]] [--fps 24] [--interp smooth|linear]
                   [--speed name|x1,y1,x2,y2] [--ease name] [--start s]   (--ease sets every segment;
                   --start: where this shot picks up the shared action, like shot-set --start)
+  canvas import <file.glb> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s] [--offset s] [--speed v] [--fit]
+                  add a GLB as a model object (a scanned or captured character, a set); its first animation
+                  plays on the action time from --offset at --speed; --fit makes the shot as long as the clip
   canvas audio [file] [--offset s] [--in s] [--out s] [--volume 1] [--mute on|off] [--show-beats on|off] [--fit]
                   load a music / dialogue track onto the timeline (mixed into the export). One track spans
                   every shot, on the shared action time. --offset: action time where the file starts
@@ -254,8 +257,8 @@ function objectFields(flags, type) {
     if (known.has(k)) continue;
     const allParams = new Set(Object.values(PRIMITIVES).flatMap((p) => Object.keys(p.params)));
     if (!allParams.has(k)) throw new Error(`unknown flag --${k}`);
-    const isChoice = Object.values(PRIMITIVES).some((p) => p.choices?.[k]);
-    o[k] = v === 'null' ? null : isChoice ? String(v) : num(v);
+    const isText = Object.values(PRIMITIVES).some((p) => p.choices?.[k] || p.strings?.[k]);
+    o[k] = v === 'null' ? null : isText ? String(v) : num(v);
   }
   if (type && o.position == null) o.position = [0, 0, 0];
   return o;
@@ -468,6 +471,31 @@ const commands = {
     if (!type) throw new Error(`usage: canvas add <type> ... (types: ${Object.keys(PRIMITIVES).join(', ')})`);
     const r = await op({ op: 'add', type, ...objectFields(flags, type) });
     out(r.results[0].id);
+  },
+  // Upload a GLB into the scene folder's models/ and add it as a model object (its first clip plays on the
+  // action time). --fit makes the shot as long as the clip.
+  async import({ pos, flags }) {
+    if (!pos[0]) throw new Error('usage: canvas import <file.glb> [--name n] [--pos x,y,z] [--rot x,y,z] [--scale s] [--offset s] [--speed v] [--fit]');
+    const file = path.resolve(String(pos[0]));
+    if (!fs.existsSync(file)) throw new Error(`no such file: ${pos[0]}`);
+    const res = await fetch(`${BASE}/api/model?name=${encodeURIComponent(path.basename(file))}`, { method: 'POST', body: fs.readFileSync(file) })
+      .catch(() => { throw new Error(`canvas server is not running at ${BASE}`); });
+    const up = await res.json();
+    if (!up.ok) throw new Error(up.error);
+    const { fit, ...rest } = flags;
+    const clip = up.clips[0];
+    const name = rest.name ?? path.basename(file, path.extname(file)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+    const o = { op: 'add', type: 'model', position: [0, 0, 0], ...objectFields({ ...rest, name }), file: up.file, length: clip?.length ?? null, h: up.height };
+    const id = (await op(o, 'import model')).results[0].id;
+    const lines = [`${id}: ${up.name} → models/${up.file} (${(up.bytes / 1e6).toFixed(1)} MB, ${up.skins ? 'skinned' : 'static'}, about ${up.height ?? '?'} m tall)`];
+    lines.push(clip ? `clip "${clip.name}" ${clip.length}s plays from action time ${o.offset ?? 0}s${up.clips.length > 1 ? ` (${up.clips.length - 1} more clips not used)` : ''}` : 'no animation: it stays still');
+    if (fit) {
+      if (!clip) throw new Error('--fit needs an animated model');
+      const duration = Math.round((clip.length / (o.speed || 1)) * 1000) / 1000;
+      await op({ op: 'timeline', duration }, 'fit shot to model');
+      lines.push(`shot length set to ${duration}s`);
+    }
+    out(lines.join('\n'));
   },
   async set({ pos, flags }) {
     if (!pos[0]) throw new Error('usage: canvas set <id> --pos x,y,z ...');

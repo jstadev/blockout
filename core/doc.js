@@ -22,7 +22,18 @@ export const PRIMITIVES = {
     params: { h: null, body: 'male', detail: null }, size: ['h'], choices: { body: ['male', 'female', 'child'], detail: ['high', 'low'] },
     about: 'human figure facing +z; body male|female|child, h defaults to 1.8 / 1.65 / 1.3 m; detail high|low (unset: the scene\'s env.people)',
   },
+  // An imported GLB (uploaded with "canvas import"), drawn as it comes with its own materials. Its first
+  // animation clip plays on the shared action time: offset is the action time where the clip starts, speed its
+  // playback rate; before the clip it holds the first frame, after it the last. length (clip seconds) and h
+  // (height above the pivot) are measured at upload and only describe it.
+  model: {
+    params: { file: null, offset: 0, speed: 1, length: null, h: null }, size: [], strings: { file: /^[a-z0-9][a-z0-9._-]*\.glb$/i },
+    about: 'imported GLB (canvas import <file>); its animation plays on the action time from offset, at speed',
+  },
 };
+
+// Model files the scene can hold (a plain file name inside the scene folder's models/).
+export const MODEL_FILE = PRIMITIVES.model.strings.file;
 
 // How people are drawn when a person's own detail is not set: 'low' (the default for new scenes) is a box
 // body with a cube head, 'high' the jointed mannequin. Set per scene with env.people.
@@ -105,8 +116,10 @@ function normParams(type, params = {}, base) {
   const out = { ...(base || spec.params) };
   for (const [k, v] of Object.entries(params)) {
     if (!(k in spec.params)) throw new Error(`${type} has no param "${k}" (params: ${Object.keys(spec.params).join(', ')})`);
-    const choices = spec.choices?.[k];
-    if (choices) {
+    const choices = spec.choices?.[k], pattern = spec.strings?.[k];
+    if (pattern) {
+      if (v !== null && (typeof v !== 'string' || !pattern.test(v) || v.includes('..'))) throw new Error(`${type}.${k} must be a file name in the scene's models/ folder (.glb), got ${JSON.stringify(v)}`);
+    } else if (choices) {
       if (v !== null && !choices.includes(v)) throw new Error(`${type}.${k} must be one of ${choices.join(', ')}, got ${JSON.stringify(v)}`);
     } else if (v !== null && !Number.isFinite(v)) throw new Error(`${type}.${k} must be a number`);
     out[k] = v;
@@ -354,6 +367,7 @@ export const OPS = {
       scale: op.scale != null ? vec3(op.scale, 'scale') : [1, 1, 1],
       color: color(op.color),
     };
+    if (type === 'model' && !obj.params.file) throw new Error('a model needs a file: upload it with "canvas import <file.glb>"');
     if (op.note) obj.note = String(op.note);
     if (Array.isArray(op.anim) && op.anim.length) { obj.anim = op.anim.map((k) => normAnimKey(k, obj)); syncAnim(obj); }
     doc.objects.push(obj);
@@ -369,6 +383,7 @@ export const OPS = {
     }
     const params = pickParams(o.type, op);
     if (Object.keys(params).length) o.params = normParams(o.type, params, o.params);
+    if (o.type === 'model' && !o.params.file) throw new Error('a model needs a file: upload it with "canvas import <file.glb>"');
     if (op.name != null) o.name = String(op.name);
     // On an animated object, changing its transform shifts the whole move (every key) by the same amount.
     const before = { position: [...o.position], rotation: [...o.rotation], scale: [...o.scale] };

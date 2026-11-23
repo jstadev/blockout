@@ -170,6 +170,22 @@ canvas storyboard --frames 6                # check it, then reply
   object's keys show as circles under the camera keys; dragging an animated object with the gizmo keys it
   at the playhead.
 
+## 4a2. Imported models: a GLB as the subject or the set
+
+When the user gives you a `.glb` (a captured performance, a scanned character, a ready-made set), import it
+instead of blocking that part out. Its first animation plays on the shared action time, so every shot sees
+the same moment of it.
+
+```bash
+canvas import ~/Downloads/dancer.glb --name dancer --fit   # upload, add at the origin, shot = clip length
+canvas set dancer --pos 0,0,-2 --rot 0,90,0                 # place it like any object (pivot = its origin)
+canvas set dancer --offset 1.5 --speed 0.5                  # start its clip 1.5 s into the action, half speed
+```
+
+- `canvas ls` shows its clip length and height; aim at it by id (`around: "dancer"`, `canvas frame dancer`).
+- Look at a storyboard before keying: captured clips can sit off the ground or face away from +z; fix that
+  with `canvas set --pos / --rot`, never by editing the file.
+
 ## 4c. Audio: pace the shot to music or dialogue
 
 The scene can hold one audio track, shared by every shot. It sits on the action-time axis the shots

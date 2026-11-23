@@ -46,6 +46,9 @@ export const BUILDERS = {
     const H = h ?? PERSON_HEIGHT[body] ?? PERSON_HEIGHT.male;
     return (detail === 'low' ? blockman(body) : mannequin(body)).clone().scale(H, H, H);
   },
+  // An imported GLB: the object itself is an empty mesh (it carries the transform, gizmo and moves); the
+  // viewport loads the file and puts it inside (Viewport._loadModel).
+  model: () => new THREE.BufferGeometry(),
 };
 
 export function buildGeometry(type, params) {
