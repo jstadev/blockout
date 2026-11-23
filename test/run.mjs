@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline } from '../core/doc.js';
+import { createDoc, applyOps, migrate, PRIMITIVES, shotList, shotTimeline, PERSON_POSES, PERSON_JOINTS, objectHeight, parseJoints, describe } from '../core/doc.js';
 import { shotBrief, briefText, describeMove, ratioOf, timelineBrief, timelineText } from '../core/brief.js';
 import { findSlots, fillRecipe, listRecipes, BUILTIN } from '../skills/blockout-render/scripts/recipe.mjs';
 import { bezier, sampleCamera, sampleObject, resolveEase, EASES, remapTime, fovToLens, lensToFov, isCut, sweep, splitEase, removeEasePoint, easeName, easeSegments, shudderOffset } from '../core/curves.js';
@@ -209,7 +209,7 @@ test('person bodies: male, female or child, height follows the body unless set',
     { op: 'add', type: 'person', name: 'b', body: 'female' },
     { op: 'add', type: 'person', name: 'c', body: 'child', h: 1.1 },
   ]);
-  assert.deepEqual(doc.objects.map((o) => o.params), [{ h: null, body: 'male', detail: null }, { h: null, body: 'female', detail: null }, { h: 1.1, body: 'child', detail: null }]);
+  assert.deepEqual(doc.objects.map((o) => o.params), [{ h: null, body: 'male', detail: null, pose: 'stand', joints: null }, { h: null, body: 'female', detail: null, pose: 'stand', joints: null }, { h: 1.1, body: 'child', detail: null, pose: 'stand', joints: null }]);
   assert.throws(() => applyOps(doc, { op: 'add', type: 'person', body: 'robot' }), /one of male, female, child/);
   assert.throws(() => applyOps(doc, { op: 'update', id: 'a', body: 2 }), /one of/);
   // scenes saved before bodies existed stored every person at 1.8 m; they now take their body's height
@@ -255,6 +255,56 @@ test('a mannequin exists for every body: closed parts, 1 unit tall, feet on the 
     for (const [key, count] of edges) assert.equal(count, 2, `${body}: edge ${key} has ${count} triangles`);
     assert.ok(volume > 0.01 && volume < 0.03, `${body}: volume ${volume.toFixed(4)} of a 1 unit cube`);
   }
+});
+
+test('person poses: a named pose plus joint overrides; old scenes with pose sit load', async () => {
+  let { doc } = applyOps(createDoc(), [
+    { op: 'add', type: 'person', name: 'a', pose: 'sit' },
+    { op: 'add', type: 'person', name: 'b', joints: { kneeL: 45, shoulderR: [80, 0, 10.00001] } },
+  ]);
+  assert.equal(doc.objects[0].params.pose, 'sit');
+  assert.deepEqual(doc.objects[1].params.joints, { kneeL: 45, shoulderR: [80, 0, 10] });
+  assert.throws(() => applyOps(doc, { op: 'update', id: 'a', pose: 'moonwalk' }), /one of stand, walk/);
+  assert.throws(() => applyOps(doc, { op: 'update', id: 'a', joints: { tail: 3 } }), /no joint "tail"/);
+  assert.throws(() => applyOps(doc, { op: 'update', id: 'a', joints: { kneeL: [1, 2, 3, 4] } }), /degrees/);
+  ({ doc } = applyOps(doc, { op: 'update', id: 'b', joints: null }));
+  assert.equal(doc.objects[1].params.joints, null);
+  // a seated person stands lower, so the camera aims lower at them
+  assert.ok(objectHeight(doc.objects[0]) < 1.5 && objectHeight(doc.objects[1]) === 1.8);
+  // the CLI's text form of joints, and how ls shows them (stand is not shown)
+  assert.deepEqual(parseJoints('kneeL=90 shoulderR=80,0,10'), { kneeL: 90, shoulderR: [80, 0, 10] });
+  assert.deepEqual(parseJoints('{"neck": [0, 0, 20]}'), { neck: [0, 0, 20] });
+  assert.equal(parseJoints('null'), null);
+  assert.throws(() => parseJoints('kneeL'), /joint=degrees/);
+  ({ doc } = applyOps(doc, { op: 'update', id: 'b', joints: { kneeL: 90, shoulderR: [80, 0, 10] } }));
+  assert.match(describe(doc.objects[1]), /\(person body=male joints="kneeL=90 shoulderR=80,0,10"\)/);
+  assert.match(describe(doc.objects[0]), /pose=sit/);
+  // the unmerged chat-sidebar build saved people with pose stand|sit (and the bedroom scene sits one)
+  const old = migrate({ objects: [{ type: 'person', id: 'fig', params: { h: null, body: 'female', detail: null, pose: 'sit' } }] });
+  assert.equal(old.objects[0].params.pose, 'sit');
+});
+
+test('every pose and joint has a mannequin: same parts, feet or seat on the ground, standing scale kept', async () => {
+  const { mannequin, POSES, JOINTS } = await import('../app/mannequin.js');
+  assert.deepEqual(Object.keys(POSES), Object.keys(PERSON_POSES));
+  assert.deepEqual([...JOINTS].sort(), [...PERSON_JOINTS].sort());
+  for (const [pose, joints] of Object.entries(POSES)) for (const j of Object.keys(joints)) assert.ok(JOINTS.includes(j), `${pose}: ${j}`);
+  const stand = mannequin('male');
+  assert.equal(mannequin('male', 'stand'), stand);
+  for (const pose of Object.keys(POSES)) {
+    const g = mannequin('male', pose), p = g.attributes.position.array;
+    assert.equal(g.index.count, stand.index.count, `${pose}: same triangles`);
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 1; k < p.length; k += 3) { lo = Math.min(lo, p[k]); hi = Math.max(hi, p[k]); }
+    assert.ok(Math.abs(lo) < 1e-6, `${pose}: lowest point on the ground`);
+    // the core's height for the pose matches the figure (raised arms may go higher)
+    assert.ok(hi >= PERSON_POSES[pose].top - 0.03, `${pose}: top ${hi.toFixed(3)} vs ${PERSON_POSES[pose].top}`);
+    if (!['reach-up', 'wave'].includes(pose)) assert.ok(hi <= PERSON_POSES[pose].top + 0.03, `${pose}: top ${hi.toFixed(3)} vs ${PERSON_POSES[pose].top}`);
+  }
+  // joints override the pose; the same body, pose and joints is built once
+  const bent = mannequin('female', 'stand', { elbowR: 90 });
+  assert.notEqual(bent, mannequin('female'));
+  assert.equal(mannequin('female', 'stand', { elbowR: 90 }), bent);
 });
 
 test('the Claude Code plugin manifests parse and their hooks run the same CLI as the checkout hooks', () => {

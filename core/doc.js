@@ -19,8 +19,10 @@ export const PRIMITIVES = {
   stairs: { params: { w: 1, h: 1, d: 1.5, steps: 6 }, size: ['w', 'h', 'd'], about: 'staircase rising toward −z' },
   arch: { params: { w: 2, h: 2.5, d: 0.5, t: 0.4 }, size: ['w', 'h', 'd'], about: 'doorway / arch, t = wall thickness' },
   person: {
-    params: { h: null, body: 'male', detail: null }, size: ['h'], choices: { body: ['male', 'female', 'child'], detail: ['high', 'low'] },
-    about: 'human figure facing +z; body male|female|child, h defaults to 1.8 / 1.65 / 1.3 m; detail high|low (unset: the scene\'s env.people)',
+    params: { h: null, body: 'male', detail: null, pose: 'stand', joints: null }, size: ['h'],
+    choices: { body: ['male', 'female', 'child'], detail: ['high', 'low'], pose: null /* PERSON_POSES, set below */ },
+    check: { joints: (v) => normJoints(v) },
+    about: 'human figure facing +z; body male|female|child, h (standing height) defaults to 1.8 / 1.65 / 1.3 m; detail high|low (unset: the scene\'s env.people); pose (see canvas poses); joints {jointName: degrees} on top of the pose',
   },
   // An imported GLB (uploaded with "canvas import"), drawn as it comes with its own materials. Its first
   // animation clip plays on the shared action time: offset is the action time where the clip starts, speed its
@@ -41,6 +43,76 @@ export const PERSON_DETAIL = ['high', 'low'];
 
 // Usual heights (m) for the person bodies, used when h is not set.
 export const PERSON_HEIGHT = { male: 1.8, female: 1.65, child: 1.3 };
+
+// The poses a person can take (drawn by app/mannequin.js, which holds the joint angles), each with what it
+// looks like and how tall the figure stands in it, as a fraction of its standing height (the top of the head).
+// A posed person is always drawn as the mannequin, whatever its detail.
+export const PERSON_POSES = {
+  stand: { top: 1, about: 'standing, arms at the sides' },
+  walk: { top: 1, about: 'mid-stride, left foot forward, arms swinging' },
+  run: { top: 0.9, about: 'running stride, leaning in, elbows bent' },
+  sit: { top: 0.78, about: 'seated: thighs level, shins down, hands on the thighs. Feet on the ground, the pivot is under the hips with the knees 0.3 × h ahead; the seat top goes at 0.27 × h (0.45 m for 1.65 m)' },
+  'sit-floor': { top: 0.61, about: 'cross-legged on the floor' },
+  crouch: { top: 0.66, about: 'squatting low on both feet, leaning forward' },
+  kneel: { top: 0.78, about: 'down on the right knee, left foot planted' },
+  lie: { top: 0.17, about: 'lying on its back, head toward −z, the pivot at the hips (turn with --rot)' },
+  lean: { top: 1.02, about: 'leaning back against a wall behind it, feet out in front; put the wall 0.11 × h behind the pivot' },
+  point: { top: 1, about: 'pointing straight ahead with the right arm' },
+  wave: { top: 1, about: 'waving, right hand up' },
+  'arms-crossed': { top: 1, about: 'standing with arms folded' },
+  'hands-on-hips': { top: 1, about: 'standing, hands on hips' },
+  'reach-up': { top: 1, about: 'both arms up overhead, looking up' },
+  phone: { top: 1, about: 'right hand to the ear, as on a phone call' },
+};
+PRIMITIVES.person.choices.pose = Object.keys(PERSON_POSES);
+
+// The joints a person's pose can set, L/R being the figure's own left and right. Angles are degrees:
+//   body, spine, neck    [bend forward, lean to its left, turn to its left]  (body turns the whole figure at the hips)
+//   shoulder, hip, wrist [raise forward, raise out to the side, twist about its length (+ turns its front out)]
+//   elbow, knee          bend (0 is straight)
+//   ankle                toes up (+) or pointed (−)
+export const PERSON_JOINTS = ['body', 'spine', 'neck', ...['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle'].flatMap((j) => [`${j}L`, `${j}R`])];
+
+function normJoints(v) {
+  if (v == null) return null;
+  if (typeof v !== 'object' || Array.isArray(v)) throw new Error('person.joints must be an object like {"kneeL": 90, "shoulderR": [80, 0, 10]}');
+  const out = {};
+  for (const [k, a] of Object.entries(v)) {
+    if (!PERSON_JOINTS.includes(k)) throw new Error(`person has no joint "${k}" (joints: ${PERSON_JOINTS.join(', ')})`);
+    if (a === null) continue;
+    const arr = Array.isArray(a) ? a : [a];
+    if (!arr.length || arr.length > 3 || !arr.every((x) => Number.isFinite(x))) throw new Error(`person.joints.${k} must be degrees: a number or [a, b, c]`);
+    out[k] = Array.isArray(a) ? arr.map(round) : round(a);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** Joint angles as text, the way canvas --joints takes them: "kneeL=90 shoulderR=80,0,10". */
+export function jointsText(j) {
+  return Object.entries(j || {}).map(([k, v]) => `${k}=${[].concat(v).join(',')}`).join(' ');
+}
+
+/** Parse joint angles from text ("kneeL=90 shoulderR=80,0,10") or JSON; "null" or "" clears them. */
+export function parseJoints(text) {
+  const t = String(text).trim();
+  if (!t || t === 'null' || t === 'none') return null;
+  if (t.startsWith('{')) return JSON.parse(t);
+  const out = {};
+  for (const part of t.split(/[\s;]+/).filter(Boolean)) {
+    const m = part.match(/^([a-zA-Z]+)[=:](.+)$/);
+    if (!m) throw new Error(`--joints: "${part}" is not joint=degrees (e.g. --joints "kneeL=90 shoulderR=80,0,10")`);
+    const v = m[2].split(',').map(Number);
+    out[m[1]] = v.length === 1 ? v[0] : v;
+  }
+  return out;
+}
+
+/** How tall an object stands (m, before its scale): a person's own height in its pose. */
+export function objectHeight(o) {
+  const p = o.params || {};
+  if (o.type === 'person') return (p.h ?? PERSON_HEIGHT[p.body || 'male'] ?? PERSON_HEIGHT.male) * (PERSON_POSES[p.pose]?.top ?? 1);
+  return p.h ?? (p.r != null ? p.r * 2 : 1);
+}
 
 export const DEFAULT_COLOR = '#d8d4cc';
 
@@ -119,6 +191,8 @@ function normParams(type, params = {}, base) {
     const choices = spec.choices?.[k], pattern = spec.strings?.[k];
     if (pattern) {
       if (v !== null && (typeof v !== 'string' || !pattern.test(v) || v.includes('..'))) throw new Error(`${type}.${k} must be a file name in the scene's models/ folder (.glb), got ${JSON.stringify(v)}`);
+    } else if (spec.check?.[k]) {
+      out[k] = spec.check[k](v); continue;
     } else if (choices) {
       if (v !== null && !choices.includes(v)) throw new Error(`${type}.${k} must be one of ${choices.join(', ')}, got ${JSON.stringify(v)}`);
     } else if (v !== null && !Number.isFinite(v)) throw new Error(`${type}.${k} must be a number`);
@@ -276,8 +350,7 @@ function spin(p, c, deg) {
 function objectCentre(doc, id, t) {
   const o = findObject(doc, id);
   const at = sampleObject(o, { ...doc.timeline, speed: 'linear' }, t);
-  const p = o.params || {};
-  const h = (p.h ?? (o.type === 'person' ? PERSON_HEIGHT[p.body || 'male'] : null) ?? (p.r != null ? p.r * 2 : 1)) * (at.scale?.[1] ?? 1);
+  const h = objectHeight(o) * (at.scale?.[1] ?? 1);
   return [at.position[0], at.position[1] + h * (o.type === 'person' ? 0.75 : 0.5), at.position[2]];
 }
 const num = (v, name, def) => {
@@ -962,7 +1035,8 @@ function normTimeline(input) {
 
 /** One-line description of an object, for agents. */
 export function describe(o) {
-  const p = Object.entries(o.params).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`).join(' ');
+  const p = Object.entries(o.params).filter(([k, v]) => v != null && !(k === 'pose' && v === 'stand'))
+    .map(([k, v]) => (k === 'joints' ? `joints="${jointsText(v)}"` : `${k}=${v}`)).join(' ');
   const r = o.rotation.some((v) => v) ? ` rot=${o.rotation.join(',')}` : '';
   const s = o.scale.some((v) => v !== 1) ? ` scale=${o.scale.join(',')}` : '';
   const a = o.anim?.length ? ` anim: ${o.anim.map((k) => `${k.t}s@${k.position.join(',')}${k.rotation.some((v) => v) ? ` rot=${k.rotation.join(',')}` : ''}`).join(' → ')}` : '';

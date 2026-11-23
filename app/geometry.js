@@ -40,11 +40,13 @@ export const BUILDERS = {
     s.lineTo(ow / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, h); s.lineTo(-w / 2, h); s.closePath();
     return new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, curveSegments: 24 }).translate(0, 0, -d / 2);
   },
-  // A person (male, female or child), h tall (default: the body's usual height), facing +z. Detail 'high'
-  // is the jointed artist's mannequin; 'low' is a box body with a cube head and a drawn-on face.
-  person({ h, body, detail }) {
+  // A person (male, female or child), h tall standing (default: the body's usual height), facing +z. Detail
+  // 'high' is the jointed artist's mannequin; 'low' is a box body with a cube head and a drawn-on face, which
+  // cannot bend, so a posed person (any pose but stand, or joints set) is always the mannequin.
+  person({ h, body, detail, pose, joints }) {
     const H = h ?? PERSON_HEIGHT[body] ?? PERSON_HEIGHT.male;
-    return (detail === 'low' ? blockman(body) : mannequin(body)).clone().scale(H, H, H);
+    const posed = (pose && pose !== 'stand') || joints;
+    return (detail === 'low' && !posed ? blockman(body) : mannequin(body, pose || 'stand', joints)).clone().scale(H, H, H);
   },
   // An imported GLB: the object itself is an empty mesh (it carries the transform, gizmo and moves); the
   // viewport loads the file and puts it inside (Viewport._loadModel).

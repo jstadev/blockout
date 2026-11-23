@@ -114,8 +114,10 @@ function turned(out, a, b, prof, seg = 10) {
   ], seg);
 }
 
-function build(B) {
-  const mid = { pos: [], idx: [] }, side = { pos: [], idx: [] };
+/** Build the pieces standing, each in the bucket of the bone that carries it (one side's limbs only). */
+function buildParts(B) {
+  const G = Object.fromEntries(BONES.map((b) => [b.id, { pos: [], idx: [] }]));
+
 
   // Head: an egg, wider at the crown, tipped so the chin leads.
   {
@@ -127,14 +129,14 @@ function build(B) {
       rings.push([(h * (1 - Math.cos(p))) / 2, a * k, b * k]);
     }
     const f = frame([0, chin, z + h * 0.1], [0, 1, -0.2]);
-    loft(mid, f, rings, 16);
+    loft(G.neck, f, rings, 16);
     // a plain wedge of a nose, so the facing reads from any distance
     const bridge = add(add(f.o, f.w, h * 0.57), f.v, b * 0.965), tip = add(add(f.o, f.w, h * 0.34), f.v, b * 0.9);
     const L = Math.hypot(...sub(tip, bridge));
-    loft(mid, frame(bridge, sub(tip, bridge), [-1, 0, 0]), [
+    loft(G.neck, frame(bridge, sub(tip, bridge), [-1, 0, 0]), [
       [0, 0, 0, 0], [L * 0.45, h * 0.034, h * 0.034, 0], [L * 0.85, h * 0.064, h * 0.064, h * 0.024], [L, h * 0.05, h * 0.044, h * 0.014], [L * 1.05, 0, 0, 0],
     ], 6);
-    turned(mid, [0, B.neck.y, -0.004], [0, chin + h * 0.16, z - 0.002], [[0, B.neck.r * 1.08], [1, B.neck.r]], 10);
+    turned(G.neck, [0, B.neck.y, -0.004], [0, chin + h * 0.16, z - 0.002], [[0, B.neck.r * 1.08], [1, B.neck.r]], 10);
   }
 
   // Chest: broad at the shoulders, narrowing to the waist, with rounded-square sections.
@@ -151,10 +153,10 @@ function build(B) {
       rings.push([t * H, a * lerp(taper, 1, k) * round, b * depth + swell, swell - 0.002 - 0.004 * t, 2.5]);
     }
     rings.push([H * 1.07, 0, 0, -0.006]); // the top rises a little to the neck
-    loft(mid, frame([0, y0, 0], Y), rings, 16);
+    loft(G.spine, frame([0, y0, 0], Y), rings, 16);
   }
 
-  ball(mid, [0, B.waist.y, 0], [B.waist.a, B.waist.h, B.waist.b], 14, 5);
+  ball(G.spine, [0, B.waist.y, 0], [B.waist.a, B.waist.h, B.waist.b], 14, 5);
 
   // Hips: a block that is widest low down and tucks in to the crotch between the leg joints.
   {
@@ -163,35 +165,35 @@ function build(B) {
     const rings = [[0, 0, 0, 0]];
     for (const [t, w, depth] of rows) rings.push([t * H, a * w, b * depth, -0.004 * Math.sin(Math.PI * t), 2.5]);
     rings.push([H, 0, 0, 0]);
-    loft(mid, frame([0, y0, 0], Y), rings, 20);
+    loft(G.body, frame([0, y0, 0], Y), rings, 20);
   }
 
   // Arm: shoulder ball, upper arm, elbow ball, forearm, wrist ball, hand.
   {
     const [u0, u1, f0, f1] = B.arm, { shoulder: S, elbow: E, wrist: W, hand } = B;
-    ball(side, S, B.shoulderR);
-    turned(side, S, E, [[0.12, u0 * 0.96], [0.3, u0], [0.9, u1]]);
-    ball(side, E, u1 * 1.12, 10, 5);
-    turned(side, E, W, [[0.11, f0 * 0.94], [0.28, f0], [0.9, f1]]);
-    ball(side, W, f1 * 1.1, 8, 4);
+    ball(G.shoulder, S, B.shoulderR);
+    turned(G.shoulder, S, E, [[0.12, u0 * 0.96], [0.3, u0], [0.9, u1]]);
+    ball(G.elbow, E, u1 * 1.12, 10, 5);
+    turned(G.elbow, E, W, [[0.11, f0 * 0.94], [0.28, f0], [0.9, f1]]);
+    ball(G.elbow, W, f1 * 1.1, 8, 4);
     // the hand hangs palm in, thumb forward: a flat paddle, broad front to back
     const down = unit(add(sub(W, E), [0, -1, 0.1], 0.12)), f = frame(W, down, Z), L = hand.len, { a, b } = hand;
-    loft(side, f, [
+    loft(G.wrist, f, [
       [L * 0.06, 0, 0, 0], [L * 0.1, a * 0.58, b * 0.9, 0, 2.6], [L * 0.3, a * 0.96, b, 0, 2.6], [L * 0.52, a, b * 0.96, 0, 2.6],
       [L * 0.76, a * 0.86, b * 0.8, 0, 2.6], [L * 0.94, a * 0.56, b * 0.6, 0, 2.6], [L, 0, 0, 0],
     ], 8);
     const root = add(add(W, f.w, L * 0.2), f.u, a * 0.7);
-    turned(side, root, add(add(root, f.w, L * 0.3), f.u, a * 0.62), [[0, a * 0.36], [0.6, a * 0.34], [1, a * 0.26]], 6);
+    turned(G.wrist, root, add(add(root, f.w, L * 0.3), f.u, a * 0.62), [[0, a * 0.36], [0.6, a * 0.34], [1, a * 0.26]], 6);
   }
 
   // Leg: hip ball, thigh, knee ball, shin, ankle ball, foot.
   {
     const [t0, t1, calf, ank] = B.leg, { hip: P, knee: K, ankle: A, foot } = B;
-    ball(side, P, t0 * 1.03, 14, 6);
-    turned(side, P, K, [[0.1, t0 * 0.97], [0.3, t0], [0.9, t1]], 12);
-    ball(side, K, t1 * 1.12, 12, 5);
-    turned(side, K, A, [[0.09, t1 * 0.93], [0.3, calf], [0.6, lerp(calf, ank, 0.55)], [0.92, ank]], 12);
-    ball(side, A, ank * 1.1, 8, 4);
+    ball(G.hip, P, t0 * 1.03, 14, 6);
+    turned(G.hip, P, K, [[0.1, t0 * 0.97], [0.3, t0], [0.9, t1]], 12);
+    ball(G.knee, K, t1 * 1.12, 12, 5);
+    turned(G.knee, K, A, [[0.09, t1 * 0.93], [0.3, calf], [0.6, lerp(calf, ank, 0.55)], [0.92, ank]], 12);
+    ball(G.knee, A, ank * 1.1, 8, 4);
     // the foot: flat on the ground, high under the ankle, low and broad at the toes, turned out a little
     const o = (foot.out * Math.PI) / 180, toe = [Math.sin(o), 0, Math.cos(o)], L = foot.len, w = foot.a, hgt = A[1];
     const heel = add([A[0], 0, A[2]], toe, -L * 0.27);
@@ -199,32 +201,146 @@ function build(B) {
     const rings = [[0, 0, 0, hgt * 0.3]];
     for (const [t, width, high] of rows) rings.push([t * L, w * width, (hgt * high) / 2, (hgt * high) / 2, 2.6, 7]);
     rings.push([L, 0, 0, hgt * 0.12]);
-    loft(side, frame(heel, toe, cross(toe, Y)), rings, 12);
+    loft(G.ankle, frame(heel, toe, cross(toe, Y)), rings, 12);
   }
 
-  // One side is built; the other is its mirror image, with the triangles turned to face out again.
-  const n = mid.pos.length / 3, m = side.pos.length / 3;
-  const pos = new Float32Array((n + 2 * m) * 3), idx = [...mid.idx];
-  pos.set(mid.pos); pos.set(side.pos, n * 3); pos.set(side.pos, (n + m) * 3);
-  for (let i = 0; i < m; i++) pos[(n + m + i) * 3] *= -1;
-  for (let i = 0; i < side.idx.length; i += 3) {
-    const [a, b, c] = side.idx.slice(i, i + 3);
-    idx.push(n + a, n + b, n + c, n + m + a, n + m + c, n + m + b);
-  }
-  // exactly one unit tall, standing on y = 0
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 1; i < pos.length; i += 3) { lo = Math.min(lo, pos[i]); hi = Math.max(hi, pos[i]); }
-  for (let i = 0; i < pos.length; i++) pos[i] = (pos[i] - (i % 3 === 1 ? lo : 0)) / (hi - lo);
-
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  return g;
+  return G;
 }
 
-const CACHE = {};
-/** The mannequin for a body (male, female or child), one unit tall, feet on y = 0, facing +z. Built once. */
-export function mannequin(body) {
-  const b = BODIES[body] ? body : 'male';
-  return (CACHE[b] ??= build(BODIES[b]));
+// The skeleton. Each bone turns about its joint (pivot) and carries its children. Limb bones exist once per
+// side: L is the figure's own left (+x), R its right.
+const BONES = [
+  { id: 'body', pivot: (B) => [0, B.hip[1], 0] },
+  { id: 'spine', parent: 'body', pivot: (B) => [0, B.waist.y, 0] },
+  { id: 'neck', parent: 'spine', pivot: (B) => [0, B.neck.y, -0.004] },
+  { id: 'shoulder', parent: 'spine', side: true, pivot: (B) => B.shoulder },
+  { id: 'elbow', parent: 'shoulder', side: true, hinge: -1, pivot: (B) => B.elbow },
+  { id: 'wrist', parent: 'elbow', side: true, pivot: (B) => B.wrist },
+  { id: 'hip', parent: 'body', side: true, pivot: (B) => B.hip },
+  { id: 'knee', parent: 'hip', side: true, hinge: 1, pivot: (B) => B.knee },
+  { id: 'ankle', parent: 'knee', side: true, hinge: -1, pivot: (B) => B.ankle },
+];
+
+/** Every joint a pose can set, e.g. kneeL. */
+export const JOINTS = BONES.flatMap((b) => (b.side ? [`${b.id}L`, `${b.id}R`] : [b.id]));
+
+/**
+ * The named poses, as joint angles in degrees (unset joints stay as they stand). The angles mean:
+ *   body, spine, neck   [bend forward, lean to its left, turn to its left]  (body turns the whole figure at the hips)
+ *   shoulder, hip, wrist [raise forward, raise out to the side, twist about its length (+ turns its front out)]
+ *   elbow, knee         bend (0 is straight)
+ *   ankle               toes up (+) or pointed (−)
+ */
+export const POSES = {
+  stand: {},
+  walk: { hipL: 22, kneeL: 8, ankleL: 10, hipR: -16, kneeR: 22, ankleR: -10, shoulderL: -16, elbowL: 12, shoulderR: 18, elbowR: 20 },
+  run: {
+    spine: 12, neck: -8, hipL: 55, kneeL: 75, ankleL: 10, hipR: -22, kneeR: 95, ankleR: -30,
+    shoulderL: [-38, 8], elbowL: 95, shoulderR: [48, 8], elbowR: 100,
+  },
+  sit: { spine: -4, hipL: [90, 6], kneeL: 90, hipR: [90, 6], kneeR: 90, shoulderL: [4, 4], elbowL: 55, wristL: -15, shoulderR: [4, 4], elbowR: 55, wristR: -15 },
+  'sit-floor': {
+    spine: 8, hipL: [82, 50, 125], kneeL: 140, ankleL: -40, hipR: [76, 48, 115], kneeR: 142, ankleR: -40,
+    shoulderL: [12, 14], elbowL: 40, shoulderR: [12, 14], elbowR: 40,
+  },
+  crouch: {
+    body: 16, spine: 22, neck: -26, hipL: [112, 14, 10], kneeL: 140, ankleL: 28, hipR: [112, 14, 10], kneeR: 140, ankleR: 28,
+    shoulderL: [40, 12], elbowL: 50, shoulderR: [40, 12], elbowR: 50,
+  },
+  kneel: {
+    hipL: [90, 4], kneeL: 90, hipR: [-2, 4], kneeR: 90, ankleR: -40,
+    spine: 6, shoulderL: [30, 6], elbowL: 30, shoulderR: [4, 6], elbowR: 10,
+  },
+  lie: { body: -90, neck: 6, shoulderL: [0, 12], shoulderR: [0, 12] },
+  lean: { body: -9, neck: 8, hipL: [10, 0, 12], kneeL: 16, ankleL: -30, hipR: [-4, -12], shoulderL: [-12, 8], shoulderR: [-12, 8], elbowL: 15, elbowR: 15 },
+  point: { shoulderR: [88, 4], elbowR: 4, wristR: 4, neck: [0, 0, -8], spine: [0, 0, -6] },
+  wave: { shoulderR: [0, 95, 90], elbowR: 100, neck: [0, 0, -6] },
+  'arms-crossed': { shoulderL: [25, 12, -70], elbowL: 110, shoulderR: [28, 12, -76], elbowR: 106 },
+  'hands-on-hips': { shoulderL: [-10, 45, -90], elbowL: 110, wristL: [0, -15], shoulderR: [-10, 45, -90], elbowR: 110, wristR: [0, -15] },
+  'reach-up': { neck: -24, shoulderL: [168, 6], shoulderR: [168, 6], elbowL: 6, elbowR: 6 },
+  phone: { neck: [6, -8], shoulderR: [60, 20, -20], elbowR: 155, wristR: [0, -10] },
+};
+
+const DEG = Math.PI / 180;
+const triple = (v) => (Array.isArray(v) ? [v[0] || 0, v[1] || 0, v[2] || 0] : [v || 0, 0, 0]);
+
+const DOWN = new THREE.Vector3(0, -1, 0), AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+const about = (axis, deg) => new THREE.Quaternion().setFromAxisAngle(AX[axis], deg * DEG);
+
+/** A bone's turn as a quaternion, from its angles; s is the side (+1 left, −1 right), mirroring the turns. */
+function turnOf(bone, v, s) {
+  const [a, b, c] = triple(v);
+  if (bone.hinge) return about('x', bone.hinge * a);
+  if (bone.side) {
+    // a limb: aim it (out to the side in the frontal plane, then forward), swinging it there the shortest way,
+    // after twisting it about its own length (+ turns its front outward)
+    const aim = DOWN.clone().applyQuaternion(about('z', s * b)).applyQuaternion(about('x', -a));
+    return new THREE.Quaternion().setFromUnitVectors(DOWN, aim).multiply(about('y', s * c));
+  }
+  // the trunk: bend forward, then lean, then turn
+  return about('y', c).multiply(about('z', -b)).multiply(about('x', a));
+}
+
+/** The joints of a pose with any overrides, as { joint: [a, b, c] }. Unknown poses stand. */
+export function poseJoints(pose, joints) {
+  return { ...(POSES[pose] || {}), ...(joints || {}) };
+}
+
+function assemble(B, parts, angles) {
+  // each bone's placement: parent · move to the joint · turn · move back
+  const world = {}, M = new THREE.Matrix4(), T = new THREE.Matrix4(), R = new THREE.Matrix4();
+  const posed = [];
+  for (const s of [1, -1]) {
+    for (const bone of BONES) {
+      if (!bone.side && s < 0) continue;
+      const key = bone.side ? `${bone.id}${s > 0 ? 'L' : 'R'}` : bone.id;
+      const p = bone.pivot(B), pv = [p[0] * (bone.side ? s : 1), p[1], p[2]];
+      const parentKey = bone.parent && (BONES.find((x) => x.id === bone.parent).side ? `${bone.parent}${s > 0 ? 'L' : 'R'}` : bone.parent);
+      M.copy(parentKey ? world[parentKey] : new THREE.Matrix4());
+      M.multiply(T.makeTranslation(pv[0], pv[1], pv[2]));
+      M.multiply(R.makeRotationFromQuaternion(turnOf(bone, angles[key], s)));
+      M.multiply(T.makeTranslation(-pv[0], -pv[1], -pv[2]));
+      world[key] = M.clone();
+      posed.push({ part: parts[bone.id], m: world[key], s: bone.side ? s : 1 });
+    }
+  }
+  const pos = [], idx = [], v = new THREE.Vector3();
+  for (const { part, m, s } of posed) {
+    const base = pos.length / 3;
+    for (let i = 0; i < part.pos.length; i += 3) {
+      v.set(part.pos[i] * s, part.pos[i + 1], part.pos[i + 2]).applyMatrix4(m);
+      pos.push(v.x, v.y, v.z);
+    }
+    // the mirrored side's triangles are turned to face out again
+    for (let i = 0; i < part.idx.length; i += 3) {
+      const [a, b, c] = part.idx.slice(i, i + 3);
+      if (s > 0) idx.push(base + a, base + b, base + c); else idx.push(base + a, base + c, base + b);
+    }
+  }
+  return { pos, idx };
+}
+
+const PARTS = {}, CACHE = {};
+const yRange = (pos) => { let lo = Infinity, hi = -Infinity; for (let i = 1; i < pos.length; i += 3) { lo = Math.min(lo, pos[i]); hi = Math.max(hi, pos[i]); } return [lo, hi]; };
+
+/**
+ * The mannequin for a body (male, female or child) in a pose (a name from POSES, default stand) with any
+ * joint overrides ({ kneeL: 90, shoulderR: [80, 0, 10] }). It is scaled so that standing it is one unit tall,
+ * so the object's h is always the standing height; posed, its lowest point is on y = 0 and the hips stay over
+ * the origin. Facing +z. Built once per body, pose and joints.
+ */
+export function mannequin(body, pose = 'stand', joints = null) {
+  const b = BODIES[body] ? body : 'male', p = POSES[pose] ? pose : 'stand';
+  const key = `${b}|${p}|${joints ? JSON.stringify(joints) : ''}`;
+  if (CACHE[key]) return CACHE[key];
+  const B = BODIES[b], parts = (PARTS[b] ??= buildParts(B));
+  const rest = (PARTS[`${b}:range`] ??= yRange(assemble(B, parts, {}).pos));
+  const { pos, idx } = assemble(B, parts, poseJoints(p, joints));
+  const [lo] = yRange(pos), scale = rest[1] - rest[0];
+  const arr = new Float32Array(pos.length);
+  for (let i = 0; i < pos.length; i++) arr[i] = (pos[i] - (i % 3 === 1 ? lo : 0)) / scale;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  g.setIndex(idx);
+  return (CACHE[key] = g);
 }
