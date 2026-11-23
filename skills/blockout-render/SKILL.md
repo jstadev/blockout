@@ -1,6 +1,6 @@
 ---
 name: blockout-render
-description: Turn a Blockout export (the whole timeline, every shot, as one reference video) into a finished video by running a ComfyUI reference-to-video workflow (Seedance 2.5 or any saved "recipe") on Comfy Cloud or the user's local ComfyUI. Use only when the user asks to render, generate or "run through Comfy / Seedance" a Blockout timeline or shot, asks for another take of a render, or asks to save or adapt a ComfyUI workflow for Blockout. Not for building the scene or camera (that is blockout-canvas), and not for general ComfyUI work.
+description: Turn a Blockout export (the whole timeline, every shot, as one reference video) into a finished video by running a ComfyUI reference-to-video workflow (Seedance 2.5 or any saved "recipe") on Comfy Cloud or the user's local ComfyUI. Use only when the user asks to render, generate or "run through Comfy / Seedance" a Blockout timeline or shot, asks for another take of a render, or asks to save or adapt a ComfyUI workflow for Blockout. Not for building the scene or camera (that is the blockout skill), and not for general ComfyUI work.
 ---
 
 # Blockout render
@@ -10,7 +10,7 @@ An optional step after the blockout: the export of the **whole timeline** (every
 the Blockout chat. Blockout itself has no ComfyUI code. You do the adapting, with the ComfyUI tools the
 user already has.
 
-You need the `blockout-canvas` skill for every `canvas` command below (`node bin/canvas.mjs …`, or `canvas …`
+You need the `blockout` skill for every `canvas` command below (`node bin/canvas.mjs …`, or `canvas …`
 from the plugin). This skill's own helper is `scripts/recipe.mjs` in this folder; it only reads and writes
 workflow JSON and never talks to ComfyUI.
 
@@ -216,7 +216,7 @@ node bin/canvas.mjs say --reply <promptId> --attach <render folder>/render.mp4 "
   The uploaded inputs can usually be reused; nothing else changes. It spends credits, so it needs the
   confirm card unless the request itself is the go ("run another take").
 - **A change to the prompt or an image**: edit `prompt.txt` or swap the file, refill, confirm card, go.
-- **A change to the camera**: that is a Blockout edit. Make it with blockout-canvas, export and brief again,
+- **A change to the camera**: that is a Blockout edit. Make it with the blockout skill, export and brief again,
   then render. The old prompt's timings are stale.
 - **"Same, on <other recipe>"**: fill the other recipe with the same inputs and prompt; check its notes for
   different limits and reference names.

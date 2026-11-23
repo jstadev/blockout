@@ -29,7 +29,7 @@ Then, in any folder, run **`/blockout:start`** (optionally followed by what to b
 your browser, starts listening to it and asks what you want to block out. Answer in the terminal or in the
 canvas: it is the same conversation. That's the whole setup; nothing to clone, install or keep open.
 
-The plugin brings the `/blockout:start` command, the `blockout-canvas` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
+The plugin brings the `/blockout:start` command, the `blockout` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
 and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/`, so
 plugin updates never touch them (`CANVAS_DATA` moves them).
 
@@ -55,7 +55,7 @@ node bin/canvas.mjs up      # starts the local server and opens http://127.0.0.1
 Then open your agent in this folder and talk to it:
 
 - **Claude Code**: `claude` → "block out a rainy street with a person waiting at a bus stop, slow
-  push-in over 5 seconds". The `blockout-canvas` skill and hooks load from `.claude/`.
+  push-in over 5 seconds". The `blockout` skill and hooks load from `.claude/`.
 - **Codex**: `codex` → same. Codex reads `AGENTS.md` and the skill in `.agents/skills/`.
 
 A checkout keeps its scenes in the repo's own `scenes/` folder. To use the skill from any folder
@@ -160,8 +160,8 @@ load. Agents use `canvas save <name>`, `canvas load <name>` and `canvas saves`.
 ## For agents
 
 - [AGENTS.md](AGENTS.md) — project instructions (Codex, and Claude via CLAUDE.md)
-- [skills/blockout-canvas/SKILL.md](skills/blockout-canvas/SKILL.md) — the skill: workflow, conventions, camera craft
-- [skills/blockout-canvas/references/api.md](skills/blockout-canvas/references/api.md) — ops, CLI and HTTP reference
+- [skills/blockout/SKILL.md](skills/blockout/SKILL.md) — the skill: workflow, conventions, camera craft
+- [skills/blockout/references/api.md](skills/blockout/references/api.md) — ops, CLI and HTTP reference
 - [skills/blockout-render/SKILL.md](skills/blockout-render/SKILL.md) — optional: render an export into a finished shot with ComfyUI
 - [docs/DESIGN.md](docs/DESIGN.md) — design system for new controls
 - `node bin/canvas.mjs help` — every command

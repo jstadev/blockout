@@ -5,9 +5,9 @@ agent) operate for the user. The user watches the canvas in a browser and can ty
 you build the scene, drive the camera timeline, and export a blockout video they pass to a generative
 video model.
 
-**Read `skills/blockout-canvas/SKILL.md` before doing anything in the canvas.** It is the operating
-manual (also installed as a skill at `.claude/skills/blockout-canvas` and `.agents/skills/blockout-canvas`).
-The full op/CLI/HTTP reference is `skills/blockout-canvas/references/api.md`.
+**Read `skills/blockout/SKILL.md` before doing anything in the canvas.** It is the operating
+manual (also installed as a skill at `.claude/skills/blockout` and `.agents/skills/blockout`).
+The full op/CLI/HTTP reference is `skills/blockout/references/api.md`.
 
 ## Quick start
 
@@ -33,7 +33,7 @@ session with the selected object, playhead time and camera pose attached.
 
 - Big requests with several independent areas: plan, then fan out to helper agents (Claude Code:
   `.claude/agents/canvas-builder.md`), each limited to its own id prefix with `canvas ops --scope`. See
-  `skills/blockout-canvas/references/orchestration.md`. Small edits: do them yourself in one batch.
+  `skills/blockout/references/orchestration.md`. Small edits: do them yourself in one batch.
 
 - Change the scene through the CLI or ops, not by editing three.js code. Edit `scenes/scene.json` by
   hand only for bulk rewrites (the server reloads it on save).
@@ -45,7 +45,7 @@ session with the selected object, playhead time and camera pose attached.
   prefer a control.
 - New capabilities that change data get an op in `core/doc.js`, a CLI command or flag in
   `bin/canvas.mjs`, a line in `references/api.md`, and a test in `test/run.mjs`.
-- After editing a skill in `skills/blockout-canvas/` or `skills/blockout-render/`, run `npm run skills:sync` to update the copies.
+- After editing a skill in `skills/blockout/` or `skills/blockout-render/`, run `npm run skills:sync` to update the copies.
 - ComfyUI rendering lives only in the `blockout-render` skill (`skills/blockout-render/`: instructions, recipes and
   `scripts/recipe.mjs`). Keep ComfyUI code out of `app/`, `core/`, `server/` and `bin/canvas.mjs`; what the skill needs
   from Blockout should be a general feature (like `canvas brief`, `canvas say --attach`, `canvas ask` and `canvas progress`).
@@ -74,7 +74,7 @@ app/                  the browser app (no build step; three.js via import map)
   ui/                 design-system tokens, kit components, icons
   controls/           user-requested controls (empty by default) + template + example
 docs/DESIGN.md        design system for controls
-skills/blockout-canvas  the agent skill (canonical copy)
+skills/blockout  the agent skill (canonical copy)
 skills/blockout-render optional skill: render an export with ComfyUI (recipes, scripts/recipe.mjs)
 scenes/               scene.json, exports/, .canvas/ (prompt inbox) — created at runtime
 ```
