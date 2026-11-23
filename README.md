@@ -30,7 +30,7 @@ your browser, starts listening to it and asks what you want to block out. Answer
 canvas: it is the same conversation. That's the whole setup; nothing to clone, install or keep open.
 
 The plugin brings the `/blockout:start` command, the `blockout-canvas` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
-and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/` (or `~/Camera Canvas/scenes/` if you used it before the rename), so
+and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/`, so
 plugin updates never touch them (`CANVAS_DATA` moves them).
 
 Installed it before as `blockout-agent`? The plugin is now `blockout`: run `/plugin uninstall blockout-agent@blockout-agent`
