@@ -2,7 +2,7 @@
 
 ## Claude Code specifics
 
-- The `camera-canvas` skill is in `.claude/skills/camera-canvas/`; load it for any canvas work.
+- The `blockout` skill is in `.claude/skills/blockout/`; load it for any canvas work.
 - The `blockout-render` skill (`.claude/skills/blockout-render/`) is the optional ComfyUI render step; load it only
   when the user asks to render a shot.
 - `.claude/settings.json` allows `node bin/canvas.mjs` commands without prompts and installs two hooks:
@@ -20,8 +20,8 @@
   handle each prompt when it completes, then start another wait.
 - You can read the PNGs from `canvas snapshot` / `canvas storyboard` directly; do so to check your work.
 - Big builds with several separate areas: you are the orchestrator. Spawn `canvas-builder` helpers
-  (`.claude/agents/canvas-builder.md`, generated from `skills/camera-canvas/references/builder.md`) in
-  one message so they run in parallel, following `skills/camera-canvas/references/orchestration.md`.
+  (`.claude/agents/canvas-builder.md`, generated from `skills/blockout/references/builder.md`) in
+  one message so they run in parallel, following `skills/blockout/references/orchestration.md`.
   Helpers never listen, reply or touch the camera; you keep the canvas chat, camera and final review.
 - Blockout also ships as a Claude Code plugin from this same folder: `.claude-plugin/` (manifest and
   marketplace), `hooks/hooks.json` (the same two hooks), `bin/canvas` (the `canvas` command on PATH) and the

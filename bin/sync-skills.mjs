@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copy the canonical skills (skills/camera-canvas, skills/blockout-render) to where each agent looks for them:
+// Copy the canonical skills (skills/blockout, skills/blockout-render) to where each agent looks for them:
 //   Claude Code: .claude/skills/<skill>     Codex: .agents/skills/<skill>
 // Pass --global to also install into ~/.claude/skills and ~/.codex/skills (the skills then work from any folder;
 // they find this repo through the CANVAS_HOME path written into it).
@@ -9,8 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SKILLS = ['camera-canvas', 'blockout-render'];
-const SRC = path.join(ROOT, 'skills', 'camera-canvas');
+const SKILLS = ['blockout', 'blockout-render'];
+const SRC = path.join(ROOT, 'skills', 'blockout');
 const global = process.argv.includes('--global');
 
 for (const skill of SKILLS) {
@@ -36,11 +36,11 @@ const agentFile = path.join(ROOT, '.claude', 'agents', 'canvas-builder.md');
 fs.mkdirSync(path.dirname(agentFile), { recursive: true });
 fs.writeFileSync(agentFile, `---
 name: canvas-builder
-description: Builds one part of a Blockout scene (a zone such as "the house", "the street", "the crowd") from a brief written by the main canvas agent, working in parallel with other builders. Use only when the camera-canvas skill's orchestration guide says to fan out.
+description: Builds one part of a Blockout scene (a zone such as "the house", "the street", "the crowd") from a brief written by the main canvas agent, working in parallel with other builders. Use only when the blockout skill's orchestration guide says to fan out.
 tools: Bash, Read, Write
 ---
 
-<!-- Generated from skills/camera-canvas/references/builder.md by bin/sync-skills.mjs. Edit that file instead. -->
+<!-- Generated from skills/blockout/references/builder.md by bin/sync-skills.mjs. Edit that file instead. -->
 
 ${builder}`);
 console.log(`builder agent -> ${agentFile}`);
