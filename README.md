@@ -1,179 +1,128 @@
-# Blockout
+<h1 align="center">Blockout</h1>
 
-A hyper-minimal three.js canvas for **blocking out 3D scenes and camera moves with your coding
-agent** (Claude Code or Codex), then exporting a blockout video to use as a reference for a
-generative video model.
+<p align="center">
+  <b>Block out 3D scenes and camera moves by chatting with your coding agent.</b><br>
+  Then export the blockout as a reference video for a generative video model.
+</p>
 
-The interface is a ground plane, primitive shapes, gizmos when you click something, a camera
-timeline with easing and speed curves, and a chat sidebar that talks to your agent. Everything else you ask your agent for.
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#video-tutorials">Tutorials</a> ·
+  <a href="docs/GUIDE.md">Guide</a> ·
+  <a href="#for-agents-and-developers">For agents</a>
+</p>
 
-```
- you ── chat sidebar in the canvas ──▶ bridge server ──▶ your agent session (same thread)
-  ▲                                      │                      │
-  └──────── live scene updates ◀─────────┴──── canvas CLI ◀─────┘
-```
+<p align="center">
+  <img src="docs/screenshot.jpg" alt="Blockout: a street scene in shot view, the camera timeline below and the chat with the agent on the right" width="100%">
+</p>
+
+Blockout is a minimal three.js canvas that Claude Code or Codex drives for you. Describe a shot in the chat
+beside the canvas, and your agent builds the set out of simple shapes and people, keys the camera and cuts it
+into shots while you watch. Adjust anything by hand, then export one video of the whole timeline.
+
+- **Describe it.** "A rainy street, a man waiting at a bus stop, slow push-in as a car passes."
+- **Shape it.** Key framings, pick preset moves, draw ease curves, cut between shots, lay music under it.
+- **Export it.** One MP4 of every shot in order, ready for Seedance, Veo, Kling or any reference-to-video model.
+  Optionally, your agent can render it through ComfyUI for you.
 
 ## Video tutorials
 
-Six short videos (under a minute each) that walk through Blockout. Click one to watch.
+Six short videos, under a minute each.
 
 <table>
-<tr><td width="33%"><a href="docs/tutorials/01-getting-started.mp4"><img src="docs/tutorials/01-getting-started.jpg" alt="Getting started"></a><br><b>1. Getting started</b></td><td width="33%"><a href="docs/tutorials/02-shots-and-timeline.mp4"><img src="docs/tutorials/02-shots-and-timeline.jpg" alt="Shots and the timeline"></a><br><b>2. Shots and the timeline</b></td><td width="33%"><a href="docs/tutorials/03-camera-moves-and-eases.mp4"><img src="docs/tutorials/03-camera-moves-and-eases.jpg" alt="Camera moves and eases"></a><br><b>3. Camera moves and eases</b></td></tr>
-<tr><td width="33%"><a href="docs/tutorials/04-shudder.mp4"><img src="docs/tutorials/04-shudder.jpg" alt="Shudder"></a><br><b>4. Shudder</b></td><td width="33%"><a href="docs/tutorials/05-audio-and-beats.mp4"><img src="docs/tutorials/05-audio-and-beats.jpg" alt="Audio and beats"></a><br><b>5. Audio and beats</b></td><td width="33%"><a href="docs/tutorials/06-export-and-render-with-comfy.mp4"><img src="docs/tutorials/06-export-and-render-with-comfy.jpg" alt="Export and Render with Comfy"></a><br><b>6. Export and Render with Comfy</b></td></tr>
+  <tr>
+    <td width="33%" valign="top"><a href="docs/tutorials/01-getting-started.mp4"><img src="docs/tutorials/01-getting-started.jpg" alt="Getting started"></a><br><sub><b>1</b> · Getting started</sub></td>
+    <td width="33%" valign="top"><a href="docs/tutorials/02-shots-and-timeline.mp4"><img src="docs/tutorials/02-shots-and-timeline.jpg" alt="Shots and the timeline"></a><br><sub><b>2</b> · Shots and the timeline</sub></td>
+    <td width="33%" valign="top"><a href="docs/tutorials/03-camera-moves-and-eases.mp4"><img src="docs/tutorials/03-camera-moves-and-eases.jpg" alt="Camera moves and eases"></a><br><sub><b>3</b> · Camera moves and eases</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top"><a href="docs/tutorials/04-shudder.mp4"><img src="docs/tutorials/04-shudder.jpg" alt="Shudder"></a><br><sub><b>4</b> · Shudder</sub></td>
+    <td width="33%" valign="top"><a href="docs/tutorials/05-audio-and-beats.mp4"><img src="docs/tutorials/05-audio-and-beats.jpg" alt="Audio and beats"></a><br><sub><b>5</b> · Audio and beats</sub></td>
+    <td width="33%" valign="top"><a href="docs/tutorials/06-export-and-render-with-comfy.mp4"><img src="docs/tutorials/06-export-and-render-with-comfy.jpg" alt="Export and Render with Comfy"></a><br><sub><b>6</b> · Export and render with Comfy</sub></td>
+  </tr>
 </table>
 
-## Quick start: start in Claude Code
+## Quick start
 
-Requires Node 20+ and a Chromium-based browser or Safari 17+ (for WebCodecs video export).
-
-Install the plugin once, from any Claude Code session:
+You need Node 20+ and Chrome, Edge or Safari 17+. In any Claude Code session, install the plugin once:
 
 ```
-/plugin marketplace add shrimbly/blockout     # or the path to a local copy of this repo
+/plugin marketplace add shrimbly/blockout
 /plugin install blockout@blockout
 ```
 
-Then, in any folder, run **`/blockout:start`** (optionally followed by what to block out, e.g.
-`/blockout:start a lighthouse on a cliff, slow orbit`). Claude starts the server, opens the canvas in
-your browser, starts listening to it and asks what you want to block out. Answer in the terminal or in the
-canvas: it is the same conversation. That's the whole setup; nothing to clone, install or keep open.
+Then, in any folder:
 
-The plugin brings the `/blockout:start` command, the `blockout` skill, the optional `blockout-render` skill, the `canvas` command (on Claude's PATH), the listening hooks
-and the `canvas-builder` helper. Your scenes, saves and exports live in `~/Blockout/scenes/`, so
-plugin updates never touch them (`CANVAS_DATA` moves them).
-
-Installed it before as `blockout-agent`? The plugin is now `blockout`: run `/plugin uninstall blockout-agent@blockout-agent`
-and `/plugin marketplace remove blockout-agent`, then the two commands above.
-
-**Updates.** Claude Code doesn't auto-update plugins from third-party marketplaces unless you turn it
-on: run `/plugin`, open **Marketplaces**, select `blockout` and choose **Enable auto-update**. Or
-update by hand with `/plugin marketplace update blockout`. The plugin has no fixed version, so
-every new commit on `main` is an update. The next `/blockout:start` restarts the canvas server on
-the new copy.
-
-Listening belongs to the session that turned it on: the plugin's hooks run in every Claude Code
-session but do nothing in any other one, and nothing at all while the canvas server is stopped.
-
-## Without the plugin (Codex, or working on Blockout itself)
-
-```bash
-npm install
-node bin/canvas.mjs up      # starts the local server and opens http://127.0.0.1:5317
+```
+/blockout:start a lighthouse on a cliff, slow orbit
 ```
 
-Then open your agent in this folder and talk to it:
+Claude starts the canvas, opens it in your browser and starts listening to it. Keep talking in the terminal or
+in the canvas chat: it is the same conversation. Your scenes, saves and exports live in `~/Blockout/scenes/`.
 
-- **Claude Code**: `claude` → "block out a rainy street with a person waiting at a bus stop, slow
-  push-in over 5 seconds". The `blockout` skill and hooks load from `.claude/`.
-- **Codex**: `codex` → same. Codex reads `AGENTS.md` and the skill in `.agents/skills/`.
+<details>
+<summary><b>Updating the plugin</b></summary>
 
-A checkout keeps its scenes in the repo's own `scenes/` folder. To use the skill from any folder
-without the plugin: `node bin/sync-skills.mjs --global` (installs to `~/.claude/skills` and
-`~/.codex/skills` with this repo's path baked in).
+<br>
 
-## Prompting from inside the canvas
+Claude Code doesn't auto-update plugins from third-party marketplaces unless you turn it on: run `/plugin`,
+open **Marketplaces**, select `blockout` and choose **Enable auto-update**. Or update by hand with
+`/plugin marketplace update blockout`. Every commit on `main` is an update, and the next `/blockout:start`
+restarts the canvas on the new copy.
 
-Type in the chat sidebar on the right (`/` focuses it; Enter sends, Shift+Enter adds a line). The
-message goes to your agent session together with what you have selected, the playhead time and the
-camera pose (shown as chips above the input), so "make this taller" or "slow the camera down here"
-just work. The agent's replies appear in the thread. Hide the sidebar with the panel button in its
-header; a dot on the chat button in the corner marks unread replies. The conversation survives reloads;
-the compose button starts a new chat and keeps the old one under the history button (past chats), where
-you can read it back. Your agent can read them too with `canvas chats`.
+Installed it before as `blockout-agent`? Run `/plugin uninstall blockout-agent@blockout-agent` and
+`/plugin marketplace remove blockout-agent`, then the two install commands above.
 
-Tell your agent to listen first:
+</details>
 
-- **Claude Code**: say "listen to the canvas". It runs `canvas listen on`; the Stop hook then keeps the
-  session waiting for your next canvas prompt and feeds it into the same thread. Press Esc in the
-  terminal to interrupt; "stop listening" turns it off.
-- **Codex**: say "listen to the canvas". It loops `canvas wait`, which blocks until you send a prompt.
+<details>
+<summary><b>Without the plugin: Codex, or working on Blockout itself</b></summary>
 
-The sidebar header shows **agent listening** (green), **agent working** (orange), or **agent not
-listening** (prompts queue until the agent picks them up). A prompt the agent took but never answered
-shows "no reply yet" instead of spinning forever, and is closed as soon as the agent asks for the next one.
+<br>
 
-## In the canvas
+```bash
+git clone https://github.com/shrimbly/blockout && cd blockout
+npm install
+node bin/canvas.mjs up      # starts the server and opens http://127.0.0.1:5317
+```
+
+Then open `claude` or `codex` in this folder and say what to block out. Claude Code loads the skill and hooks
+from `.claude/`; Codex reads `AGENTS.md` and `.agents/skills/`. Say "listen to the canvas" to prompt from the
+canvas chat. A checkout keeps its scenes in its own `scenes/` folder.
+
+To use the skill from any folder without the plugin: `node bin/sync-skills.mjs --global`.
+
+</details>
+
+## Using the canvas
+
+The basics, at a glance. The [guide](docs/GUIDE.md) has every control.
 
 | | |
 |---|---|
-| Click | aim the camera at the clicked point (object surface or ground). In Shot view, press `K` to key the new aim. |
-| Ctrl-click (or ⌘-click) | select an object; on empty space, deselect |
-| Drag | orbit · right-drag pan · scroll zoom · double-click frames the selection |
-| `W` `A` `S` `D` · `Q` `E` · `Z` `X` | fly the camera: move, down / up, roll (Dutch tilt). `Shift` faster, `Alt` slower. Works on a trackpad; drag still orbits around the aim point ahead. Hold the right mouse button as well to look around with the mouse, fly with the arrows too, and scroll to set the fly speed. In Shot view it reframes the shot camera (press `K` to key it). |
-| Roll field (°, next to Lens) | the roll (Dutch tilt) of the selected key and the free view, like Lens. New keys take the view's roll. |
-| Ctrl-scroll (or ⌘-scroll, or pinch) | change the lens (focal length): the free view and selected key, or the shot camera in shot view (press K to key it) |
-| `1` `2` `3` | move / rotate / scale gizmo |
-| `F` · `Shift D` (or `⌘D`) · `⌫` · `Esc` | frame · duplicate · delete · deselect |
-| `C` | toggle **Free** (orbit the set, see the camera path) and **Shot** (look through the timeline camera, framed at the export size, with the scene dimmed past the frame edge) |
-| `K` | key the current view at the playhead. In Shot view, orbit to reframe, then `K`. |
-| `[` `]` · `Shift [` `]` · `Shift N` | previous / next shot · move the shot earlier / later · next shot |
-| `Space` · `← →` · `Home` | play · step a frame (Shift: 1 s) · start |
-| `⌘Z` / `⇧⌘Z` | undo / redo (also undoes agent changes) |
+| **Chat** | `/` focuses the chat. Your selection, the playhead and the camera go along with each message, so "make this taller" just works. |
+| **Look around** | Drag to orbit, right-drag to pan, scroll to zoom, `W` `A` `S` `D` to fly. Click to aim the camera. |
+| **Key the camera** | `C` looks through the shot camera. Frame it, press `K` to key it at the playhead. The caret on **Key** has preset moves. |
+| **Shots** | One set, several cameras. **+ New shot** or `Shift N` adds one; **Play all** plays through the cuts. |
+| **Export** | **Export full video** renders every shot, with the audio, into one MP4 in `scenes/exports/`. |
+| **Undo** | `⌘Z` undoes anything, including your agent's changes. |
 
-**Timeline:** drag the playhead to scrub; drag a key (◆) to retime it (snaps to frames, Shift for
-free); double-click the track to add a key from the current view; right-click a key to delete it.
-Select a key and its settings open in a small card just above it: its ease, the path to the next key,
-"set to current view" and delete. Lens (mm) and roll stay in the bar. The curve button opens
-the editor: **Segment** edits the bezier ease between two keys (the shaded area is the
-camera's speed; click the curve to add a point with its own handles, double-click a point to remove it), **Shot speed** remaps time across the whole shot for speed ramps.
+## Render with ComfyUI
 
-**Moves:** the caret on the Key button applies a preset camera move from the playhead: pan, tilt, orbit,
-push in, truck, crane, pedestal, zoom, dolly zoom or dutch. A move is two ordinary keys; the first one
-remembers how the camera travels to the second (an arc round the subject, a turn on the spot, a dolly zoom),
-shown under the track and in the selected key's path menu. The agent does the same with `canvas cam`.
+Optional. Choose **Render with Comfy** in the Export menu, or ask "render this with Seedance". Your agent fits
+one of your ComfyUI workflows to the timeline, writes a timed prompt from the camera moves, and shows you the
+prompt and the cost before anything runs. It works with Comfy Cloud or your own ComfyUI. See the
+[guide](docs/GUIDE.md#render-with-comfyui) and the [`blockout-render` skill](skills/blockout-render/SKILL.md).
 
-**Shots:** one set can have several cameras. The key track shows them as rows on the shared action-time
-axis, each shot a bar from where it picks up the action, with a **+ New shot** row underneath. Hover that row
-to preview the next shot (from where the current one ends, starting on its last frame); click it (or press
-Shift+N) to add it, or drag across the row to draw any span: it snaps to 0 for the same moment from a new
-angle, to the playhead, and to each shot's ends. A new shot starts on the current shot's framing at that
-moment. If it starts inside the current shot, the confirmation offers to end that shot there, so the action
-doesn't play twice. Shot names sit in a header column on the left; click one to switch, drag it up or down to reorder. The active shot's row is the full key editor. Click or scrub anywhere (the ruler, a bar or the
-empty part of a row) to put the playhead at that moment, switching to the shot that covers it. Drag a bar
-sideways to change where it picks up the action, drag it up or down to reorder, and click it and press
-Delete (or right-click it) to remove it. Shift or Cmd/Ctrl-click bars to pick several (or Shift or Cmd/Ctrl-drag a
-box on an empty part of the lanes); drag any picked bar sideways to move them all in time, or press Delete to
-remove them. Esc lets go. `[` `]` switch shots, Shift+`[` `]` move the active one. Rows run
-top to bottom in sequence order, and **Play all** (hover the Play button; Loop is there too) plays on through the cuts. The set,
-the people and their moves are shared, so moving a prop updates every shot; each shot has its own keys,
-length, fps and audio.
-Agents use `canvas shots`, `canvas shot <id>`, `canvas shot-add`, `canvas shot-cut` and `--shot`.
+## For agents and developers
 
-**Export:** the Export button opens a menu: **Export full video** (or `canvas export`) renders every
-shot in order into one video, and **Export shot** (or `canvas export --shot <id>`) renders just the current
-shot. Frames go through the shot camera at the scene size and fps and are encoded as H.264 MP4 in the
-browser. Files land in `scenes/exports/`. The same menu has **Render with Comfy**.
+- [AGENTS.md](AGENTS.md): project instructions (Codex, and Claude through CLAUDE.md)
+- [skills/blockout/SKILL.md](skills/blockout/SKILL.md): the skill, with the workflow, conventions and camera craft
+- [skills/blockout/references/api.md](skills/blockout/references/api.md): ops, CLI and HTTP reference
+- [docs/GUIDE.md](docs/GUIDE.md#how-it-works): how it works, and environment variables
+- [docs/DESIGN.md](docs/DESIGN.md): design system for new controls
 
-## Rendering with ComfyUI (optional)
-
-Blockout stops at the blockout video, but your agent can take it further. Open the caret on the Export button
-and choose **Render with Comfy** (it opens the chat with the request started), or just ask in the chat: "render this with Seedance". The whole timeline, every shot, goes over as one reference video and comes back as one render. The agent asks for what it needs with question cards in the chat, one question at a time: your reference images, the model, and an API key if one is needed (a key block saves it on your machine and the agent never sees it). The
-`blockout-render` skill has the agent fit one of your saved ComfyUI workflows ("recipes") to the timeline: it
-uploads the export as the motion reference, wires in your images and audio, writes a timed prompt from the
-shot's camera moves (`canvas brief`), and shows you the full prompt to review (edit it in place or say what to change), then a short confirm card with the cost. Nothing that costs credits runs until
-you press Render. While the job runs, a progress card in the chat shows its stage and the time so far. The finished video plays in the chat and is saved in `scenes/renders/` with the exact workflow
-and prompt that made it.
-
-It runs on [Comfy Cloud](https://docs.comfy.org/agent-tools/mcp) or your own ComfyUI, through whichever
-you have connected: the Comfy Cloud MCP, `comfy-mcp` for a local ComfyUI, or the `comfy` command line.
-There is no ComfyUI code in Blockout itself. A Seedance 2.5 reference-to-video recipe is included; put your
-own workflows (API format) in `scenes/recipes/`.
-
-## Saving and loading
-
-The scene autosaves to `scenes/scene.json` on every change. To keep versions, press **⌘S** (or the
-folder button, top right), name it and press Enter. That writes `scenes/saved/<name>.json` with a
-thumbnail of the shot. **Load** in the same menu replaces the scene with a save, and ⌘Z undoes the
-load. Agents use `canvas save <name>`, `canvas load <name>` and `canvas saves`.
-
-## For agents
-
-- [AGENTS.md](AGENTS.md) — project instructions (Codex, and Claude via CLAUDE.md)
-- [skills/blockout/SKILL.md](skills/blockout/SKILL.md) — the skill: workflow, conventions, camera craft
-- [skills/blockout/references/api.md](skills/blockout/references/api.md) — ops, CLI and HTTP reference
-- [skills/blockout-render/SKILL.md](skills/blockout-render/SKILL.md) — optional: render an export into a finished shot with ComfyUI
-- [docs/DESIGN.md](docs/DESIGN.md) — design system for new controls
-- `node bin/canvas.mjs help` — every command
+Your agent drives the canvas with the `canvas` command:
 
 ```bash
 node bin/canvas.mjs add box --name tower --size 2,8,2 --pos -3,0,-2
@@ -182,39 +131,11 @@ node bin/canvas.mjs key --t 0 --pos 6,1.6,10 --target 0,1.5,0 --lens 28
 node bin/canvas.mjs key --t 5 --pos 1,1.5,5 --target 0,1.6,0 --lens 50 --ease slowOut
 node bin/canvas.mjs storyboard     # contact sheet PNG of the move
 node bin/canvas.mjs export         # mp4 path
+node bin/canvas.mjs help           # every command
 ```
 
-## Adding controls
+Tests: `npm test` for the core, `npm run e2e` for the browser (needs Playwright).
 
-The base ships with no side panels. Ask your agent: "add a control for fog and sun direction". It
-copies `app/controls/_template.js`, builds the panel from the UI kit following `docs/DESIGN.md`,
-registers it in `app/controls/index.js`, and open tabs reload automatically. See
-`app/controls/examples/environment.js` for a complete example.
+## License
 
-## How it works
-
-- `server/index.mjs` owns the scene document (`scenes/scene.json`), applies ops with undo history,
-  streams changes to open tabs over Server-Sent Events, forwards render requests to a tab, keeps the
-  prompt inbox (`scenes/.canvas/inbox.jsonl`), and stores exports. Zero dependencies.
-- `core/` is shared by server, CLI and browser: the document model, primitives, ops, and the
-  easing / camera-path math.
-- `app/` is plain ES modules with three.js from `node_modules` via an import map. No build step.
-- Video export uses WebCodecs through [mediabunny](https://mediabunny.dev). If the browser can only
-  encode VP9 and `ffmpeg` is installed, the server transcodes to H.264.
-- People (`person`, with `--body male|female|child`) come in two levels of detail. Low, the default,
-  is a box body and a cube head with a drawn-on face (`app/blockman.js`, 72 triangles). High is a
-  jointed artist's mannequin: an egg head, chest and hip blocks, a waist ball, turned limbs on ball
-  joints, paddle hands and wedge feet, about 3.4k triangles (`app/mannequin.js`). Ask the agent for
-  detailed people, or run `canvas env --people high` (or `--detail high` on one person). Both are
-  built from a short table of proportions per body, so there is no model file to load.
-
-Environment: `CANVAS_PORT` (5317), `CANVAS_SCENE` (scene file path), `CANVAS_EXPORTS`,
-`CANVAS_LISTEN_SECONDS` (Stop-hook wait, default 3300), `CANVAS_DATA` (where scenes live; default the
-repo for a checkout, `~/Blockout` for the plugin).
-
-## Tests
-
-```bash
-npm test        # core ops, easing, path sampling, skill copies in sync
-npm run e2e     # headless browser: selection, gizmo drag, keys, prompt round trip, Stop hook, export
-```
+[MIT](LICENSE)
