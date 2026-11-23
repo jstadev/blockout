@@ -2,6 +2,8 @@
 
 Everything you can do in the canvas, in one place. For setup, see the [README](../README.md).
 
+<img src="screenshot.jpg" alt="Blockout in Shot view: a vertical shot of a figure by a car, the shot timeline with the music track below, and the chat on the right" width="100%">
+
 - [Chat with your agent](#chat-with-your-agent)
 - [Mouse and keyboard](#mouse-and-keyboard)
 - [Timeline and keys](#timeline-and-keys)

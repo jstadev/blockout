@@ -13,14 +13,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.jpg" alt="Blockout: a street scene in shot view, the camera timeline below and the chat with the agent on the right" width="100%">
+  <img src="docs/blockout.gif" alt="Blockout playing a street scene through eight shots cut on the beat, with the shot timeline, the music track and the chat with the agent" width="100%">
 </p>
 
 Blockout is a minimal three.js canvas that Claude Code or Codex drives for you. Describe a shot in the chat
 beside the canvas, and your agent builds the set out of simple shapes and people, keys the camera and cuts it
 into shots while you watch. Adjust anything by hand, then export one video of the whole timeline.
 
-- **Describe it.** "A rainy street, a man waiting at a bus stop, slow push-in as a car passes."
+- **Describe it.** "Quick cuts around him and the car, one on every beat, then a slow crane up and away."
 - **Shape it.** Key framings, pick preset moves, draw ease curves, cut between shots, lay music under it.
 - **Export it.** One MP4 of every shot in order, ready for Seedance, Veo, Kling or any reference-to-video model.
   Optionally, your agent can render it through ComfyUI for you.
