@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PRIMITIVES, MOVES, createDoc, shotTimeline } from '../core/doc.js';
+import { PRIMITIVES, MOVES, createDoc, shotTimeline, PERSON_POSES, PERSON_JOINTS, parseJoints } from '../core/doc.js';
 import { EASES, lensToFov } from '../core/curves.js';
 import { shotBrief, briefText, timelineBrief, timelineText } from '../core/brief.js';
 import { dataDir } from '../server/paths.mjs';
@@ -49,6 +49,7 @@ Objects (meters, Y up, pivot at bottom centre, rotation in degrees)
                     [--size a,b,c] [--<param> v] [--color #rrggbb] [--note text]
   canvas set <id> [same flags as add] [--move dx,dy,dz] [--type t]
   canvas dup <id> [--offset x,y,z] [--name n]
+  canvas poses                              the poses and joints a person takes (--pose sit, --joints "kneeL=90")
   canvas rm <id> [id...]
   canvas new                                start a new, empty scene (undoable)
   canvas clear [--keys]                     remove all objects (and camera keys)
@@ -258,7 +259,7 @@ function objectFields(flags, type) {
     const allParams = new Set(Object.values(PRIMITIVES).flatMap((p) => Object.keys(p.params)));
     if (!allParams.has(k)) throw new Error(`unknown flag --${k}`);
     const isText = Object.values(PRIMITIVES).some((p) => p.choices?.[k] || p.strings?.[k]);
-    o[k] = v === 'null' ? null : isText ? String(v) : num(v);
+    o[k] = k === 'joints' ? parseJoints(v) : v === 'null' ? null : isText ? String(v) : num(v);
   }
   if (type && o.position == null) o.position = [0, 0, 0];
   return o;
@@ -436,6 +437,20 @@ const commands = {
   },
 
   async doc() { out((await api('GET', '/api/doc')).doc); },
+  poses() {
+    out([
+      'Poses for a person (canvas add person --pose sit, canvas set <id> --pose wave). Any pose but stand draws the jointed mannequin:',
+      ...Object.entries(PERSON_POSES).map(([k, v]) => `  ${k.padEnd(14)} ${v.about}`),
+      '',
+      'Joints (--joints "kneeL=90 shoulderR=80,0,10" sets those joints on top of the pose; --joints null clears them).',
+      'L/R are the figure\'s own left and right. Degrees:',
+      '  body, spine, neck     bend forward, lean to its left, turn to its left   (body tips the whole figure at the hips)',
+      '  shoulder, hip, wrist  raise forward, raise out to the side, twist about its length (+ turns its front out)',
+      '  elbow, knee           bend (0 is straight)',
+      '  ankle                 toes up (+) or pointed (−)',
+      `  joints: ${PERSON_JOINTS.join(' ')}`,
+    ].join('\n'));
+  },
 
   // The camera work of a shot (or every shot) in words and numbers, computed from the scene doc.
   async brief({ flags }) {

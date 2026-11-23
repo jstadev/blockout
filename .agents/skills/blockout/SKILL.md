@@ -70,15 +70,26 @@ Most of the time goes into round trips, so do as much per step as you can:
   so `--pos x,0,z` stands it on the ground. Stack by adding the height of what is below.
 - Rotations are degrees (`--rot 0,45,0` turns around the vertical axis). `--scale` multiplies size.
 - Types: `box(w,h,d) sphere(r) cylinder(r,h,rTop) cone(r,h) pyramid(w,h,d) capsule(r,h) torus(r,tube)
-  plane(w,d) ramp(w,h,d) stairs(w,h,d,steps) arch(w,h,d,t) person(h,body,detail)`. `--size a,b,c` fills the
+  plane(w,d) ramp(w,h,d) stairs(w,h,d,steps) arch(w,h,d,t) person(h,body,detail,pose,joints)`. `--size a,b,c` fills the
   main params in that order.
 - Use `person` (faces +z) for people and as a scale reference. `--body male|female|child` picks the
   body (default male); height defaults to 1.8 / 1.65 / 1.3 m, or set `--h`. Mix bodies in crowds and
   street scenes rather than repeating one.
 - People come in two levels of detail: `low` (the default) is a box body with a cube head and a
   drawn-on face, `high` a jointed artist's mannequin. Keep low unless the user asks for more
-  detailed, realistic or posable people; then switch the whole scene with `canvas env --people high`,
+  detailed or realistic people; then switch the whole scene with `canvas env --people high`,
   or one person with `--detail high` (`--detail null` follows the scene again).
+- **Poses.** When someone should sit, crouch, kneel, lie, lean, walk, run, point, wave, fold their arms, put
+  hands on hips, reach up or hold a phone, give the person `--pose <name>` (`canvas poses` lists them with
+  placement notes). Any pose but `stand` draws the jointed mannequin, even in a low-detail scene. The pivot
+  stays under the hips and the lowest point (feet, knee or seat) sits on it: a seated person stands on the
+  floor with its pivot under the seat (knees 0.3 × h ahead), seat top at about 0.27 × h; `sit-floor` and
+  `lie` sit on the floor itself.
+- **Custom poses.** For anything the named poses miss ("left hand raised", "looking over her shoulder"), set
+  joints on top of the closest pose: `canvas set hero --pose stand --joints "shoulderL=0,150 elbowL=20 neck=0,0,60"`.
+  Joints: body spine neck (bend forward, lean to its left, turn to its left), shoulder/hip/wrist L|R (raise
+  forward, raise out, twist), elbow/knee L|R (bend), ankle L|R (toes up). L/R are the figure's own sides.
+  Always snapshot a posed person close up and fix what reads wrong before replying.
 - Give objects meaningful names (`--name hero-car`); the name becomes the id.
 - Keep blockouts grey (default `#d8d4cc`). Use colour only to tell the subject apart from the set
   (one or two muted colours), because the video model reads colour and shape.

@@ -91,7 +91,7 @@ shot's timeline without switching (CLI: `--shot <id>`). `anim.*` times are shot 
 | ramp | w 1, h 1, d 2 (rises toward −z) | w,h,d |
 | stairs | w 1, h 1, d 1.5, steps 6 (rise toward −z) | w,h,d |
 | arch | w 2, h 2.5, d 0.5, t 0.4 (doorway, wall thickness t) | w,h,d |
-| person | body male\|female\|child (default male), h (default 1.8 / 1.65 / 1.3 by body); faces +z | h |
+| person | body male\|female\|child (default male), h = standing height (default 1.8 / 1.65 / 1.3 by body), detail high\|low (unset: env.people), pose (default stand; `canvas poses` lists them: walk run sit sit-floor crouch kneel lie lean point wave arms-crossed hands-on-hips reach-up phone), joints `{"kneeL": 90, "shoulderR": [80, 0, 10]}` (degrees, on top of the pose; CLI `--joints "kneeL=90 shoulderR=80,0,10"`). A posed person is always the mannequin; its lowest point is on its pivot, hips over it; faces +z | h |
 | model | file (a `.glb` in the scene's `models/`, from `canvas import`), offset 0 (action time where its first clip starts), speed 1, length and h (clip seconds and height, measured at upload; descriptive). Size it with `scale` | — |
 
 ### Eases

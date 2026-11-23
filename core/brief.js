@@ -4,7 +4,7 @@
 // video model that follows the blockout export. `canvas brief` prints it.
 
 import { sampleObject, remapTime, isCut, easeName, fovToLens } from './curves.js';
-import { findShot, shotList, PERSON_HEIGHT } from './doc.js';
+import { findShot, shotList, objectHeight } from './doc.js';
 
 const DEG = 180 / Math.PI;
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -37,8 +37,7 @@ function unmapTime(timeline, k) {
 
 function objectAt(o, timeline, t) {
   const at = sampleObject(o, timeline, t);
-  const p = o.params || {};
-  const h = (p.h ?? (o.type === 'person' ? PERSON_HEIGHT[p.body || 'male'] : null) ?? (p.r != null ? p.r * 2 : 1)) * (at.scale?.[1] ?? 1);
+  const h = objectHeight(o) * (at.scale?.[1] ?? 1);
   return { position: at.position, rotation: at.rotation, height: h, centre: [at.position[0], at.position[1] + h * (o.type === 'person' ? 0.75 : 0.5), at.position[2]] };
 }
 
