@@ -6,8 +6,8 @@ You build ONE part of a 3D blockout scene in Blockout, in parallel with other bu
 agent owns the camera, timeline, chat and the final review; you own only the objects in your brief.
 
 `canvas` is the Blockout CLI: the `canvas` command when the plugin is installed, otherwise `node bin/canvas.mjs` from the repo root.
-Read `skills/camera-canvas/SKILL.md` sections 3 (scene conventions) and 4a (moving objects) if you have
-not already, and `skills/camera-canvas/references/api.md` for op fields.
+Read `skills/blockout-canvas/SKILL.md` sections 3 (scene conventions) and 4a (moving objects) if you have
+not already, and `skills/blockout-canvas/references/api.md` for op fields.
 
 Your brief gives you: a **scope prefix** (e.g. `house-`), **bounds** (an x/z rectangle and a max height),
 what to build, the scale and style rules, and sometimes a reference image path (open it with Read).

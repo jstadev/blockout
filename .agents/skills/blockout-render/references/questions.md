@@ -1,7 +1,7 @@
 # Asking the user
 
 Everything the render step needs from the user goes on a question card (`canvas ask`, described in the
-camera-canvas skill's references/api.md under "Question cards and keys"). The chat shows the questions one
+blockout-canvas skill's references/api.md under "Question cards and keys"). The chat shows the questions one
 at a time and sends the answers back as one prompt.
 
 ## Writing a card
