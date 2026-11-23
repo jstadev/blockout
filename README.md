@@ -13,6 +13,15 @@ timeline with easing and speed curves, and a chat sidebar that talks to your age
   └──────── live scene updates ◀─────────┴──── canvas CLI ◀─────┘
 ```
 
+## Video tutorials
+
+Six short videos (under a minute each) that walk through Blockout. Click one to watch.
+
+<table>
+<tr><td width="33%"><a href="docs/tutorials/01-getting-started.mp4"><img src="docs/tutorials/01-getting-started.jpg" alt="Getting started"></a><br><b>1. Getting started</b></td><td width="33%"><a href="docs/tutorials/02-shots-and-timeline.mp4"><img src="docs/tutorials/02-shots-and-timeline.jpg" alt="Shots and the timeline"></a><br><b>2. Shots and the timeline</b></td><td width="33%"><a href="docs/tutorials/03-camera-moves-and-eases.mp4"><img src="docs/tutorials/03-camera-moves-and-eases.jpg" alt="Camera moves and eases"></a><br><b>3. Camera moves and eases</b></td></tr>
+<tr><td width="33%"><a href="docs/tutorials/04-shudder.mp4"><img src="docs/tutorials/04-shudder.jpg" alt="Shudder"></a><br><b>4. Shudder</b></td><td width="33%"><a href="docs/tutorials/05-audio-and-beats.mp4"><img src="docs/tutorials/05-audio-and-beats.jpg" alt="Audio and beats"></a><br><b>5. Audio and beats</b></td><td width="33%"><a href="docs/tutorials/06-export-and-render-with-comfy.mp4"><img src="docs/tutorials/06-export-and-render-with-comfy.jpg" alt="Export and Render with Comfy"></a><br><b>6. Export and Render with Comfy</b></td></tr>
+</table>
+
 ## Quick start: start in Claude Code
 
 Requires Node 20+ and a Chromium-based browser or Safari 17+ (for WebCodecs video export).
