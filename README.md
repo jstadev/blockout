@@ -70,9 +70,6 @@ open **Marketplaces**, select `blockout` and choose **Enable auto-update**. Or u
 `/plugin marketplace update blockout`. Every commit on `main` is an update, and the next `/blockout:start`
 restarts the canvas on the new copy.
 
-Installed it before as `blockout-agent`? Run `/plugin uninstall blockout-agent@blockout-agent` and
-`/plugin marketplace remove blockout-agent`, then the two install commands above.
-
 </details>
 
 <details>
