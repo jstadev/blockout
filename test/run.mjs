@@ -155,7 +155,7 @@ test('every primitive has a geometry builder', () => {
 
 test('skill copies for Claude and Codex match the canonical skills', () => {
   const list = (d) => fs.readdirSync(d, { recursive: true }).filter((f) => fs.statSync(path.join(d, f)).isFile()).sort();
-  for (const skill of ['camera-canvas', 'blockout-render']) {
+  for (const skill of ['blockout', 'blockout-render']) {
     const src = path.join(ROOT, 'skills', skill);
     for (const copy of [path.join(ROOT, '.claude/skills', skill), path.join(ROOT, '.agents/skills', skill)]) {
       assert.deepEqual(list(copy), list(src), `${copy}: run npm run skills:sync`);
@@ -196,7 +196,7 @@ test('objects move over time with anim.move and stay put without keys', () => {
 });
 
 test('the builder helper definition is generated from the skill reference', () => {
-  const ref = fs.readFileSync(path.join(ROOT, 'skills/camera-canvas/references/builder.md'), 'utf8');
+  const ref = fs.readFileSync(path.join(ROOT, 'skills/blockout/references/builder.md'), 'utf8');
   const agent = fs.readFileSync(path.join(ROOT, '.claude/agents/canvas-builder.md'), 'utf8');
   const body = ref.replace(/^# .*\n+(<!--[\s\S]*?-->\n+)?/, '');
   assert.ok(agent.startsWith('---\nname: canvas-builder\n'), 'frontmatter');

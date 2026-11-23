@@ -335,7 +335,7 @@ function ownsCanvas(st, input) {
 // Two copies of the hooks can run for one session (the plugin's and a checkout's .claude/settings.json):
 // the first one to start takes a lock and the other steps aside.
 function hookLock(name) {
-  const file = path.join(os.tmpdir(), `camera-canvas-${name.replace(/[^\w.-]/g, '_')}.lock`);
+  const file = path.join(os.tmpdir(), `blockout-${name.replace(/[^\w.-]/g, '_')}.lock`);
   for (let i = 0; i < 2; i++) {
     try { fs.writeFileSync(file, String(process.pid), { flag: 'wx' }); break; }
     catch {

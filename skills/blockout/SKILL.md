@@ -1,6 +1,6 @@
 ---
-name: camera-canvas
-description: Operate Blockout (formerly Camera Canvas), the three.js blockout tool for 3D scenes and camera moves: build and edit the scene, drive the camera timeline, answer prompts typed in the Blockout chat, and export blockout videos for generative video models. Use only for Blockout work: after /blockout:start, when the user names Blockout or Camera Canvas, when a prompt arrives from the Blockout hooks, or when the user asks to block out a 3D scene or camera move for a video. Not for other canvases (design canvases, HTML canvas, Figma).
+name: blockout
+description: Operate Blockout, the three.js blockout tool for 3D scenes and camera moves: build and edit the scene, drive the camera timeline, answer prompts typed in the Blockout chat, and export blockout videos for generative video models. Use only for Blockout work: after /blockout:start, when the user names Blockout, when a prompt arrives from the Blockout hooks, or when the user asks to block out a 3D scene or camera move for a video. Not for other canvases (design canvases, HTML canvas, Figma).
 allowed-tools: Bash(canvas:*), Bash(node bin/canvas.mjs:*)
 ---
 
